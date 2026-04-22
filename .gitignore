@@ -1,0 +1,7 @@
+# getdeps bootstraps build/fbcode_builder/ from a shallow fbthrift clone;
+# it is not tracked in this repo.
+build/
+
+# getdeps scratch / CMake build output
+__pycache__/
+*.pyc
