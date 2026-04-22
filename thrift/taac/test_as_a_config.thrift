@@ -9,8 +9,8 @@ namespace py taac.taac
 namespace py3 taac
 namespace cpp2 facebook.taac
 
-include "configerator/structs/neteng/taac/health_check.thrift"
-include "configerator/structs/neteng/ixia/ixia.thrift"
+include "taac/health_check.thrift"
+include "ixia/ixia.thrift"
 include "thrift/annotation/thrift.thrift"
 
 @thrift.AllowLegacyMissingUris
