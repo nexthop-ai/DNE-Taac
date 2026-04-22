@@ -1,0 +1,8 @@
+[manifest]
+name = fboss-thrift-defs
+
+[git]
+repo_url = file:///fboss
+
+[build]
+builder = nop
