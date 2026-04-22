@@ -1,0 +1,8 @@
+# Third-party Python dependencies.
+#
+# Kept minimal on purpose — add entries only when a concrete
+# ImportError or runtime failure proves the dep is needed. If you add
+# something, leave a short note or mention the symptom in the commit.
+
+# Imported at module scope in taac/libs/taac_runner.py.
+tabulate
