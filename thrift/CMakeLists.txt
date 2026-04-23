@@ -326,6 +326,27 @@ add_taac_thrift_python_library(
     DEPENDS thrift_roots
 )
 
+# Leaf QoS enum used by the ixia_config_thrift schema below.
+add_taac_thrift_python_library(
+    qos_config_py
+    "${TAAC_THRIFT_DIR}/neteng/test_infra/dne/utils/if/qos_config.thrift"
+    NAMESPACE "neteng.test_infra.dne.utils"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+
+# IXIA traffic config schema. taac/driver/driver_constants.py imports
+# `from neteng.test_infra.ixia.ixnetwork_restpy.ixia_config_thrift import types`
+# and populates module-level data structures from the generated enums, so
+# this binding must exist at runtime.
+add_taac_thrift_python_library(
+    ixia_config_thrift_py
+    "${TAAC_THRIFT_DIR}/ixia/ixia_config_thrift.thrift"
+    NAMESPACE "neteng.test_infra.ixia.ixnetwork_restpy"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+
 add_taac_thrift_python_library(
     health_check_py
     "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/health_check.thrift"
@@ -385,6 +406,8 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     switch_state_py.py_sources_built
     qosdb_cos_py.py_sources_built
     ixia_py.py_sources_built
+    qos_config_py.py_sources_built
+    ixia_config_thrift_py.py_sources_built
     health_check_py.py_sources_built
     test_as_a_config_py.py_sources_built
 )
