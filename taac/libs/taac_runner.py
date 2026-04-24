@@ -419,6 +419,12 @@ class TaacRunner:
         if not startup_checks:
             return
 
+        if TAAC_OSS:
+            self.logger.warning(
+                "Startup checks skipped in OSS mode (requires ValidationStep with Meta-internal dependencies)"
+            )
+            return
+
         log_section("STARTUP HEALTH CHECKS", logger=self.logger)
 
         # Run startup checks on all DUTs
