@@ -6,3 +6,23 @@
 
 # Imported at module scope in taac/libs/taac_runner.py.
 tabulate
+
+# IXIA traffic-generator client library. Imported at module scope in
+# taac/ixia/taac_ixia.py (from ixnetwork_restpy.assistants.statistics...).
+ixnetwork-restpy
+
+# Pyre's public typing helpers (JSON alias, none_throws). Imported at
+# module scope in taac/utils/json_thrift_utils.py (from pyre_extensions
+# import JSON).
+pyre-extensions
+
+# SSH / CLI automation used at module scope in taac/driver/fboss_switch.py.
+pexpect
+
+# LRU cache decorators used in taac/driver/memoize_on_app_overload.py
+# (from cachetools import LRUCache).
+cachetools
+
+# Async SSH client. Lazy-imported in taac/utils/oss_driver_utils.py
+# under the OSS-driver SSH code path (driver.async_run_cmd_on_shell).
+asyncssh
