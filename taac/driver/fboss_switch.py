@@ -2999,13 +2999,22 @@ class FbossSwitch(AbstractSwitch):
         )
 
     @property
-    def async_agent_client(self) -> FbossCtrl:
+    def async_agent_client(self):
         """
-        Create FBOSS Agent async client
+        Create FBOSS Agent async client.
+
+        Returns an async context manager (via thrift.py3.client.get_client)
+        that yields an FbossCtrl.Async client connected to the device's
+        agent thrift port. Used as 'async with self.async_agent_client as
+        client: ...' by methods like async_get_lldp_neighbors.
         """
-        raise NotImplementedError(
-            "FBOSS Agent async client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+        from thrift.py3.client import get_client
+
+        return get_client(
+            FbossCtrl,
+            host=self.hostname,
+            port=DEFAULT_AGENT_REMOTE_PORT,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     async def async_get_lldp_neighbors(self) -> Dict[str, SwitchLldpData]:
