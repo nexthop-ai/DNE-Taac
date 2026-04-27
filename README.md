@@ -56,16 +56,44 @@ python3 -c 'import taac.libs.taac_runner; print("ok")'
 
 Some runtime functionality is stubbed in OSS mode (NDS drainer, COOP patcher, ValidationStep, AristaSSHHelper, etc.) and will raise `NotImplementedError` if invoked on a code path that requires it. Imports succeed; trying to actually use those features fails.
 
-## Running TAAC modules under OSS
+### Driving a minimal test
 
-TAAC's Python modules (e.g. `taac.libs.taac_runner`) include Meta-internal imports that aren't shipped in this slice. Set `TAAC_OSS=1` so the imports take their OSS branch:
+```python
+import asyncio
+from taac.test_as_a_config.thrift_types import (
+    TestConfig, Playbook, Stage, Step, StepName, Endpoint, DeviceOsType,
+)
+from taac.libs.taac_runner import TaacRunner
 
-```bash
-export TAAC_OSS=1
-python3 -c 'import taac.libs.taac_runner; print("ok")'
+cfg = TestConfig(
+    name='smoke',
+    basset_pool='',
+    playbooks=[Playbook(
+        name='dummy_playbook',
+        stages=[Stage(steps=[Step(name=StepName.DUMMY_STEP)])],
+    )],
+    endpoints=[Endpoint(name='your-host', dut=True)],
+    host_os_type_map={'your-host': DeviceOsType.FBOSS},
+    startup_checks=[],
+)
+
+# skip_post_setup_wait skips a 180s interface-stabilization sleep
+# that's only useful when booting real hardware.
+runner = TaacRunner(test_config=cfg, skip_post_setup_wait=True)
+asyncio.run(runner.run_tests())
 ```
 
-Some runtime functionality is stubbed in OSS mode (NDS drainer, COOP patcher, ValidationStep, AristaSSHHelper, etc.) and will raise `NotImplementedError` if invoked on a code path that requires it. Imports succeed; trying to actually use those features fails.
+### Plugging in a custom driver
+
+`DEVICE_OS_DRIVER_CLASS_MAP` ships with `FbossSwitch` registered for `DeviceOsType.FBOSS`. For other OS types (Arista, Cisco, etc.), register your own `AbstractSwitch` subclass:
+
+```python
+from taac.utils.driver_factory import register_driver_class
+from taac.test_as_a_config.thrift_types import DeviceOsType
+from my_pkg.my_driver import MyArista  # your subclass of AbstractSwitch
+
+register_driver_class(DeviceOsType.ARISTA_OS, MyArista)
+```
 
 ## License
 
