@@ -169,6 +169,7 @@ class TaacRunner:
         ixia_session_id: t.Optional[int] = None,
         skip_ixia_setup: bool = False,
         skip_ixia_cleanup: bool = False,
+        skip_post_setup_wait: bool = False,
         skip_testbed_isolation: bool = True,
         # Use with CAUTION!!  Should only be used for debugging or development purposes
         skip_basset_reservation: bool = False,
@@ -264,6 +265,7 @@ class TaacRunner:
             ixia_session_id,
             skip_ixia_setup,
             skip_ixia_cleanup,
+            skip_post_setup_wait,
             skip_basset_reservation,
             skip_testbed_isolation,
             desired_pkg_versions,
