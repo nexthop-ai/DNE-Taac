@@ -2,7 +2,7 @@
 name = fboss-thrift-defs
 
 [git]
-repo_url = file:///fboss
+repo_url = https://github.com/facebook/fboss.git
 
 [build]
 builder = nop
