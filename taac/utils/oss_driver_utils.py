@@ -20,8 +20,9 @@ All Meta-internal auth complexity (role certs, keychain secrets, basset
 password lookup, justknobs gating) is replaced with standard key-based
 SSH auth configured via environment variables:
 
-  TAAC_SSH_KEY  — path to SSH private key (default: ~/.ssh/id_rsa)
-  TAAC_SSH_USER — SSH username (default: root)
+  TAAC_SSH_KEY      — path to SSH private key (default: ~/.ssh/id_rsa)
+  TAAC_SSH_USER     — SSH username (default: root)
+  TAAC_SSH_PASSWORD — SSH password (optional, for password-based auth)
 """
 
 import asyncio
@@ -54,6 +55,10 @@ def _get_ssh_username(override: t.Optional[str] = None) -> str:
     if override:
         return override
     return os.environ.get("TAAC_SSH_USER", "root")
+
+
+def _get_ssh_password() -> t.Optional[str]:
+    return os.environ.get("TAAC_SSH_PASSWORD")
 
 
 # =============================================================================
@@ -99,7 +104,7 @@ class AsyncSSHClient:
 
         self._port = port
         self._username = _get_ssh_username(username)
-        self._password = password
+        self._password = password or _get_ssh_password()
         self._password_list = password_list or []
         self._timeout = timeout
         self._conn = None
@@ -249,7 +254,7 @@ class ParamikoClient:
 
         self._port = port
         self._username = _get_ssh_username(username)
-        self._password = password
+        self._password = password or _get_ssh_password()
         self._password_list = password_list or []
         self._timeout = timeout or _DEFAULT_CONNECT_TIMEOUT_SEC
         self._client = None
