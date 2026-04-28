@@ -562,8 +562,8 @@ class FbossSwitch(AbstractSwitch):
         """
         intf_map: Dict = {}
 
-        with self._get_fboss_agent_client() as client:
-            port_info_result = client.getAllPortInfo()
+        async with self.async_agent_client as client:
+            port_info_result = await client.getAllPortInfo()
 
         if not port_info_result:
             raise EmptyOutputReturnError(
@@ -1259,8 +1259,8 @@ class FbossSwitch(AbstractSwitch):
             await self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
         )
         port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            port_status: PortStatus = client.getPortStatus([port_id])
+        async with self.async_agent_client as client:
+            port_status: PortStatus = await client.getPortStatus([port_id])
 
         # pyre-fixme[16]: `PortStatus` has no attribute `__getitem__`.
         port_status_obj = port_status[port_id]
@@ -2386,8 +2386,12 @@ class FbossSwitch(AbstractSwitch):
             self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
         )
         port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            client.setPortState(port_id, enable)
+
+        async def _set_port_state() -> None:
+            async with self.async_agent_client as client:
+                await client.setPortState(port_id, enable)
+
+        asyncio.run(_set_port_state())
         return True
 
     async def async_thrift_disable_enable(
