@@ -3041,13 +3041,16 @@ class FbossSwitch(AbstractSwitch):
         OSS implementation uses asyncssh from oss_driver_utils.
         The internal mixin overrides this with Meta's AsyncSSHClient/ParamikoClient.
         """
-        username = "root"
         ssh_port = 22
 
         self.logger.debug(f"Running cmd {cmd} on {self.hostname}")
 
+        # Pass username=None so AsyncSSHClient falls back to TAAC_SSH_USER
+        # (default "root"); password is similarly picked up from
+        # TAAC_SSH_PASSWORD when set. See oss_driver_utils for the
+        # supported env vars.
         async with AsyncSSHClient(
-            self.hostname, port=ssh_port, username=username
+            self.hostname, port=ssh_port, username=None
         ) as client:
             result = await client.async_run(
                 cmd=cmd,
