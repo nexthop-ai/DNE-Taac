@@ -63,7 +63,7 @@ function(add_taac_thrift_python_library LIB_NAME THRIFT_PATH)
 endfunction()
 
 # ============================================================================
-# SECTION A: Common / Shared (from FBOSS)
+# SECTION A: FBOSS Thrift (from fetched source)
 # ============================================================================
 
 # facebook.network.Address
@@ -84,10 +84,6 @@ add_taac_thrift_python_library(
     OPTIONS json
     DEPENDS thrift_roots
 )
-
-# ============================================================================
-# SECTION B: FBOSS Thrift (from fetched source)
-# ============================================================================
 
 add_taac_thrift_python_library(
     mpls_py
@@ -307,7 +303,7 @@ add_taac_thrift_python_library(
 )
 
 # ============================================================================
-# SECTION C: TAAC-Owned Thrift (from this repo)
+# SECTION B: TAAC-Owned Thrift (from this repo)
 # ============================================================================
 
 add_taac_thrift_python_library(
@@ -419,7 +415,7 @@ add_taac_thrift_python_library(
 )
 
 # ============================================================================
-# SECTION D: Install generated Python to site-packages
+# SECTION C: Install generated Python to site-packages
 # ============================================================================
 
 # add_fbthrift_py_library's .py_sources_built targets are not part of
