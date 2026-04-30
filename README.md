@@ -87,6 +87,36 @@ async def main():
 asyncio.run(main())
 ```
 
+### Live-device smoke
+
+`examples/smoke_live_device.py` runs the same shape against real
+device(s), driving both a `DUMMY_STEP` playbook and a
+`RUN_SSH_COMMAND_STEP` playbook. It expects `TAAC_OSS=1`, `TAAC_SSH_USER`,
+and `TAAC_SSH_PASSWORD` to be set. Run it via the docker wrapper with
+`--network host` so internal-DNS hostnames resolve from inside the
+container:
+
+```bash
+./docker/run-fboss-docker.sh --distro centos --network host run bash -c '
+    export TAAC_OSS=1 TAAC_SSH_USER=<user> TAAC_SSH_PASSWORD=<pw>
+    python3 -m pip install --break-system-packages --no-index \
+        --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift > /dev/null
+    python3 -m pip install --break-system-packages -r /taac/requirements.txt > /dev/null
+    export PYTHONPATH=/taac:/scratch/installed/taac-<HASH>/lib/python3/site-packages
+    export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr "\n" ":")
+    python3 /taac/examples/smoke_live_device.py \
+        --device-info-csv /taac/examples/topology/fboss101_102_device_info.csv \
+        --circuit-info-csv /taac/examples/topology/fboss101_102_circuit_info.csv \
+        --command "uname -a"
+'
+```
+
+Without `--hosts`, every hostname listed in `--device-info-csv` is used
+as a DUT. Pass `--hosts host1 host2` to run against a subset.
+`examples/topology/` ships sample CSVs for the fboss101 / fboss102 fleet;
+swap them for your own `device_info.csv` / `circuit_info.csv` to point
+at a different environment.
+
 ### Plugging in a custom driver
 
 `DEVICE_OS_DRIVER_CLASS_MAP` ships with `FbossSwitch` registered for `DeviceOsType.FBOSS`. For other OS types (Arista, Cisco, etc.), register your own `AbstractSwitch` subclass:
