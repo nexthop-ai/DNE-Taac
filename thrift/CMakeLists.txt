@@ -189,7 +189,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     qosdb_cos_py
-    "${TAAC_THRIFT_DIR}/qosdb/Cos.thrift"
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/qosdb/Cos.thrift"
     NAMESPACE "neteng.qosdb"
     OPTIONS json
     DEPENDS thrift_roots
@@ -197,7 +197,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     ixia_py
-    "${TAAC_THRIFT_DIR}/ixia/ixia.thrift"
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/ixia/ixia.thrift"
     NAMESPACE "ixia"
     OPTIONS json
     DEPENDS thrift_roots
@@ -205,7 +205,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     health_check_py
-    "${TAAC_THRIFT_DIR}/taac/health_check.thrift"
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/health_check.thrift"
     NAMESPACE "taac.health_check"
     OPTIONS json
     DEPENDS thrift_roots qosdb_cos_py
@@ -213,7 +213,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     test_as_a_config_py
-    "${TAAC_THRIFT_DIR}/taac/test_as_a_config.thrift"
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/test_as_a_config.thrift"
     NAMESPACE "taac"
     OPTIONS json
     DEPENDS thrift_roots health_check_py ixia_py
