@@ -343,59 +343,74 @@ add_taac_thrift_python_library(
     DEPENDS thrift_roots
 )
 
-# BGP thrift schemas. These schemas live in Meta's configerator/ tree
-# (not in the public fboss repo), so they're vendored here under the
-# matching relative paths so thrift1 include resolution works. Required
-# by several TAAC health checks and fboss_switch.py driver imports of
-# neteng.fboss.bgp_thrift.* and neteng.fboss.bgp_attr.*.
+# BGP thrift schemas. bgp_attr / bgp_config / bgp_policy / rib_policy
+# (plus their transitive deps nsf_policy / routing_policy) are pulled
+# directly from the public facebook/fboss repo via the fboss-thrift-defs
+# manifest — no need to vendor a local copy.
+# Required by several TAAC health checks and fboss_switch.py driver
+# imports of neteng.fboss.bgp_thrift.* and neteng.fboss.bgp_attr.*.
 add_taac_thrift_python_library(
     bgp_attr_py
-    "${TAAC_THRIFT_DIR}/configerator/fboss/bgp/bgp_attr.thrift"
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/fboss/bgp/if/bgp_attr.thrift"
     NAMESPACE "neteng.fboss"
     OPTIONS json
     DEPENDS thrift_roots
 )
 add_taac_thrift_python_library(
     bgp_policy_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/bgp_policy.thrift"
-    NAMESPACE "configerator.structs.neteng.bgp_policy.thrift"
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/bgp_policy.thrift"
+    NAMESPACE "configerator.structs.neteng.robotron"
     OPTIONS json
     DEPENDS thrift_roots
 )
 add_taac_thrift_python_library(
     rib_policy_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/rib_policy.thrift"
-    NAMESPACE "configerator.structs.neteng.bgp_policy.thrift"
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/rib_policy.thrift"
+    NAMESPACE "neteng.bgp_policy.thrift"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    nsf_policy_py
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/nsf_policy.thrift"
+    NAMESPACE "neteng.bgp_policy.thrift"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    routing_policy_py
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/routing_policy.thrift"
+    NAMESPACE "configerator.structs.neteng.robotron"
     OPTIONS json
     DEPENDS thrift_roots
 )
 add_taac_thrift_python_library(
     policy_thrift_py
-    "${TAAC_THRIFT_DIR}/routing/policy/policy_thrift.thrift"
+    "${FBOSS_THRIFT_DIR}/neteng/fboss/bgp/if/policy_thrift.thrift"
     NAMESPACE "neteng.routing"
     OPTIONS json
     DEPENDS thrift_roots
 )
 add_taac_thrift_python_library(
-    vip_service_config_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/config/vip_service_config.thrift"
-    NAMESPACE "configerator.structs.neteng.config"
-    OPTIONS json
-    DEPENDS thrift_roots
-)
-add_taac_thrift_python_library(
     bgp_config_py
-    "${TAAC_THRIFT_DIR}/configerator/fboss/bgp/bgp_config.thrift"
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/fboss/bgp/bgp_config.thrift"
     NAMESPACE "configerator.structs.neteng.fboss.bgp"
     OPTIONS json
     DEPENDS thrift_roots
 )
 add_taac_thrift_python_library(
-    bgp_thrift_py
-    "${TAAC_THRIFT_DIR}/bgp/bgp_thrift.thrift"
+    bgp_route_types_py
+    "${FBOSS_THRIFT_DIR}/neteng/fboss/bgp/if/bgp_route_types.thrift"
     NAMESPACE "neteng.fboss"
     OPTIONS json
-    DEPENDS thrift_roots
+    DEPENDS thrift_roots bgp_attr_py rib_policy_py
+)
+add_taac_thrift_python_library(
+    bgp_thrift_py
+    "${FBOSS_THRIFT_DIR}/neteng/fboss/bgp/if/bgp_thrift.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots bgp_route_types_py
 )
 
 add_taac_thrift_python_library(
@@ -462,9 +477,11 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     bgp_attr_py.py_sources_built
     bgp_policy_py.py_sources_built
     rib_policy_py.py_sources_built
+    nsf_policy_py.py_sources_built
+    routing_policy_py.py_sources_built
     policy_thrift_py.py_sources_built
-    vip_service_config_py.py_sources_built
     bgp_config_py.py_sources_built
+    bgp_route_types_py.py_sources_built
     bgp_thrift_py.py_sources_built
     health_check_py.py_sources_built
     test_as_a_config_py.py_sources_built
