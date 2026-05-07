@@ -7,7 +7,7 @@
 // configerator-thrift-updater neteng/taac/health_check.thrift
 //
 // Source: https://www.internalfb.com/code/configerator/[master]/source/neteng/taac/health_check.thrift
-include "qosdb/Cos.thrift"
+include "configerator/structs/neteng/qosdb/Cos.thrift"
 include "thrift/annotation/thrift.thrift"
 
 @thrift.AllowLegacyMissingUris
