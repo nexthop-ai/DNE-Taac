@@ -2,6 +2,9 @@
 
 Test As A Config (TAAC) — a configuration-driven network test automation framework. TAAC provides a declarative approach to FBOSS network device testing, where test scenarios are expressed as structured configurations rather than imperative scripts.
 
+A test is a `TestConfig` containing one or more **playbooks**; a playbook runs against a **DUT** (device under test) and is composed of ordered **stages**; each stage is a list of **steps** — the smallest units of work (e.g. `RUN_SSH_COMMAND_STEP`, `DUMMY_STEP`, plus device-management ones). Stages express ordering and parallelism; playbooks group what runs against which device.
+
+
 ## Quick start
 
 Smoke-tested via [facebook/fboss](https://github.com/facebook/fboss)'s public Docker images on **CentOS Stream 9**. Docker is the only host-side dependency.
@@ -67,7 +70,7 @@ from taac.libs.taac_runner import TaacRunner
 
 cfg = TestConfig(
     name='smoke',
-    basset_pool='',
+    basset_pool='',  # Meta-internal hardware reservation pool; '' is fine for OSS
     playbooks=[Playbook(
         name='dummy_playbook',
         stages=[Stage(steps=[Step(name=StepName.DUMMY_STEP)])],
@@ -111,11 +114,7 @@ container:
 '
 ```
 
-Without `--hosts`, every hostname listed in `--device-info-csv` is used
-as a DUT. Pass `--hosts host1 host2` to run against a subset.
-`examples/topology/` ships sample CSVs for the fboss101 / fboss102 fleet;
-swap them for your own `device_info.csv` / `circuit_info.csv` to point
-at a different environment.
+Without `--hosts`, every hostname listed in `--device-info-csv` is used as a DUT. Pass `--hosts host1 host2` to run against a subset. `examples/topology/` ships sample CSVs as templates — copy them, replace the placeholder hostnames / OS column with your own fleet, and point `--device-info-csv` / `--circuit-info-csv` at your copies.
 
 ### Plugging in a custom driver
 
