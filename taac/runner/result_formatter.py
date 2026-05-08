@@ -37,6 +37,56 @@ class OSSResultAggregator:
         """
         self.results.append(result)
 
+    def add_results(self, results: List[OSSTestResult]) -> None:
+        """
+        Add multiple test results to the aggregator (VP1 spec).
+
+        Args:
+            results: List of test results to add
+        """
+        self.results.extend(results)
+
+    @property
+    def total_count(self) -> int:
+        """Total number of test results (VP1 spec)."""
+        return len(self.results)
+
+    def count_by_status(self) -> Dict[OSSTestStatus, int]:
+        """Count of results by status (VP1 spec)."""
+        from collections import Counter
+        counter = Counter(r.status for r in self.results)
+        return dict(counter)
+
+    @property
+    def passed_count(self) -> int:
+        """Number of passed tests (VP1 spec)."""
+        return sum(1 for r in self.results if r.status == OSSTestStatus.PASSED)
+
+    @property
+    def failed_count(self) -> int:
+        """Number of failed tests (VP1 spec)."""
+        return sum(1 for r in self.results if r.status.failed)
+
+    @property
+    def skipped_count(self) -> int:
+        """Number of skipped tests (VP1 spec)."""
+        return sum(1 for r in self.results if r.status == OSSTestStatus.SKIPPED)
+
+    @property
+    def has_failures(self) -> bool:
+        """Check if any results have failures (VP1 spec)."""
+        return any(r.status.failed for r in self.results)
+
+    @property
+    def has_infra_errors(self) -> bool:
+        """Check if any results have infrastructure errors (transient) (VP1 spec)."""
+        return any(r.is_transient for r in self.results)
+
+    @property
+    def all_passed(self) -> bool:
+        """Check if all tests passed (VP1 spec)."""
+        return all(r.status == OSSTestStatus.PASSED for r in self.results)
+
     def get_summary(self) -> Dict[str, int]:
         """
         Get summary statistics of all results.
@@ -45,31 +95,15 @@ class OSSResultAggregator:
             Dictionary with counts for each status
         """
         summary = {
-            "total": len(self.results),
-            "passed": 0,
-            "failed": 0,
-            "error": 0,
-            "skipped": 0,
-            "setup_failed": 0,
-            "teardown_failed": 0,
-            "timeout": 0,
+            "total": self.total_count,
+            "passed": self.passed_count,
+            "failed": sum(1 for r in self.results if r.status == OSSTestStatus.FAILED),
+            "error": sum(1 for r in self.results if r.status == OSSTestStatus.ERROR),
+            "skipped": self.skipped_count,
+            "setup_failed": sum(1 for r in self.results if r.status == OSSTestStatus.SETUP_FAILED),
+            "teardown_failed": sum(1 for r in self.results if r.status == OSSTestStatus.TEARDOWN_FAILED),
+            "timeout": sum(1 for r in self.results if r.status == OSSTestStatus.TIMEOUT),
         }
-
-        for result in self.results:
-            if result.status == OSSTestStatus.PASSED:
-                summary["passed"] += 1
-            elif result.status == OSSTestStatus.FAILED:
-                summary["failed"] += 1
-            elif result.status == OSSTestStatus.ERROR:
-                summary["error"] += 1
-            elif result.status == OSSTestStatus.SETUP_FAILED:
-                summary["setup_failed"] += 1
-            elif result.status == OSSTestStatus.TEARDOWN_FAILED:
-                summary["teardown_failed"] += 1
-            elif result.status == OSSTestStatus.TIMEOUT:
-                summary["timeout"] += 1
-            elif result.status.is_skipped():
-                summary["skipped"] += 1
 
         return summary
 
@@ -85,11 +119,11 @@ class OSSResultAggregator:
 
         # Check for infrastructure errors
         if any(result.status == OSSTestStatus.SETUP_FAILED for result in self.results):
-            return OSSReturnCode.INFRASTRUCTURE_ERROR
+            return OSSReturnCode.INFRA_ERROR
 
         # Check for test failures
         if any(result.status.is_failure() for result in self.results):
-            return OSSReturnCode.TEST_FAILURE
+            return OSSReturnCode.TEST_CASE_FAILURE
 
         # All tests passed or skipped
         return OSSReturnCode.SUCCESS

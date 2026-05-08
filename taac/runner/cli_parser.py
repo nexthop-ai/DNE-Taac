@@ -127,6 +127,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Validate configuration without executing tests",
     )
     parser.add_argument(
+        "--timeout",
+        type=int,
+        default=3600,
+        help="Global timeout in seconds (default: 3600 = 1 hour)",
+    )
+    parser.add_argument(
         "--retry",
         type=int,
         default=0,

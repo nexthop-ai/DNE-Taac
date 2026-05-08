@@ -4,6 +4,11 @@
 OSS Return Code Enum
 
 Defines the exit codes for the OSS TAAC entry point.
+
+Convention (per VP1 spec):
+- 0: Success
+- 1-127: User errors (test failures, invalid input)
+- 128+: Infrastructure errors
 """
 
 from enum import IntEnum
@@ -11,17 +16,41 @@ from enum import IntEnum
 
 class OSSReturnCode(IntEnum):
     """
-    Exit codes for OSS TAAC CLI.
+    Exit codes for OSS TAAC entry point.
 
-    These codes are returned to the shell and can be used by CI/CD systems
-    to determine the outcome of test execution.
+    Convention:
+    - 0: Success
+    - 1-127: User errors (test failures, invalid input)
+    - 128+: Infrastructure errors
     """
+    # Success
+    SUCCESS = 0
 
-    SUCCESS = 0  # All tests passed
-    TEST_FAILURE = 1  # One or more tests failed
-    CONFIG_ERROR = 2  # Configuration error (invalid test config, missing files, etc.)
-    INFRASTRUCTURE_ERROR = 3  # Infrastructure error (IXIA, connectivity, device access)
-    NO_TESTS_FOUND = 4  # No tests found to execute
+    # User Errors (1-127)
+    USER_ERROR = 1              # Unclassified user error
+    TEST_CASE_FAILURE = 2       # One or more tests failed
+    INVALID_INPUT = 3           # Invalid CLI arguments or config
+    NO_TESTS_FOUND = 4          # No test cases discovered
+    CONFIG_ERROR = 5            # Test config loading failed
+
+    # Infrastructure Errors (128+)
+    INFRA_ERROR = 128           # Unclassified infra error
+    TESTBED_ERROR = 129         # Device/testbed connectivity issue
+    TRANSIENT_ERROR = 130       # Transient error (retry-able)
+    TIMEOUT_ERROR = 131         # Global timeout exceeded
+    CONNECTION_ERROR = 132      # Thrift connection failed
+
+    def is_success(self) -> bool:
+        """Check if this return code indicates success."""
+        return self == OSSReturnCode.SUCCESS
+
+    def is_user_error(self) -> bool:
+        """Check if this return code indicates a user error (1-127)."""
+        return 1 <= self.value <= 127
+
+    def is_infra_error(self) -> bool:
+        """Check if this return code indicates an infrastructure error (128+)."""
+        return self.value >= 128
 
     def __str__(self) -> str:
         """String representation of the return code."""
