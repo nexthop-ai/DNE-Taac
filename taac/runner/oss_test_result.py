@@ -40,8 +40,33 @@ class OSSTestResult:
     exception: Optional[Exception] = None  # Exception that caused failure (if any)
     traceback: Optional[str] = None  # Full traceback (if any)
 
+    # VP1 spec additional fields
+    stdout: str = ""                        # Captured stdout
+    stderr: str = ""                        # Captured stderr
+    exception_type: Optional[str] = None    # Exception class name
+    exception_message: Optional[str] = None # Exception message
+    is_transient: bool = False              # Was this a transient error?
+    retry_count: int = 0                    # Number of retries attempted
+    log_file: Optional[str] = None          # Path to log file
+
     # Metadata
     metadata: Dict[str, str] = field(default_factory=dict)  # Additional metadata
+
+    # Aliases for VP1 spec compatibility
+    @property
+    def test_case(self) -> str:
+        """Alias for playbook (VP1 spec uses test_case)."""
+        return self.playbook
+
+    @property
+    def stacktrace(self) -> Optional[str]:
+        """Alias for traceback (VP1 spec uses stacktrace)."""
+        return self.traceback
+
+    @property
+    def failed(self) -> bool:
+        """Check if this test result represents a failure (VP1 spec)."""
+        return self.status.failed
 
     def mark_complete(self, status: OSSTestStatus, message: str = "") -> None:
         """
@@ -65,6 +90,7 @@ class OSSTestResult:
             Dictionary representation of the result
         """
         return {
+            "test_case": self.test_case,
             "test_config": self.test_config,
             "playbook": self.playbook,
             "dut": self.dut,
@@ -75,12 +101,49 @@ class OSSTestResult:
             "duration": self.duration,
             "exception": str(self.exception) if self.exception else None,
             "traceback": self.traceback,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "exception_type": self.exception_type,
+            "exception_message": self.exception_message,
+            "is_transient": self.is_transient,
+            "retry_count": self.retry_count,
+            "log_file": self.log_file,
             "metadata": self.metadata,
         }
 
+    def summary(self) -> str:
+        """One-line summary of the test result (VP1 spec)."""
+        color = self.status.color
+        reset = OSSTestStatus.reset_color()
+        duration_str = f"{self.duration:.2f}s" if self.duration else "N/A"
+        return f"{color}[{self.status.name}]{reset} {self.test_case} ({duration_str})"
+
+    def detailed_message(self) -> str:
+        """Multi-line detailed message (VP1 spec)."""
+        lines = [
+            f"Test Case: {self.test_case}",
+            f"Test Config: {self.test_config}",
+            f"Status: {self.status.name}",
+            f"Duration: {self.duration:.2f}s" if self.duration else "Duration: N/A",
+        ]
+        if self.dut:
+            lines.append(f"DUT: {self.dut}")
+        if self.message:
+            lines.append(f"Message: {self.message}")
+        if self.exception_type:
+            lines.append(f"Exception Type: {self.exception_type}")
+        if self.exception_message:
+            lines.append(f"Exception Message: {self.exception_message}")
+        if self.stacktrace:
+            lines.append(f"Stacktrace:\n{self.stacktrace}")
+        if self.log_file:
+            lines.append(f"Log File: {self.log_file}")
+        if self.retry_count > 0:
+            lines.append(f"Retry Count: {self.retry_count}")
+        if self.is_transient:
+            lines.append("Transient: Yes (retry-able)")
+        return "\n".join(lines)
+
     def __str__(self) -> str:
         """String representation of the result."""
-        duration_str = (
-            f"{self.duration:.2f}s" if self.duration is not None else "N/A"
-        )
-        return f"[{self.status}] {self.test_config}/{self.playbook} on {self.dut} ({duration_str})"
+        return self.summary()

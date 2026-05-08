@@ -310,7 +310,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return OSSReturnCode.CONFIG_ERROR
     except OSSInfrastructureError as e:
         logger.error(f"Infrastructure error: {e}")
-        return OSSReturnCode.INFRASTRUCTURE_ERROR
+        return OSSReturnCode.INFRA_ERROR
     except Exception as e:
         # User-caused errors (bad config / bad args) are already caught by
         # the OSSConfigError / OSSInfrastructureError handlers above, so an
@@ -318,7 +318,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # than a config error.
         logger.error(f"Unexpected error: {e}")
         logger.debug("Traceback:", exc_info=True)
-        return OSSReturnCode.INFRASTRUCTURE_ERROR
+        return OSSReturnCode.INFRA_ERROR
 
 
 if __name__ == "__main__":

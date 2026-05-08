@@ -129,12 +129,33 @@ class TestExitCodes(TestCase):
     """Test that exit codes match specification."""
 
     def test_exit_codes_match_spec(self):
-        """Verify exit codes match specification."""
+        """Verify exit codes match VP1 specification."""
+        # Success
         self.assertEqual(OSSReturnCode.SUCCESS, 0)
-        self.assertEqual(OSSReturnCode.TEST_FAILURE, 1)
-        self.assertEqual(OSSReturnCode.CONFIG_ERROR, 2)
-        self.assertEqual(OSSReturnCode.INFRASTRUCTURE_ERROR, 3)
+
+        # User errors (1-127)
+        self.assertEqual(OSSReturnCode.USER_ERROR, 1)
+        self.assertEqual(OSSReturnCode.TEST_CASE_FAILURE, 2)
+        self.assertEqual(OSSReturnCode.INVALID_INPUT, 3)
         self.assertEqual(OSSReturnCode.NO_TESTS_FOUND, 4)
+        self.assertEqual(OSSReturnCode.CONFIG_ERROR, 5)
+
+        # Infrastructure errors (128+)
+        self.assertEqual(OSSReturnCode.INFRA_ERROR, 128)
+        self.assertEqual(OSSReturnCode.TESTBED_ERROR, 129)
+        self.assertEqual(OSSReturnCode.TRANSIENT_ERROR, 130)
+        self.assertEqual(OSSReturnCode.TIMEOUT_ERROR, 131)
+        self.assertEqual(OSSReturnCode.CONNECTION_ERROR, 132)
+
+        # Test helper methods
+        self.assertTrue(OSSReturnCode.SUCCESS.is_success())
+        self.assertFalse(OSSReturnCode.TEST_CASE_FAILURE.is_success())
+
+        self.assertTrue(OSSReturnCode.TEST_CASE_FAILURE.is_user_error())
+        self.assertFalse(OSSReturnCode.INFRA_ERROR.is_user_error())
+
+        self.assertTrue(OSSReturnCode.INFRA_ERROR.is_infra_error())
+        self.assertFalse(OSSReturnCode.TEST_CASE_FAILURE.is_infra_error())
 
 
 class TestResultFormatter(TestCase):
