@@ -1,0 +1,66 @@
+[manifest]
+name = fbthrift
+fbsource_path = xplat/thrift
+shipit_project = fbthrift
+shipit_fbcode_builder = true
+
+[git]
+repo_url = https://github.com/facebook/fbthrift.git
+rev = 1938c1f5013dd7a8e262b281cf970cc529c27619
+
+[cargo]
+cargo_config_file =  source/thrift/lib/rust/.cargo/config.toml
+
+[crate.pathmap]
+fbthrift = thrift/lib/rust
+
+[build]
+builder = cmake
+job_weight_mib = 2048
+
+[cmake.defines.all(not(os=windows),test=on)]
+enable_tests=ON
+
+[cmake.defines.any(os=windows,test=off)]
+enable_tests=OFF
+
+[features]
+default = rpc, benchmark
+rpc =
+benchmark =
+
+[cmake.defines.feature_rpc=off]
+THRIFT_RPC=OFF
+
+[cmake.defines.feature_benchmark=off]
+THRIFT_BENCHMARKS=OFF
+
+[dependencies]
+fmt
+folly
+googletest
+zstd
+xxhash
+
+[dependencies.feature_rpc=on]
+fizz
+libsodium
+wangle
+mvfst
+
+[dependencies.feature_benchmark=on]
+benchmark
+
+[shipit.pathmap]
+xplat/thrift/public_tld = .
+xplat/thrift = thrift
+
+[shipit.strip]
+^xplat/thrift/thrift-config\.h$
+^xplat/thrift/perf/canary.py$
+^xplat/thrift/perf/loadtest.py$
+^xplat/thrift/.castle/.*
+^xplat/thrift/lib/cpp2/fast_thrift/.*\.clang-tidy$
+^xplat/thrift/lib/cpp2/fast_thrift/(.*/)?\.llms(/.*)?$
+^xplat/thrift/lib/cpp2/fast_thrift/.*\.md$
+^xplat/thrift/lib/cpp2/fast_thrift/bench/perf_harness\.sh$

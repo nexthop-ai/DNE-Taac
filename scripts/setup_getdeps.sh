@@ -19,6 +19,15 @@ TARGET="$REPO_ROOT/build/fbcode_builder"
 MANIFESTS_SRC="$REPO_ROOT/getdeps/manifests"
 FBTHRIFT_URL="https://github.com/facebook/fbthrift.git"
 
+# Read the pinned fbthrift rev from our overlay manifest. Same rev that
+# getdeps will check out for the build proper — clone the build/fbcode_builder
+# tooling at the matching SHA so the two stay in lockstep.
+FBTHRIFT_REV=$(grep -E '^rev[[:space:]]*=' "$MANIFESTS_SRC/fbthrift" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+if [ -z "$FBTHRIFT_REV" ]; then
+    echo "ERROR: could not parse rev from $MANIFESTS_SRC/fbthrift" >&2
+    exit 1
+fi
+
 FORCE=0
 if [ "${1:-}" = "--force" ]; then
     FORCE=1
@@ -37,8 +46,9 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "Shallow-cloning fbthrift into $TMP ..."
-git clone --depth 1 "$FBTHRIFT_URL" "$TMP/fbthrift"
+echo "Cloning fbthrift at $FBTHRIFT_REV into $TMP (partial clone) ..."
+git clone --filter=blob:none "$FBTHRIFT_URL" "$TMP/fbthrift"
+git -C "$TMP/fbthrift" checkout "$FBTHRIFT_REV"
 
 echo "Copying build/fbcode_builder/ into repo ..."
 mkdir -p "$(dirname "$TARGET")"
