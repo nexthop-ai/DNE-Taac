@@ -59,17 +59,17 @@ RUN /taac/scripts/setup_getdeps.sh
 
 # ---------- Builder Layer A2: restore from S3 cache (if present) ----------
 # scripts/taac-cache-pull.sh on the host (or a CI step) populates
-# .fbthrift-cache/fbthrift-<sha>.tar.gz with a prior successful build's
-# /scratch/installed/ tree at the same pinned fbthrift SHA. Extract it
-# here so Layer B's getdeps step finds the dep tree already installed
-# and skips the 20+ min fbthrift compile.
+# .fbthrift-cache/fbthrift-python-<sha>.tar.gz with a prior successful
+# build's /scratch/installed/ tree at the same pinned fbthrift-python SHA.
+# Extract it here so Layer B's getdeps step finds the dep tree already
+# installed and skips the 20+ min fbthrift compile.
 #
 # Silent fall-through: missing or empty tarball proceeds to the source
 # build in Layer B.
 COPY .fbthrift-cache /taac/.fbthrift-cache
-RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift \
+RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift-python \
               | head -1 | awk -F'=' '{print $2}' | tr -d ' ') \
-    && TARBALL="/taac/.fbthrift-cache/fbthrift-${REV}.tar.gz" \
+    && TARBALL="/taac/.fbthrift-cache/fbthrift-python-${REV}.tar.gz" \
     && if [ -s "$TARBALL" ]; then \
            echo "cache: restoring $TARBALL ..." \
         && mkdir -p /scratch/installed \

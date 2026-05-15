@@ -3,9 +3,12 @@
 #
 # Tars /scratch/installed/ (sans taac-* runtime build) from the named
 # docker volume `fboss-scratch-<distro>` and uploads to the Nexthop
-# bucket key `vol-shared/fboss/taac/fbthrift-<sha>.tar.gz`, where <sha>
-# is the pinned rev from getdeps/manifests/fbthrift. Consumed by
-# taac-cache-pull.sh on subsequent builds.
+# bucket key `vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz`, where
+# <sha> is the pinned rev from getdeps/manifests/fbthrift-python.
+# Consumed by taac-cache-pull.sh on subsequent builds.
+#
+# We pin `fbthrift-python` (the actual getdeps build target) not
+# `fbthrift` — the two are separate upstream manifests.
 #
 # Prerequisites:
 #   - Successful prior build via run-fboss-docker.sh getdeps-build,
@@ -32,7 +35,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MANIFEST="$REPO_ROOT/getdeps/manifests/fbthrift"
+MANIFEST="$REPO_ROOT/getdeps/manifests/fbthrift-python"
 SCRATCH_VOLUME="fboss-scratch-$DISTRO"
 BUCKET_PREFIX="vol-shared/fboss/taac"
 
@@ -58,11 +61,11 @@ if ! docker volume inspect "$SCRATCH_VOLUME" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Sanity-check the volume actually contains an fbthrift install tree.
+# Sanity-check the volume actually contains an fbthrift-python install tree.
 if ! docker run --rm -v "$SCRATCH_VOLUME":/scratch:ro alpine:3 \
-        sh -c 'ls -d /scratch/installed/fbthrift-* 2>/dev/null | head -1' \
-        | grep -q '^/scratch/installed/fbthrift-'; then
-    echo "ERROR: /scratch/installed/fbthrift-* not found in volume '$SCRATCH_VOLUME'" >&2
+        sh -c 'test -d /scratch/installed/fbthrift-python && echo found' \
+        | grep -q '^found$'; then
+    echo "ERROR: /scratch/installed/fbthrift-python not found in volume '$SCRATCH_VOLUME'" >&2
     echo "Was the getdeps build successful?" >&2
     exit 1
 fi
@@ -70,7 +73,7 @@ fi
 TMP_HOST="$(mktemp -d)"
 trap 'rm -rf "$TMP_HOST"' EXIT
 
-TARBALL_NAME="fbthrift-$REV.tar.gz"
+TARBALL_NAME="fbthrift-python-$REV.tar.gz"
 TARBALL="$TMP_HOST/$TARBALL_NAME"
 
 echo "Packaging /scratch/installed/ from volume '$SCRATCH_VOLUME' (excluding taac-*) ..."
