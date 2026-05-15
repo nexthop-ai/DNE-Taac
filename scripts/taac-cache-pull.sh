@@ -1,12 +1,16 @@
 #!/bin/bash
 # Host-side cache restore for the fbthrift install tree.
 #
-# Reads the pinned fbthrift SHA from getdeps/manifests/fbthrift and tries
-# to pull `vol-shared/fboss/taac/fbthrift-<sha>.tar.gz` from the Nexthop
-# bucket into $REPO_ROOT/.fbthrift-cache/. The Dockerfile.taac builder
-# stage then COPYs that dir in and extracts the tarball into
+# Reads the pinned fbthrift SHA from getdeps/manifests/fbthrift-python and
+# tries to pull `vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz` from
+# the Nexthop bucket into $REPO_ROOT/.fbthrift-cache/. The Dockerfile.taac
+# builder stage then COPYs that dir in and extracts the tarball into
 # /scratch/installed/, letting the subsequent getdeps build skip the
 # 20+ min fbthrift compile.
+#
+# We pin `fbthrift-python` (the actual getdeps build target) not `fbthrift`
+# — the two are separate upstream manifests, and the build only references
+# fbthrift-python's dep graph.
 #
 # Cache miss, network error, or `ng` not installed all silent-fall-through
 # (exit 0). The Dockerfile is the only consumer and it tolerates a missing
@@ -16,7 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MANIFEST="$REPO_ROOT/getdeps/manifests/fbthrift"
+MANIFEST="$REPO_ROOT/getdeps/manifests/fbthrift-python"
 CACHE_DIR="$REPO_ROOT/.fbthrift-cache"
 BUCKET_PREFIX="vol-shared/fboss/taac"
 
@@ -37,12 +41,12 @@ if ! command -v ng >/dev/null 2>&1; then
 fi
 
 mkdir -p "$CACHE_DIR"
-TARBALL="$CACHE_DIR/fbthrift-$REV.tar.gz"
+TARBALL="$CACHE_DIR/fbthrift-python-$REV.tar.gz"
 
 # Auto-cleanup: prune any cached tarballs for revs other than the one we
 # care about right now. Branch-switching across pins would otherwise
 # leave 1+ GB stale tarballs sitting on disk.
-for f in "$CACHE_DIR"/fbthrift-*.tar.gz; do
+for f in "$CACHE_DIR"/fbthrift-python-*.tar.gz; do
     [ -e "$f" ] || continue
     if [ "$f" != "$TARBALL" ]; then
         echo "cache-pull: pruning stale $f"
@@ -55,7 +59,7 @@ if [ -s "$TARBALL" ]; then
     exit 0
 fi
 
-KEY="$BUCKET_PREFIX/fbthrift-$REV.tar.gz"
+KEY="$BUCKET_PREFIX/fbthrift-python-$REV.tar.gz"
 echo "cache-pull: fetching $KEY -> $TARBALL ..."
 
 if ! ng bucket get "$KEY" "$TARBALL" 2>/dev/null; then

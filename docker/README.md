@@ -64,9 +64,9 @@ On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps
 
 ### How it works
 
-1. [`getdeps/manifests/fbthrift`](../getdeps/manifests/fbthrift) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. This is the single source of truth for the cache key — the bucket path, the bootstrap clone in `setup_getdeps.sh`, and getdeps' own checkout all derive from it.
+1. [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbthrift-python) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. This is the single source of truth for the cache key — the bucket path, the bootstrap clone in `setup_getdeps.sh`, and getdeps' own checkout all derive from it.
 
-2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads the rev, does `ng bucket get vol-shared/fboss/taac/fbthrift-<sha>.tar.gz` into `.fbthrift-cache/`, and exits 0 either way. Stale tarballs from prior rev pins are auto-pruned.
+2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads the rev, does `ng bucket get vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz` into `.fbthrift-cache/`, and exits 0 either way. Stale tarballs from prior rev pins are auto-pruned.
 
 3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball matching the pinned SHA is present, extracts it into `/scratch/installed/`. Layer B's getdeps step then sees the dep tree already installed and skips the 20-minute compile.
 
@@ -82,7 +82,9 @@ Anything that would interrupt a smooth cache hit — empty bucket key, network f
 
 ### Bumping the fbthrift pin
 
-Edit the `rev = ...` line in `getdeps/manifests/fbthrift` and commit. `setup_getdeps.sh` will clone the bootstrap tooling at the matching SHA, and the cache key on the next build will reflect the new pin — guaranteeing a cache miss (and a one-time source rebuild) until someone runs `taac-cache-push.sh` at the new SHA.
+Edit the `rev = ...` line in `getdeps/manifests/fbthrift-python` and commit. `setup_getdeps.sh` will clone the bootstrap tooling at the matching SHA, and the cache key on the next build will reflect the new pin — guaranteeing a cache miss (and a one-time source rebuild) until someone runs `taac-cache-push.sh` at the new SHA.
+
+We pin `fbthrift-python` rather than `fbthrift` because `fbthrift-python` is the actual getdeps build target Layer B uses — the two are separate upstream manifests, and `fbthrift-python` doesn't transitively depend on `fbthrift`. Pinning `fbthrift` would silently no-op.
 
 ## In-container iteration
 
