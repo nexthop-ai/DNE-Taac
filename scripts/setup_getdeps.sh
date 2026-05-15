@@ -21,10 +21,13 @@ FBTHRIFT_URL="https://github.com/facebook/fbthrift.git"
 
 # Read the pinned fbthrift rev from our overlay manifest. Same rev that
 # getdeps will check out for the build proper — clone the build/fbcode_builder
-# tooling at the matching SHA so the two stay in lockstep.
-FBTHRIFT_REV=$(grep -E '^rev[[:space:]]*=' "$MANIFESTS_SRC/fbthrift" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+# tooling at the matching SHA so the two stay in lockstep. We pin
+# `fbthrift-python` (the actual getdeps build target Dockerfile.taac uses),
+# not `fbthrift` — fbthrift-python is a separate manifest in upstream and
+# does not transitively depend on fbthrift.
+FBTHRIFT_REV=$(grep -E '^rev[[:space:]]*=' "$MANIFESTS_SRC/fbthrift-python" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
 if [ -z "$FBTHRIFT_REV" ]; then
-    echo "ERROR: could not parse rev from $MANIFESTS_SRC/fbthrift" >&2
+    echo "ERROR: could not parse rev from $MANIFESTS_SRC/fbthrift-python" >&2
     exit 1
 fi
 
