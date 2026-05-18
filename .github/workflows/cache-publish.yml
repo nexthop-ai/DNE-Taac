@@ -29,6 +29,11 @@ jobs:
       TAAC_CACHE_PUT_CMD: ${{ vars.TAAC_CACHE_PUT_CMD }}
 
     steps:
+      # No `ref:` — actions/checkout defaults to the workflow's ref, which
+      # for workflow_dispatch is the default branch (main). That means
+      # Pipeline 1's CI publish always builds against main, satisfying the
+      # build/runtime spec's "if local workspace unspecified, clones from
+      # main" requirement.
       - uses: actions/checkout@v6
 
       - name: Build FBOSS base image
