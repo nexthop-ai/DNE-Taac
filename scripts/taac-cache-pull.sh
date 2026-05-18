@@ -62,8 +62,12 @@ fi
 KEY="$BUCKET_PREFIX/fbthrift-python-$REV.tar.gz"
 echo "cache-pull: fetching $KEY -> $TARBALL ..."
 
-if ! ng bucket get "$KEY" "$TARBALL" 2>/dev/null; then
-    echo "cache-pull: miss ($KEY) — fbthrift will be built from source"
+# Keep stderr — we want to see the difference between a clean 404 (real
+# miss → fall through silently is fine) and an auth/DNS/network failure
+# (operator likely needs to fix it). Suppressing stderr made misconfigured
+# `ng` look identical to a cache miss, which is hard to diagnose.
+if ! ng bucket get "$KEY" "$TARBALL"; then
+    echo "cache-pull: miss or error ($KEY) — fbthrift will be built from source"
     rm -f "$TARBALL"
     exit 0
 fi
