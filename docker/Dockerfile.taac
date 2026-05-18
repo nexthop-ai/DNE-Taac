@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
 # Derived image: TAAC built and installed, packaged for vendor consumption.
 #
 # Multi-stage build:
@@ -173,7 +173,7 @@ COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/p
 # shippable image. The tarball is needed by Stage 1's Layer A2 (which
 # COPYs it explicitly), but Stage 2 doesn't need it; without this
 # exclusion `COPY . /taac` would drag it in. Requires the
-# `# syntax=docker/dockerfile:1.7` directive at the top of this file.
+# `# syntax=docker/dockerfile:1` directive at the top of this file.
 COPY --exclude=.fbthrift-cache . /taac
 
 # Entrypoint resolves the per-config install hash + LD paths and sets
