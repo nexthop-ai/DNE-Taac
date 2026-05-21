@@ -19,6 +19,25 @@ __pycache__/
 # its own build/fbcode_builder/.
 build/
 
+# Sibling getdeps source dirs at the repo root from local packaging
+# runs. The in-container build regenerates these fresh in Layer A —
+# they're pure context bloat (multi-GB) and not used by any COPY.
+fbthrift-python/
+fizz-python/
+folly-python/
+mvfst-python/
+wangle-python/
+benchmark-*/
+boost-python-*/
+fast_float-*/
+fboss-thrift-defs-*/
+fmt-python-*/
+gflags-*/
+glog-*/
+googletest-*/
+libevent-python-*/
+liboqs-*/
+
 # Local-dev cruft that occasionally lands in the repo root.
 .vscode/
 .idea/
