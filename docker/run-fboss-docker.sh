@@ -303,6 +303,19 @@ case "${1:-}" in
             echo "--no-cache: skipping S3 cache restore, forcing full source build"
             rm -f "$BUILD_CONTEXT/.fbthrift-cache"/fbthrift-python-*.tar.gz
         else
+            # First-run hint: _cache-config.sh is gitignored, so new
+            # developers may not realize they need to copy the template.
+            # Surface the consequence here — before cache-pull starts —
+            # so they can short-circuit out instead of waiting ~22 min
+            # for a silent source build. CI (which sets TAAC_CACHE_URI
+            # via env) and configured local dev (which has the file)
+            # both bypass the note.
+            if [[ ! -f "$BUILD_CONTEXT/scripts/_cache-config.sh" && -z "${TAAC_CACHE_URI:-}" ]]; then
+                echo "note: scripts/_cache-config.sh not found and TAAC_CACHE_URI not set —"
+                echo "      cache will be a no-op, build falls through to ~22 min source compile."
+                echo "      To enable: cp scripts/_cache-config.sh.example scripts/_cache-config.sh"
+                echo "                 and set TAAC_CACHE_URI in the new file."
+            fi
             "$BUILD_CONTEXT/scripts/taac-cache-pull.sh" || true
         fi
         echo "Building fboss-taac:$DISTRO from docker/Dockerfile.taac (BASE=$IMAGE_TAG, context=$BUILD_CONTEXT) ..."
