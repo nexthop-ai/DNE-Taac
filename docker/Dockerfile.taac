@@ -10,13 +10,16 @@
 #       and strips debug symbols from .so files. Safe to do all of this at
 #       the END of the builder stage because no more cmake configure runs.
 #
-#   Stage 2 (runtime): FROM quay.io/centos/centos:stream9
-#       Slim CentOS Stream 9 base + Python 3.12 + the runtime system libs
-#       the compiled .so files dynamically need (libsodium, libssl,
-#       double-conversion, libdwarf, libaio, libunwind, etc.). Selective
-#       COPY --from=builder pulls in only the trimmed install tree and the
-#       Python site-packages. The fboss-build-env base (gcc, clang*,
-#       sccache, dev headers) is left behind in the builder stage.
+#   Stage 2 (runtime): FROM ${BASE} — same fboss-build-env as Stage 1.
+#       Single ABI surface across build and run: no risk of glibc /
+#       libstdc++ drift between a separately-based runtime image and
+#       the builder, and no manual chasing of every new runtime lib
+#       that fbthrift / folly drag in over time. Selective
+#       COPY --from=builder pulls in the trimmed install tree and the
+#       Python site-packages. The base image carries the compilers and
+#       dev headers along — runtime is larger than a pure
+#       centos:stream9 + dnf-install design (~500 MB – 1 GB content
+#       growth), traded for consistency + simpler maintenance.
 #
 # Builder cache layout — same volatility split as the single-stage version:
 #
@@ -117,27 +120,12 @@ RUN find /scratch/installed -name '*.a' -delete \
     && rm -rf /scratch/extracted /scratch/downloads /scratch/repos
 
 # =====================================================================
-# Stage 2: slim runtime
+# Stage 2: runtime
 # =====================================================================
-FROM quay.io/centos/centos:stream9 AS runtime
-
-# Install Python 3.12 and the system runtime libs the compiled .so files
-# need (ldd survey of folly/fbthrift/etc.). Matched against CentOS Stream
-# 9's libstdc++/glibc which the builder also uses, so ABI is consistent.
-# libsodium ships in EPEL; libdwarf and libunwind in CRB (CodeReady
-# Builder). Enable both first.
-RUN dnf install -y --setopt=install_weak_deps=False \
-        epel-release dnf-plugins-core \
-    && dnf config-manager --set-enabled crb \
-    && dnf install -y --setopt=install_weak_deps=False \
-        python3.12 \
-        libsodium xxhash-libs double-conversion \
-        snappy libdwarf libaio libunwind \
-    && dnf clean all \
-    && rm -rf /var/cache/dnf /var/log/dnf*
-
-# Default `python3` symlink so the entrypoint's `python3 ...` works.
-RUN ln -sf /usr/bin/python3.12 /usr/bin/python3
+# FROM ${BASE} — same fboss-build-env as the builder stage. Python 3.12
+# and the runtime system libs (libsodium / libdwarf / libunwind / etc.)
+# are already present from the base; no dnf install needed.
+FROM ${BASE} AS runtime
 
 # Pull the slimmed install tree across.
 COPY --from=builder /scratch/installed /scratch/installed

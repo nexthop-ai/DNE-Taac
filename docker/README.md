@@ -5,7 +5,7 @@
 | File | Purpose |
 |---|---|
 | `run-fboss-docker.sh` | Wrapper script. Builds FBOSS's public base image and offers subcommands (`build-base`, `getdeps-build`, `shell`, `run`, `build-taac-image`). Entry point for everything below. |
-| `Dockerfile.taac` | Multi-stage recipe for the vendor-shippable derived image (`fboss-taac:<distro>`). Stage 1 (builder) uses `fboss-build-env` to compile TAAC + transitive deps and prune compile-time-only artifacts; Stage 2 (runtime) uses a slim CentOS Stream 9 base with only the Python interpreter and the runtime system libs the compiled `.so` files dynamically need. |
+| `Dockerfile.taac` | Multi-stage recipe for the vendor-shippable derived image (`fboss-taac:<distro>`). Stage 1 (builder) uses `fboss-build-env` to compile TAAC + transitive deps and prune compile-time-only artifacts; Stage 2 (runtime) uses the **same** `fboss-build-env` base for a single ABI surface across build and run, with selective `COPY --from=builder` to pull in just the pruned install tree and Python site-packages. |
 | `taac-entrypoint.sh` | `ENTRYPOINT` for the derived image. Resolves the per-config install hash + native lib paths and exports `PYTHONPATH` / `LD_LIBRARY_PATH` / `TAAC_OSS` before exec'ing the user command. |
 | `taac-regen-thrift.sh` | Installed as `/usr/local/bin/taac-regen-thrift` inside the derived image. Regenerates TAAC's Python thrift bindings from a bind-mounted workspace using the baked-in `thrift1` compiler + fbthrift annotation headers + FBOSS schema tree. Enables "pull image, edit thrift on host, run in container" iteration without rebuilding the image. |
 
@@ -29,11 +29,11 @@ fboss-build-env:<distro>              (FBOSS's open-source build environment, ~4
         ▼
 [builder stage]                       (intermediate, not tagged)
         │
-        │  Stage 2 (runtime) in Dockerfile.taac, FROM centos:stream9.
-        │  Installs Python 3.12 + runtime system libs (via dnf, with
-        │  EPEL + CRB enabled for libsodium / libdwarf / libunwind);
-        │  selectively COPY --from=builder the pruned install tree,
-        │  Python site-packages, and taac-regen-thrift helper.
+        │  Stage 2 (runtime) in Dockerfile.taac, FROM fboss-build-env
+        │  (same base as Stage 1 — single ABI surface, no separate dnf
+        │  install needed). Selectively COPY --from=builder the pruned
+        │  install tree, Python site-packages, and taac-regen-thrift
+        │  helper.
         │
         │  ./docker/run-fboss-docker.sh build-taac-image
         ▼
@@ -53,7 +53,6 @@ fboss-taac:<distro>                    (vendor-shippable, ~1.3 GB; entrypoint + 
 | `getdeps/manifests/*` or `scripts/setup_getdeps.sh` | Builder Layer A onward: full deps compile (folly, fizz, wangle, mvfst, fbthrift) + cleanup + runtime stage COPYs | ~22 min |
 | `requirements.txt` | Builder Layer E onward: pip install + TAAC build + cleanup + runtime stage COPYs | ~1-2 min |
 | Any other TAAC source | Builder Layer D onward: COPY context + TAAC's own getdeps build (just thrift codegen + Python install) + cleanup + runtime stage COPYs | ~1-2 min |
-| Runtime stage `dnf install` line | Runtime layer onward only (builder cached) | ~30 sec |
 | `docker/Dockerfile.taac` itself | Depends which line moves; usually just the modified layer onward | seconds–minutes |
 | `docker/taac-entrypoint.sh` | Final two runtime layers only | ~1 sec |
 
