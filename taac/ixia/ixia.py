@@ -23,6 +23,14 @@ TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 if not TAAC_OSS:
     from configerator.client import ConfigeratorClient
+else:
+    # OSS mode: no Meta config service. Stub the client to a no-op so the
+    # rest of Ixia.__init__ doesn't fail with NameError on cfgr_client
+    # construction. Methods that would actually use cfgr_client gate
+    # themselves separately on TAAC_OSS.
+    class ConfigeratorClient:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            pass
 
 from ixia.ixia import types as ixia_types
 from ixnetwork_restpy.assistants.sessions.sessionassistant import (
@@ -721,9 +729,11 @@ class Ixia:
             )
 
         except ValueError:
-            raise InvalidInputError(
-                f"Invalid IXIA API Server IP address {ixia_server_ip}. Please check!"
-            )
+            # Not a literal IPv4/IPv6 address — treat as a hostname.
+            # ixnetwork_restpy's SessionAssistant resolves DNS itself, so
+            # passing the hostname through is sufficient. No IPv6 escaping
+            # needed for hostnames.
+            return ixia_server_ip
 
     @staticmethod
     def get_port_identifier(port_name: str) -> str:
