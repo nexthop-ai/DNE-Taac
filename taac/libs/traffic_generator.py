@@ -127,7 +127,7 @@ class TrafficGenerator:
         self.tear_down_session = tear_down_session
         self.cleanup_failed_setup = cleanup_failed_setup
         self.override_traffic_items = override_traffic_items
-        self.ixia: TaacIxia = None  # pyre-ignore[8]
+        self.ixia: TaacIxia = ...
         self.logger = logger or get_root_logger()
         self.session_name = session_name
         self.basic_traffic_item_configs = basic_traffic_item_configs or []
@@ -477,7 +477,6 @@ class TrafficGenerator:
                     "No traffic items created. Please specify the source and destination "
                     "endpoints of the traffic items in BasicTrafficItemConfigs"
                 )
-        # pyrefly: ignore [unsupported-operation]
         all_traffic_items = traffic_items + self.user_defined_traffic_items
         self._traffic_items = all_traffic_items
         return all_traffic_items
@@ -526,37 +525,45 @@ class TrafficGenerator:
             v6_addresses_config or not v4_addresses_config
         ):  # if neither v4 or v6 is specified, resort to auto ip configuration
             v6_addresses_config = v6_addresses_config or taac_types.IpAddressesConfig()
+            prefix_v6 = None
+            prefix_len = None
             if v6_addresses_config.gateway_starting_ip:
                 prefix_len = v6_addresses_config.mask
                 prefix_v6 = v6_addresses_config.gateway_starting_ip
             else:
                 hostname, interface = endpoint_str.split(":")
                 driver = await async_get_device_driver(hostname)
-                prefix_v6, prefix_len = (
-                    # pyre-fixme[16]: `AbstractSwitch` has no attribute
-                    #  `async_get_interfaces_ipv6_address`.
-                    await driver.async_get_interfaces_ipv6_address([interface])
-                )[interface]
-            ixia_starting_ip = (
-                v6_addresses_config.starting_ip
-                # pyrefly: ignore [bad-argument-type]
-                or get_next_available_ipv6_address(prefix_v6, prefix_len)
-            )
-            ipv6_addresses = ixia_types.IPv6AddressInfo(
-                starting_ip=ixia_starting_ip,
-                subnet_mask=(
-                    v6_addresses_config.mask or prefix_len or DEFAULT_PREFIX_LEN_V6
-                ),
-                increment_ip=(
-                    v6_addresses_config.increment_ip or IXIA_STARTING_IP_INCREMENT_V6
-                ),
-                gateway_starting_ip=prefix_v6,
-                gateway_increment_ip=(
-                    v6_addresses_config.gateway_increment_ip
-                    or IXIA_GATEWAY_IP_INCREMENT_V6
-                ),
-                start_index=v6_addresses_config.start_index,
-            )
+                # pyre-fixme[16]: `AbstractSwitch` has no attribute
+                #  `async_get_interfaces_ipv6_address`.
+                ipv6_info = await driver.async_get_interfaces_ipv6_address(
+                    [interface]
+                )
+                # OSS L3 configs (vlan + IPv4-only) leave global IPv6
+                # absent on the interface; the helper returns an empty
+                # dict in that case. Skip IPv6 setup rather than KeyError.
+                if interface in ipv6_info:
+                    prefix_v6, prefix_len = ipv6_info[interface]
+            if prefix_v6 is not None:
+                ixia_starting_ip = (
+                    v6_addresses_config.starting_ip
+                    or get_next_available_ipv6_address(prefix_v6, prefix_len)
+                )
+                ipv6_addresses = ixia_types.IPv6AddressInfo(
+                    starting_ip=ixia_starting_ip,
+                    subnet_mask=(
+                        v6_addresses_config.mask or prefix_len or DEFAULT_PREFIX_LEN_V6
+                    ),
+                    increment_ip=(
+                        v6_addresses_config.increment_ip
+                        or IXIA_STARTING_IP_INCREMENT_V6
+                    ),
+                    gateway_starting_ip=prefix_v6,
+                    gateway_increment_ip=(
+                        v6_addresses_config.gateway_increment_ip
+                        or IXIA_GATEWAY_IP_INCREMENT_V6
+                    ),
+                    start_index=v6_addresses_config.start_index,
+                )
         if v4_addresses_config:
             ipv4_addresses = ixia_types.IPv4AddressInfo(
                 starting_ip=none_throws(v4_addresses_config.starting_ip),
@@ -1227,7 +1234,6 @@ class TrafficGenerator:
                     ).gateway_starting_ip
                 case taac_types.ReferenceType.DST_LINK_LOCAL_IPV6_ADDRESS:
                     value = mac_to_ipv6_link_local(
-                        # pyrefly: ignore [bad-argument-type]
                         self.name_to_endpoint[dst_hostname].mac_address
                     )
             reference_values.append(value)
