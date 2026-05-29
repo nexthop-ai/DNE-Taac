@@ -5601,6 +5601,18 @@ class Ixia:
         """
         Configure Ixia chassis with primary chassis as master and others in daisy chain topology.
         """
+        # Single-chassis test (typical OSS case where the IxNetwork
+        # API server is a separate Linux box not on a chassis IP):
+        # daisy-chain configuration is meaningless. The existing
+        # fall-through below would try to add primary_chassis_ip as
+        # a chassis, which hangs forever in "polling" state when
+        # primary_chassis_ip is just the API server.
+        chassis_ips_in_use = {
+            port_config.phy_port_config.chassis_ip
+            for port_config in none_throws(self.ixia_config).port_configs
+        }
+        if len(chassis_ips_in_use) <= 1:
+            return
         primary_chassis_ip = ipaddress.ip_address(self.primary_chassis_ip)
         vport = None
         if not any(

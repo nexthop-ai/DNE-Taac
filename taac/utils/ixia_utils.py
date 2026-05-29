@@ -107,8 +107,14 @@ def fetch_ixia_password_oss() -> str:
         FileNotFoundError: If the vendor_ixia_pwd.csv file is not found.
         ValueError: If the CSV file exists but doesn't contain a valid password.
     """
-    import csv
+    import os
     from pathlib import Path
+
+    # Env-var override — preferred for ephemeral runs (CI, ad-hoc smoke)
+    # so the password never has to land in the in-repo placeholder file.
+    env_password = os.environ.get("TAAC_IXIA_PASSWORD")
+    if env_password:
+        return env_password
 
     # Look for the CSV file in the oss_topology_info directory
     csv_path = (
