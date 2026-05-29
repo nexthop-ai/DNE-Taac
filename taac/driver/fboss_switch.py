@@ -4048,7 +4048,15 @@ class FbossSwitch(AbstractSwitch):
     ) -> Dict[str, Tuple[str, int]]:
         ports = await self.async_get_all_port_info()
         interface_details = await self.async_get_all_interfaces()
-        interface_to_vlan_id = {port.name: port.vlans[0] for port in ports.values()}
+        # Skip ports without vlans (uplinks, unconfigured ports). The
+        # dict comprehension iterates ALL ports in the agent's view, not
+        # just the interfaces we care about, so any port with empty
+        # `vlans` would crash the whole lookup on `port.vlans[0]`.
+        interface_to_vlan_id = {
+            port.name: port.vlans[0]
+            for port in ports.values()
+            if port.vlans
+        }
         interface_to_ip_addr = {}
         for interface in interfaces:
             interface_vlan_id = interface_to_vlan_id.get(interface)
