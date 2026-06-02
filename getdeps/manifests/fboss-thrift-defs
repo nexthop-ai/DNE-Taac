@@ -3,6 +3,10 @@ name = fboss-thrift-defs
 
 [git]
 repo_url = https://github.com/facebook/fboss.git
+# TODO: pin to a specific fboss commit (or tag) for reproducible builds.
+# Tracking HEAD means the FBOSS .thrift schemas we codegen against can
+# change shape between builds with no diff on this repo. Add a `rev = ...`
+# line once we settle on a cadence for bumping it.
 
 [build]
 builder = nop

@@ -56,20 +56,40 @@ if(TAAC_BUILD_PYTHON_THRIFT)
 endif()
 
 # ---- Install thrift-python wheel (runtime imported by TAAC) ----
-find_path(FBTHRIFT_WHEELS_DIR
-    NAMES "thrift"
-    PATHS "${FBThrift_DIR}/../../../share/thrift/wheels"
-    NO_DEFAULT_PATH
-)
-if(FBTHRIFT_WHEELS_DIR)
-    install(CODE "
-        execute_process(
-            COMMAND ${Python3_EXECUTABLE} -m pip install
-                --break-system-packages
-                --find-links ${FBTHRIFT_WHEELS_DIR} thrift
-        )
-    ")
+# The wheel is produced by the fbthrift-python manifest, NOT fbthrift —
+# getdeps installs each into its own hash-suffixed prefix. Scan
+# CMAKE_PREFIX_PATH (set by the getdeps cmake builder with every
+# transitive install prefix) for the wheels dir, and fail the configure
+# loudly if it's missing instead of silently skipping pip install.
+#
+# CMAKE_PREFIX_PATH from the environment is `:`-separated (POSIX), but
+# CMake `foreach()` iterates `;`-separated lists. Convert here so each
+# prefix is a single iteration.
+set(FBTHRIFT_WHEELS_DIR "")
+string(REPLACE ":" ";" _cmake_prefix_path_list "$ENV{CMAKE_PREFIX_PATH}")
+foreach(_prefix IN LISTS _cmake_prefix_path_list)
+    file(GLOB _wheel_candidates "${_prefix}/share/thrift/wheels/thrift-*.whl")
+    if(_wheel_candidates)
+        set(FBTHRIFT_WHEELS_DIR "${_prefix}/share/thrift/wheels")
+        break()
+    endif()
+endforeach()
+if(NOT FBTHRIFT_WHEELS_DIR)
+    message(FATAL_ERROR
+        "Cannot locate the fbthrift-python wheel under any "
+        "CMAKE_PREFIX_PATH entry. Expected "
+        "<prefix>/share/thrift/wheels/thrift-*.whl from the "
+        "fbthrift-python manifest. Without this, `import thrift` fails at "
+        "runtime."
+    )
 endif()
+install(CODE "
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -m pip install
+            --break-system-packages
+            --find-links ${FBTHRIFT_WHEELS_DIR} thrift
+    )
+")
 
 # ---- Install third-party pip dependencies ----
 install(CODE "
