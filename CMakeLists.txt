@@ -82,9 +82,10 @@ install(CODE "
 
 # ---- Install TAAC Python source ----
 # Destination is RELATIVE to CMAKE_INSTALL_PREFIX so getdeps' --prefix
-# (which points at /scratch/installed/taac-<HASH>/) actually places the
-# files where expected. An absolute ${Python3_SITELIB} would land the
-# files in the container's system Python and they'd disappear on exit.
+# (which points at <scratch>/installed/taac-<HASH>/) actually places the
+# files where expected. An absolute ${Python3_SITELIB} would bypass the
+# install prefix and land the files in the host's system Python — outside
+# the build's install tree.
 install(
     DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/taac
     DESTINATION lib/python3/site-packages
