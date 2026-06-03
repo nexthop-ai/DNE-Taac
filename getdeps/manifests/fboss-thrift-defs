@@ -3,10 +3,16 @@ name = fboss-thrift-defs
 
 [git]
 repo_url = https://github.com/facebook/fboss.git
-# TODO: pin to a specific fboss commit (or tag) for reproducible builds.
-# Tracking HEAD means the FBOSS .thrift schemas we codegen against can
-# change shape between builds with no diff on this repo. Add a `rev = ...`
-# line once we settle on a cadence for bumping it.
+# Pinning fboss to a specific commit for reproducible builds. Tracking
+# HEAD lets schema additions or splits in fboss/main silently break our
+# codegen between runs with no diff on this repo (concrete instance:
+# fboss main split TBgpPath out of bgp_thrift.thrift into a new
+# bgp_route_types.thrift, which broke our bgp_thrift_py import chain
+# until we added the bgp_route_types_py binding). Bump this SHA when
+# we want to pick up new fboss schemas, and add corresponding
+# add_taac_thrift_python_library bindings in thrift/CMakeLists.txt
+# at the same time.
+rev = a61b92c23e6e8a97db2ff58006d34f0224434da6
 
 [build]
 builder = nop
