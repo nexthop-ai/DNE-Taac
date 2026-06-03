@@ -25,7 +25,9 @@ FBTHRIFT_URL="https://github.com/facebook/fbthrift.git"
 # `fbthrift-python` (the actual getdeps build target Dockerfile.taac uses),
 # not `fbthrift` — fbthrift-python is a separate manifest in upstream and
 # does not transitively depend on fbthrift.
-FBTHRIFT_REV=$(grep -E '^rev[[:space:]]*=' "$MANIFESTS_SRC/fbthrift-python" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+# shellcheck source=scripts/_lib_rev.sh
+source "$SCRIPT_DIR/_lib_rev.sh"
+FBTHRIFT_REV=$(get_fbthrift_rev "$MANIFESTS_SRC/fbthrift-python")
 if [ -z "$FBTHRIFT_REV" ]; then
     echo "ERROR: could not parse rev from $MANIFESTS_SRC/fbthrift-python" >&2
     exit 1

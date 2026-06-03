@@ -29,7 +29,9 @@ if [ ! -f "$MANIFEST" ]; then
     exit 0
 fi
 
-REV=$(grep -E '^rev[[:space:]]*=' "$MANIFEST" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+# shellcheck source=scripts/_lib_rev.sh
+source "$SCRIPT_DIR/_lib_rev.sh"
+REV=$(get_fbthrift_rev "$MANIFEST")
 if [ -z "$REV" ]; then
     echo "cache-pull: no rev pinned in $MANIFEST, skipping"
     exit 0
