@@ -68,7 +68,9 @@ On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps
 
 2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads the rev, does `ng bucket get vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz` into `.fbthrift-cache/`, and exits 0 either way. Stale tarballs from prior rev pins are auto-pruned.
 
-3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball matching the pinned SHA is present, extracts it into `/scratch/installed/`. Layer B's getdeps step then sees the dep tree already installed and skips the 20-minute compile.
+3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball matching the pinned SHA is present, extracts it into `/scratch/installed/` and writes a sentinel file `/scratch/.cache-hit`. Layer B detects the sentinel and **skips the getdeps invocation entirely**, trusting the restored install tree. Layer F (TAAC's own build) uses `--no-deps` so it doesn't re-assess transitive deps either.
+
+   The "skip entirely" strategy (vs. "let getdeps verify the install tree") avoids a subtle issue: getdeps's `GitFetcher.update()` re-clones source into `/scratch/repos/` when missing and sets `sources_changed=True`, which forces a full rebuild even with a valid install tree. Skipping at the layer boundary sidesteps this — we own the cache trust decision, not getdeps.
 
 4. **Push (manual)**: After a successful build via `run-fboss-docker.sh getdeps-build`, run [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>` to publish the resulting install tree under the current pinned rev's key, so the next developer hits the cache.
 

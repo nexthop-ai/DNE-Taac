@@ -33,6 +33,10 @@
 #                     Defaults to docker's bridge network. Use `host` to give
 #                     the container access to internal-DNS hostnames (e.g.
 #                     for live-device runner smokes against fboss101.*).
+#   --no-cache        for `build-taac-image` only: skip the S3 cache restore
+#                     and force a full source build of fbthrift-python +
+#                     transitive deps. Use when you want to validate the
+#                     cold path or when the cache is suspected stale.
 #
 # Env overrides:
 #   FBOSS_IMAGE_SRC   Where to clone/find facebook/fboss for the build context
@@ -46,6 +50,7 @@ set -e
 
 DISTRO=""
 NETWORK=""
+NO_CACHE=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --distro)
@@ -55,6 +60,10 @@ while [[ $# -gt 0 ]]; do
         --network)
             NETWORK="$2"
             shift 2
+            ;;
+        --no-cache)
+            NO_CACHE=1
+            shift
             ;;
         *)
             break
@@ -155,6 +164,9 @@ Optional flags (must precede the subcommand):
   --network MODE  pass through to docker run --network (e.g. \`host\`); defaults to
                   docker's bridge. Use \`host\` for live-device smokes that need
                   internal-DNS hostnames.
+  --no-cache      for \`build-taac-image\` only: skip the S3 cache restore and
+                  force a full source build. Use to validate the cold path or
+                  when the cache is suspected stale.
 EOF
 }
 
@@ -183,9 +195,15 @@ case "${1:-}" in
         # Best-effort restore the fbthrift install tree from the Nexthop
         # bucket. Silent fall-through on miss. Dockerfile.taac's Layer A2
         # COPYs .fbthrift-cache/ in and extracts if a matching tarball is
-        # present.
+        # present. --no-cache (flag above) skips this step and wipes any
+        # local tarball so Layer A2 falls through to the source build.
         mkdir -p "$REPO_ROOT/.fbthrift-cache"
-        "$REPO_ROOT/scripts/taac-cache-pull.sh" || true
+        if [[ "$NO_CACHE" -eq 1 ]]; then
+            echo "--no-cache: skipping S3 cache restore, forcing full source build"
+            rm -f "$REPO_ROOT/.fbthrift-cache"/fbthrift-python-*.tar.gz
+        else
+            "$REPO_ROOT/scripts/taac-cache-pull.sh" || true
+        fi
         echo "Building fboss-taac:$DISTRO from docker/Dockerfile.taac (BASE=$IMAGE_TAG) ..."
         docker build \
             -f "$REPO_ROOT/docker/Dockerfile.taac" \

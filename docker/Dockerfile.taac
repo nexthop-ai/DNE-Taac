@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Derived image: TAAC built and installed, packaged for vendor consumption.
 #
 # Multi-stage build:
@@ -61,11 +62,11 @@ RUN /taac/scripts/setup_getdeps.sh
 # scripts/taac-cache-pull.sh on the host (or a CI step) populates
 # .fbthrift-cache/fbthrift-python-<sha>.tar.gz with a prior successful
 # build's /scratch/installed/ tree at the same pinned fbthrift-python SHA.
-# Extract it here so Layer B's getdeps step finds the dep tree already
-# installed and skips the 20+ min fbthrift compile.
+# Extract it here and write a sentinel /scratch/.cache-hit; Layer B then
+# skips the getdeps invocation entirely and trusts the restored tree.
 #
-# Silent fall-through: missing or empty tarball proceeds to the source
-# build in Layer B.
+# Silent fall-through on miss: no sentinel written, Layer B falls
+# through to the normal source build.
 COPY .fbthrift-cache /taac/.fbthrift-cache
 RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift-python \
               | head -1 | awk -F'=' '{print $2}' | tr -d ' ') \
@@ -74,22 +75,28 @@ RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift-python \
            echo "cache: restoring $TARBALL ..." \
         && mkdir -p /scratch/installed \
         && tar -xzf "$TARBALL" -C /scratch/installed/ \
+        && touch /scratch/.cache-hit \
         && echo "cache: restored." ; \
        else \
            echo "cache: no tarball found, fbthrift will be built from source." ; \
        fi
 
-# ---------- Builder Layer B: build the stable C++ deps ----------
-# Cache key: anything in Layer A. Cached unless setup_getdeps or a
-# manifest changes — rare. Cold-build cost ~25 min; warm cache: 0 sec.
-RUN python3 build/fbcode_builder/getdeps.py \
-        --scratch-path /scratch \
-        --extra-cmake-defines='{"enable_tests": "OFF"}' \
-        --allow-system-packages build --no-tests fbthrift-python \
-    && python3 build/fbcode_builder/getdeps.py \
-        --scratch-path /scratch \
-        --extra-cmake-defines='{"enable_tests": "OFF"}' \
-        --allow-system-packages build --no-tests fboss-thrift-defs \
+# ---------- Builder Layer B: build the stable C++ deps (or skip if cached) ----------
+# Cache hit (sentinel /scratch/.cache-hit from Layer A2): skip the
+# getdeps invocation entirely and trust the restored install tree.
+# Cache miss (no sentinel): full source build, ~20 min cold.
+RUN if [ -f /scratch/.cache-hit ]; then \
+        echo "cache: skipping getdeps build (deps restored from cache)" ; \
+    else \
+        python3 build/fbcode_builder/getdeps.py \
+            --scratch-path /scratch \
+            --extra-cmake-defines='{"enable_tests": "OFF"}' \
+            --allow-system-packages build --no-tests fbthrift-python \
+        && python3 build/fbcode_builder/getdeps.py \
+            --scratch-path /scratch \
+            --extra-cmake-defines='{"enable_tests": "OFF"}' \
+            --allow-system-packages build --no-tests fboss-thrift-defs ; \
+    fi \
     && rm -rf /scratch/build
 
 # ---------- Builder Layer C: pip install the fbthrift python wheel ----------
@@ -103,10 +110,14 @@ COPY . /taac
 RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
 
 # ---------- Builder Layer F: build TAAC ----------
+# --no-deps: trust the install tree from Layers A2 (cache restore) or B
+# (source build). Without --no-deps getdeps re-assesses every transitive
+# dep via its fetcher, which for git-based deps means re-cloning into
+# /scratch/repos/ and rebuilding even though install dirs are valid.
 RUN python3 build/fbcode_builder/getdeps.py \
         --scratch-path /scratch \
         --extra-cmake-defines='{"enable_tests": "OFF"}' \
-        --allow-system-packages build --no-tests taac \
+        --allow-system-packages build --no-deps --no-tests taac \
     && rm -rf /scratch/build
 
 # ---------- Builder Layer G: prune for runtime ----------
@@ -158,7 +169,12 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/python3.12/site-packages
 
 # TAAC source (from build context — fresh, no builder artifacts).
-COPY . /taac
+# --exclude=.fbthrift-cache keeps the ~1.6 GB cache tarball out of the
+# shippable image. The tarball is needed by Stage 1's Layer A2 (which
+# COPYs it explicitly), but Stage 2 doesn't need it; without this
+# exclusion `COPY . /taac` would drag it in. Requires the
+# `# syntax=docker/dockerfile:1.7` directive at the top of this file.
+COPY --exclude=.fbthrift-cache . /taac
 
 # Entrypoint resolves the per-config install hash + LD paths and sets
 # PYTHONPATH / LD_LIBRARY_PATH / TAAC_OSS before exec'ing the user cmd.
