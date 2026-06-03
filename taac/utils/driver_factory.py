@@ -17,9 +17,9 @@ LOGGER: ConsoleFileLogger = get_root_logger()
 TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 # Meta-internal drivers — only importable outside OSS mode. In OSS, the
-# map starts empty and users are expected to register their own drivers
-# (custom subclasses of AbstractSwitch) via add_device_os_driver_class(),
-# alongside add_host_to_device_os_type_data() for OS detection.
+# map is pre-populated with FbossSwitch (the OSS-shipped driver) for
+# DeviceOsType.FBOSS; users can register additional driver classes for
+# other OS types via register_driver_class().
 if not TAAC_OSS:
     from taac.internal.driver.arista_fboss_switch import (
         AristaFbossSwitch,
@@ -40,9 +40,13 @@ if not TAAC_OSS:
         taac_types.DeviceOsType.ARISTA_FBOSS: AristaFbossSwitch,
     }
 else:
+    from taac.driver.fboss_switch import FbossSwitch
+
     DEVICE_OS_DRIVER_CLASS_MAP: t.Dict[
         taac_types.DeviceOsType, t.Type[AbstractSwitch]
-    ] = {}
+    ] = {
+        taac_types.DeviceOsType.FBOSS: FbossSwitch,
+    }
 
 HOST_TO_DEVICE_OS_TYPE_MAP = {}
 HOST_TO_DRIVER_ARGS_MAP = {}
@@ -60,15 +64,15 @@ def add_host_to_driver_args_data(
     HOST_TO_DRIVER_ARGS_MAP[hostname] = driver_args
 
 
-def add_device_os_driver_class(
+def register_driver_class(
     device_os_type: taac_types.DeviceOsType,
     driver_class: t.Type[AbstractSwitch],
 ) -> None:
-    """Register a driver class for a device OS type.
+    """Register an AbstractSwitch subclass for a DeviceOsType.
 
-    In OSS mode the driver map starts empty; callers must register their own
-    AbstractSwitch subclasses before async_get_device_driver() can resolve a
-    driver for that OS type.
+    OSS users can plug in their own driver implementations without
+    monkey-patching DEVICE_OS_DRIVER_CLASS_MAP directly. Calling this
+    overwrites any existing registration for the given type.
     """
     DEVICE_OS_DRIVER_CLASS_MAP[device_os_type] = driver_class
 
@@ -125,14 +129,7 @@ async def async_get_device_driver(
                     if netwhoami.operating_system
                     else None
                 )
-                # pyrefly: ignore [bad-argument-type]
-                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP.get(os_name)
-                if device_os_type is None:
-                    raise ValueError(
-                        f"Cannot determine device OS type for '{hostname}'. "
-                        f"netwhoami returned os_name={os_name!r}. "
-                        f"Use add_host_to_device_os_type_data() to pre-register."
-                    )
+                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP[os_name]
 
     LOGGER.debug(f"device os type for {hostname} is {device_os_type.name}")
     driver_class = DEVICE_OS_DRIVER_CLASS_MAP.get(device_os_type)
@@ -140,7 +137,7 @@ async def async_get_device_driver(
         raise ValueError(
             f"No driver class registered for device OS type "
             f"'{device_os_type.name}' (hostname '{hostname}'). "
-            f"In OSS mode, register one via add_device_os_driver_class()."
+            f"In OSS mode, register one via register_driver_class()."
         )
     # pyrefly: ignore [bad-argument-type]
     driver_args_dict = json.loads(HOST_TO_DRIVER_ARGS_MAP.get(hostname, "{}"))
