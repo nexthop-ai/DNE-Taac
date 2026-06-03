@@ -33,8 +33,8 @@ Two independent pipelines share `fboss-build-env:<distro>` as their base and pro
        <sha>.tar.gz                  │
             │                        │
             ▼                        │
-       vol-shared/fboss/             │
-       taac/<key>                    │
+       configured                    │
+       cache bucket                  │
             │                        │
             └──── cache restore  ────┤
                   (auto on           │
@@ -183,7 +183,7 @@ Mutually exclusive with `--no-cache`. The three modes are:
 
 ### Explicit workspace input: `--workspace=main`
 
-The default docker build context is the local working copy. For nightly / CI builds that want to verify `main` is buildable without depending on the runner's local state, pass `--workspace=main`:
+The default docker build context is the local working copy. For local debugging where you want to verify `main` is buildable without your in-progress changes, pass `--workspace=main`:
 
 ```bash
 ./docker/run-fboss-docker.sh --distro centos --workspace=main build-taac-image
@@ -192,6 +192,8 @@ The default docker build context is the local working copy. For nightly / CI bui
 The wrapper shallow-clones main from `github.com/nexthop-ai/private-DNE-Taac` into a temp dir and uses that as the docker build context. Cache resolution (cache-pull or `--fbthrift-tarball` or `--no-cache`) runs against the cloned tree's manifest pin, so the build is fully deterministic against main.
 
 Combines freely with `--no-cache` and `--fbthrift-tarball` — pick the workspace independently of the cache input. Today only `main` is supported; arbitrary refs would be a small extension.
+
+**For CI / nightly publish (Pipeline 1)**: `--workspace=main` isn't needed explicitly — `cache-publish.yml`'s `actions/checkout@v6` step (with no `ref:` specified) checks out the default branch by default when triggered manually via `workflow_dispatch`. So Pipeline 1's CI run automatically builds against `main`, which is what the build/runtime spec calls for ("if local workspace unspecified, clones from main"). The `--workspace=main` flag remains for the local-debug-of-main case.
 
 ### What's cached
 
