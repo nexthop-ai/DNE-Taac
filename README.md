@@ -29,6 +29,8 @@ For iterative work on TAAC source or thrift schemas in a bind-mounted workspace 
 
 First build takes 30–60 min — folly + fizz + wangle + mvfst + fbthrift are compiled from source. The expensive output is the install tree under `/scratch/installed/` inside the container (in the `fboss-scratch-<distro>` docker volume), not anything `setup_getdeps.sh` produces (that script just copies fbthrift's `build/fbcode_builder/` into the repo and is fast). getdeps caches the install tree per cmake-defines hash, so subsequent invocations against the same volume skip rebuilding unchanged dependencies and finish in seconds. For nightly / shared-CI use, the whole volume is the artifact: persist with `docker volume export` / re-import, or tar from a throwaway container.
 
+For machines that have *never* built before, `build-taac-image` also tries to restore a prebuilt fbthrift install tree from a shared Nexthop S3 bucket keyed on the pinned fbthrift SHA — see the [first-build acceleration section](docker/README.md#first-build-acceleration-fbthrift-install-tree-cache) in `docker/README.md`.
+
 ## Outputs
 
 After `getdeps-build` completes, generated thrift bindings + the TAAC Python source land under (container path):

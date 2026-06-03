@@ -5,3 +5,10 @@ build/
 # getdeps scratch / CMake build output
 __pycache__/
 *.pyc
+
+# Host-side fbthrift install-tree cache populated by scripts/taac-cache-pull.sh
+# and consumed by Dockerfile.taac. Downloaded artifacts, not source. The
+# directory itself is tracked (via .gitkeep) so the Dockerfile's COPY step
+# always finds it, even on a fresh checkout that hasn't run cache-pull yet.
+/.fbthrift-cache/*
+!/.fbthrift-cache/.gitkeep
