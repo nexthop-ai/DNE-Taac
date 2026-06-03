@@ -7,36 +7,11 @@ Test As A Config (TAAC) — a configuration-driven network test automation frame
 Smoke-tested via [facebook/fboss](https://github.com/facebook/fboss)'s public Docker images on **CentOS Stream 9** and **Debian Bookworm**. Docker is the only host-side dependency.
 
 ```bash
-# Clone facebook/fboss for the Docker image build context
-git clone --depth=1 https://github.com/facebook/fboss.git ~/fboss-image-src
-
-# Build the FBOSS CentOS Stream 9 image (USE_CLANG=false: see Note below)
-docker build --build-arg USE_CLANG=false \
-    -t fboss-build-env:centos \
-    -f ~/fboss-image-src/fboss/oss/docker/Dockerfile \
-    ~/fboss-image-src
-
-# Bootstrap getdeps tooling for this repo (one-time, idempotent)
-./scripts/setup_getdeps.sh
-
-# Build TAAC inside the container, with a docker-managed named volume for
-# the getdeps cache and this repo bind-mounted at /taac
-docker run --rm \
-    -v "$PWD":/taac \
-    -v fboss-scratch-centos:/scratch \
-    -w /taac \
-    fboss-build-env:centos \
-    python3 build/fbcode_builder/getdeps.py \
-        --scratch-path /scratch \
-        --extra-cmake-defines='{"enable_tests": "OFF"}' \
-        --allow-system-packages build --no-tests taac
+# Build TAAC inside the FBOSS CentOS image (or --distro debian for Debian Bookworm)
+./docker/run-fboss-docker.sh --distro centos getdeps-build
 ```
 
-**Debian Bookworm variant:** swap the Dockerfile path for `~/fboss-image-src/fboss/oss/docker/Dockerfile.debian` (drop the `--build-arg USE_CLANG=false`), tag the image `fboss-build-env:debian`, and mount `fboss-scratch-debian` instead. Both distros are smoke-tested.
-
-> **Note on `USE_CLANG=false`** (CentOS only): FBOSS's CentOS Dockerfile installs LLVM at `/usr/local/llvm/` by default, which puts a `libunwind.so.1` on the linker search path. glog ends up with that LLVM `libunwind.so.1` as a NEEDED entry; at runtime the loader only sees the system `libunwind.so.8`, and `auditwheel` then fails to repair the fbthrift Python wheel. `USE_CLANG=false` skips the LLVM install — glog links against system libunwind cleanly.
-
-A subsequent PR introduces `docker/run-fboss-docker.sh` that condenses the four steps above into one invocation. The flow shown here is the underlying mechanics.
+That single command does everything: shallow-clones fbthrift to seed `build/fbcode_builder/` if not already present, clones `facebook/fboss` for the Docker image build context, builds the Docker image (~10 min apt/dnf installs), then runs getdeps inside the container with this repo bind-mounted at `/taac` and a per-distro docker-managed named volume mounted at `/scratch` (default volume name `fboss-scratch-<distro>`). Subcommands: `build-base`, `shell`, `run <cmd>`, `getdeps-build`. Pass `--network host` before the subcommand for live-device runs that need internal-DNS hostnames.
 
 ### Build cost
 
@@ -44,7 +19,7 @@ First build takes 30–60 min — folly + fizz + wangle + mvfst + fbthrift are c
 
 ## Outputs
 
-After the getdeps build completes, generated thrift bindings + the TAAC Python source land under (container path):
+After `getdeps-build` completes, generated thrift bindings + the TAAC Python source land under (container path):
 
 ```
 /scratch/installed/taac-<HASH>/lib/python3/site-packages/
@@ -59,12 +34,7 @@ The `<HASH>` suffix is getdeps' per-configuration cache key — it changes if yo
 The bindings link against native libs that were compiled inside the build container, so the easiest way to use them is to run inside the same container. Drop into a shell:
 
 ```bash
-docker run --rm -it \
-    -v "$PWD":/taac \
-    -v fboss-scratch-centos:/scratch \
-    -w /taac \
-    fboss-build-env:centos \
-    /bin/bash
+./docker/run-fboss-docker.sh --distro centos shell
 ```
 
 Inside the container, install the fbthrift Python runtime wheel and the project's pip deps, then point Python at the install prefix:
