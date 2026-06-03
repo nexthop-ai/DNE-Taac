@@ -10,7 +10,49 @@
 | `taac-entrypoint.sh` | `ENTRYPOINT` for the derived image. Resolves the per-config install hash + native lib paths and exports `PYTHONPATH` / `LD_LIBRARY_PATH` / `TAAC_OSS` before exec'ing the user command. |
 | `taac-regen-thrift.sh` | Installed as `/usr/local/bin/taac-regen-thrift` inside the derived image. Regenerates TAAC's Python thrift bindings from a bind-mounted workspace using the baked-in `thrift1` compiler + fbthrift annotation headers + FBOSS schema tree. Enables "pull image, edit thrift on host, run in container" iteration without rebuilding the image. |
 
-## Build flow
+## Pipelines overview
+
+Two independent pipelines share `fboss-build-env:<distro>` as their base and produce different artifacts:
+
+```
+                FBOSS public Dockerfile
+                        │
+                        │  ./docker/run-fboss-docker.sh build-base
+                        ▼
+                fboss-build-env:<distro>           (shared base, ~4 GB)
+                        │
+            ┌───────────┴────────────┐
+            ▼                        ▼
+       PIPELINE 1               PIPELINE 2
+       (publish cache)          (build TAAC image)
+       Dockerfile.fbthrift      Dockerfile.taac
+       taac-cache-build.sh      run-fboss-docker.sh build-taac-image
+            │                        │
+            ▼                        │
+       fbthrift-python-              │
+       <sha>.tar.gz                  │
+            │                        │
+            ▼                        │
+       vol-shared/fboss/             │
+       taac/<key>                    │
+            │                        │
+            └──── cache restore  ────┤
+                  (auto on           │
+                   build-taac-image, │
+                   bypass with       │
+                   --no-cache or     │
+                   --fbthrift-       │
+                   tarball)          │
+                                     ▼
+                              fboss-taac:<distro>
+                              (vendor-shippable, ~1.3 GB;
+                               entrypoint + thrift1 baked in)
+```
+
+- **Pipeline 1** rebuilds the dep tree (fbthrift-python + fboss-thrift-defs + transitive) from source and uploads the tarball. Run nightly / on-demand whenever the fbthrift pin moves. See [First-build acceleration](#two-pipeline-split-fbthrift-install-tree-cache) below.
+- **Pipeline 2** builds the vendor-shippable TAAC image. With cache hit, ~2-3 min; without (or with `--no-cache`), ~22 min cold. Run by every developer / vendor / CI consumer.
+
+## Pipeline 2 internals (Dockerfile.taac)
 
 ```
 FBOSS public Dockerfile               (~/.taac-fboss-image-src/fboss/oss/docker/Dockerfile)
@@ -118,6 +160,38 @@ The "skip entirely" strategy (vs. "let getdeps verify the install tree") avoids 
 ### Alternative: publish from a local named volume
 
 Pipeline 1 builds fbthrift in a fresh docker context — clean, reproducible, CI-friendly. For local dev when you've already done a `run-fboss-docker.sh getdeps-build` (which populates the `fboss-scratch-<distro>` named volume) and want to publish that specific build without re-running getdeps, use [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>`. It tars from the named volume and uploads to `$TAAC_CACHE_URI`.
+
+### Explicit cache input: `--fbthrift-tarball <path>`
+
+By default, `build-taac-image` auto-resolves the cache by pulling from the bucket keyed on the current rev pin. For cases where you want to supply an explicit tarball instead — offline builds, debugging against a custom-built compiler, peer-to-peer sharing without going through the bucket — pass `--fbthrift-tarball <path>`:
+
+```bash
+./docker/run-fboss-docker.sh --distro centos \
+    --fbthrift-tarball /tmp/my-fbthrift-python.tar.gz \
+    build-taac-image
+```
+
+The wrapper copies the file into `.fbthrift-cache/` as `fbthrift-python-<rev>.tar.gz` (using the current pin's rev) and Dockerfile.taac's Layer A2 treats it like any other cache hit. Tarball contents are trusted blindly — getdeps's freshness contract isn't consulted, so if the tarball was built against a different manifest set, you may get a broken image. Use when you know what's in the file.
+
+Mutually exclusive with `--no-cache`. The three modes are:
+
+| Mode | Source of /scratch/installed | When to use |
+|---|---|---|
+| (default) | S3 bucket via cache-pull | Normal builds — auto, transparent |
+| `--no-cache` | Source build inline | Validating cold path, debugging the cache itself |
+| `--fbthrift-tarball <path>` | Local file | Offline, debugging, peer-to-peer |
+
+### Explicit workspace input: `--workspace=main`
+
+The default docker build context is the local working copy. For nightly / CI builds that want to verify `main` is buildable without depending on the runner's local state, pass `--workspace=main`:
+
+```bash
+./docker/run-fboss-docker.sh --distro centos --workspace=main build-taac-image
+```
+
+The wrapper shallow-clones main from `github.com/nexthop-ai/private-DNE-Taac` into a temp dir and uses that as the docker build context. Cache resolution (cache-pull or `--fbthrift-tarball` or `--no-cache`) runs against the cloned tree's manifest pin, so the build is fully deterministic against main.
+
+Combines freely with `--no-cache` and `--fbthrift-tarball` — pick the workspace independently of the cache input. Today only `main` is supported; arbitrary refs would be a small extension.
 
 ### What's cached
 
