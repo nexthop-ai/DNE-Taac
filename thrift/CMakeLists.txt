@@ -75,6 +75,16 @@ add_taac_thrift_python_library(
     DEPENDS thrift_roots
 )
 
+# fb303 — imported transitively by FBOSS-generated code (ctrl.thrift etc.
+# emit `import fb303.thrift_abstract_types`). The .thrift file has no
+# `namespace py3`, so mstch_python places output at gen-python/fb303/.
+add_taac_thrift_python_library(
+    fb303_py
+    "${FBOSS_THRIFT_DIR}/common/fb303/if/fb303.thrift"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+
 # ============================================================================
 # SECTION B: FBOSS Thrift (from fetched source)
 # ============================================================================
@@ -183,6 +193,119 @@ add_taac_thrift_python_library(
     DEPENDS thrift_roots
 )
 
+# Transitive deps of ctrl.thrift / phy.thrift generated Python. Not
+# imported directly by TAAC, but their thrift_abstract_types modules
+# are referenced from the corresponding thrift_abstract_types of ctrl /
+# phy / etc., so they must exist as importable packages at runtime.
+add_taac_thrift_python_library(
+    io_stats_py
+    "${FBOSS_THRIFT_DIR}/fboss/lib/if/io_stats.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    product_info_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/if/product_info.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    asic_temp_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/if/asic_temp.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    agent_stats_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/agent_stats.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    bcm_config_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/hw/bcm/bcm_config.thrift"
+    NAMESPACE "neteng.fboss.bcm_config"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    asic_config_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/hw/sai/config/asic_config.thrift"
+    NAMESPACE "neteng.fboss.asic_config"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    asic_config_v2_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/hw/config/asic_config_v2.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    platform_config_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/platform_config.thrift"
+    NAMESPACE "neteng.fboss.platform_config"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+# Distinct from fboss_common_py above (fboss/lib/if/fboss_common.thrift);
+# this is the configerator-side common thrift included by ctrl.thrift
+# with the alias 'as fboss_common'.
+add_taac_thrift_python_library(
+    fboss_configerator_common_py
+    "${FBOSS_THRIFT_DIR}/configerator/structs/neteng/fboss/thrift/common.thrift"
+    NAMESPACE "neteng.fboss.configerator"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    mka_structs_py
+    "${FBOSS_THRIFT_DIR}/fboss/mka_service/if/mka_structs.thrift"
+    NAMESPACE "neteng.fboss.mka"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    patch_py
+    "${FBOSS_THRIFT_DIR}/fboss/thrift_cow/patch.thrift"
+    NAMESPACE "neteng.fboss.thrift_cow"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    fsdb_common_py
+    "${FBOSS_THRIFT_DIR}/fboss/fsdb/if/fsdb_common.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    fsdb_oper_py
+    "${FBOSS_THRIFT_DIR}/fboss/fsdb/if/fsdb_oper.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    highfreq_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/if/highfreq.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    switch_state_py
+    "${FBOSS_THRIFT_DIR}/fboss/agent/switch_state.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+
 # ============================================================================
 # SECTION C: TAAC-Owned Thrift (from this repo)
 # ============================================================================
@@ -231,6 +354,7 @@ add_taac_thrift_python_library(
 # Keep this list in sync with the add_taac_thrift_python_library calls above.
 add_custom_target(all_thrift_bindings ALL DEPENDS
     network_address_py.py_sources_built
+    fb303_py.py_sources_built
     mpls_py.py_sources_built
     fboss_common_py.py_sources_built
     fboss_py.py_sources_built
@@ -244,6 +368,21 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     transceiver_py.py_sources_built
     phy_py.py_sources_built
     fsdb_py.py_sources_built
+    io_stats_py.py_sources_built
+    product_info_py.py_sources_built
+    asic_temp_py.py_sources_built
+    agent_stats_py.py_sources_built
+    bcm_config_py.py_sources_built
+    asic_config_py.py_sources_built
+    asic_config_v2_py.py_sources_built
+    platform_config_py.py_sources_built
+    fboss_configerator_common_py.py_sources_built
+    mka_structs_py.py_sources_built
+    patch_py.py_sources_built
+    fsdb_common_py.py_sources_built
+    fsdb_oper_py.py_sources_built
+    highfreq_py.py_sources_built
+    switch_state_py.py_sources_built
     qosdb_cos_py.py_sources_built
     ixia_py.py_sources_built
     health_check_py.py_sources_built
