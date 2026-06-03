@@ -46,6 +46,10 @@ RUN python3 -m pip install --break-system-packages --no-index \
 COPY . /taac
 RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
 
+# Stub .git + .projectid so getdeps recognizes the local checkout
+# (the real .git is excluded from the build context via .dockerignore).
+RUN mkdir -p /taac/.git && echo taac > /taac/.projectid
+
 # Build TAAC itself (--no-deps: trust the install tree we just built).
 RUN python3 build/fbcode_builder/getdeps.py \
         --scratch-path /scratch \
@@ -79,10 +83,13 @@ COPY --from=builder /scratch/installed /scratch/installed
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/python3.12/site-packages
 
-COPY . /taac
-RUN cp /taac/docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint \
-    && cp /taac/docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift \
-    && chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
+# Selective COPYs of only necessary directories
+COPY taac/ /taac/taac/
+COPY thrift/ /taac/thrift/
+COPY docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint
+COPY docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift
+COPY README.md CODE_OF_CONDUCT.md CONTRIBUTING.md /taac/
+RUN chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
 
 WORKDIR /taac
 ENTRYPOINT ["/usr/local/bin/taac-entrypoint"]
