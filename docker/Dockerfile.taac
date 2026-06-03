@@ -87,8 +87,8 @@ RUN python3 build/fbcode_builder/getdeps.py \
 # ---------- Builder Layer G: prune for runtime ----------
 # All cleanup happens here, AFTER every build/cmake-configure step.
 # No more getdeps freshness checks or cmake imported-target validations
-# will run, so it's safe to delete static archives, headers, cmake
-# configs, the thrift compiler binary, and to strip debug symbols.
+# will run, so it's safe to delete static archives and to strip debug
+# symbols.
 #
 # Strip targets both /scratch/installed (getdeps install tree) AND the
 # Python site-packages where pip installed the fbthrift wheel — auditwheel
@@ -96,20 +96,23 @@ RUN python3 build/fbcode_builder/getdeps.py \
 # the wheel, and those `.so` files (notably the 645 MB
 # libthrift_python_cpp) would otherwise stay unstripped.
 #
-# fboss-thrift-defs's `fboss/` subtree (~277 MB) is the FBOSS thrift
-# *source schemas* — only needed at codegen time during the getdeps
-# build above. The runtime uses the generated bindings in
-# /usr/local/lib64/python3.12/site-packages/.
+# Kept (not pruned) so the slim image can regenerate Python bindings
+# from edited .thrift files in a bind-mounted workspace:
+#   - /scratch/installed/fbthrift-python/bin/thrift1 (the codegen compiler)
+#   - /scratch/installed/fbthrift-python/include/  (thrift annotation .thrift files)
+#   - /scratch/installed/fboss-thrift-defs-*/fboss/ (FBOSS thrift schemas that
+#     TAAC schemas `include`)
+# A helper script `taac-regen-thrift` (installed below) wraps the thrift1
+# invocation with the right -I paths and output layout.
 RUN find /scratch/installed -name '*.a' -delete \
     && rm -f /scratch/installed/fbthrift-python/libthrift_python_cpp.so.1.0.0 \
     && rm -rf /scratch/installed/fbthrift-python/share/thrift/wheels \
-    && rm -f /scratch/installed/fbthrift-python/bin/thrift1 \
-    && rm -rf /scratch/installed/fboss-thrift-defs-*/fboss \
     && find /scratch/installed /usr/local/lib/python3.12 /usr/local/lib64/python3.12 \
         -name '*.so*' -type f \
         -exec strip --strip-unneeded {} + 2>/dev/null \
     && find /scratch/installed -type d -name cmake -exec rm -rf {} + \
-    && find /scratch/installed -type d -name include -exec rm -rf {} + \
+    && find /scratch/installed -type d -name include \
+        -not -path '*/fbthrift-python/include' -exec rm -rf {} + \
     && find /scratch/installed -type d -name pkgconfig -exec rm -rf {} + \
     && rm -rf /scratch/extracted /scratch/downloads /scratch/repos
 
@@ -150,7 +153,14 @@ COPY . /taac
 # Entrypoint resolves the per-config install hash + LD paths and sets
 # PYTHONPATH / LD_LIBRARY_PATH / TAAC_OSS before exec'ing the user cmd.
 COPY docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint
-RUN chmod +x /usr/local/bin/taac-entrypoint
+
+# Helper for the "pull slim, edit thrift on host, run in container"
+# workflow: wraps `thrift1 --gen mstch_python` with the right include
+# paths so a bind-mounted workspace's .thrift edits can be regenerated
+# inside the running container.
+COPY docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift
+
+RUN chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
 
 WORKDIR /taac
 ENTRYPOINT ["/usr/local/bin/taac-entrypoint"]
