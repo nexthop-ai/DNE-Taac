@@ -60,19 +60,19 @@ The `getdeps-build` subcommand (separate from `build-taac-image`) instead writes
 
 ## First-build acceleration: fbthrift install-tree cache
 
-On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps via getdeps is the dominant cost (~20 min). To avoid every developer paying that on their first `build-taac-image`, the builder stage pulls a prebuilt install-tree tarball from a shared Nexthop S3 bucket keyed on the pinned fbthrift SHA.
+On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps via getdeps is the dominant cost (~20 min). To avoid every developer paying that on their first `build-taac-image`, the builder stage pulls a prebuilt install-tree tarball from a configured cache URI (local, Nexthop bucket, S3, or static HTTPS).
 
 ### How it works
 
-1. [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbthrift-python) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. This is the single source of truth for the cache key — the bucket path, the bootstrap clone in `setup_getdeps.sh`, and getdeps' own checkout all derive from it.
+1. [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbthrift-python) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. The bootstrap clone in `setup_getdeps.sh` and getdeps' own checkout derive from this pin. The cache `TAAC_CACHE_URI` is set externally — the operator is responsible for matching it to the current pin (the upload step typically encodes the rev in the URL).
 
-2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads the rev, does `ng bucket get vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz` into `.fbthrift-cache/`, and exits 0 either way. Stale tarballs from prior rev pins are auto-pruned.
+2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads `TAAC_CACHE_URI` (the full URL of the tarball — `file://`, `ng://`, `s3://`, or `https://`) and fetches it into `.fbthrift-cache/` under the URI's basename; exits 0 either way. A URI change auto-prunes any stale tarball with a different basename. `TAAC_CACHE_URI` comes from `scripts/_cache-config.sh` (gitignored) — see `scripts/_cache-config.sh.example`. Without the config the cache silently no-ops.
 
-3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball matching the pinned SHA is present, extracts it into `/scratch/installed/` and writes a sentinel file `/scratch/.cache-hit`. Layer B detects the sentinel and **skips the getdeps invocation entirely**, trusting the restored install tree. Layer F (TAAC's own build) uses `--no-deps` so it doesn't re-assess transitive deps either.
+3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball is present (globbing `*.tar.gz` since the filename is opaque), extracts it into `/scratch/installed/` and writes a sentinel file `/scratch/.cache-hit`. Layer B detects the sentinel and **skips the getdeps invocation entirely**, trusting the restored install tree. Layer F (TAAC's own build) uses `--no-deps` so it doesn't re-assess transitive deps either.
 
    The "skip entirely" strategy (vs. "let getdeps verify the install tree") avoids a subtle issue: getdeps's `GitFetcher.update()` re-clones source into `/scratch/repos/` when missing and sets `sources_changed=True`, which forces a full rebuild even with a valid install tree. Skipping at the layer boundary sidesteps this — we own the cache trust decision, not getdeps.
 
-4. **Push (manual)**: After a successful build via `run-fboss-docker.sh getdeps-build`, run [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>` to publish the resulting install tree under the current pinned rev's key, so the next developer hits the cache.
+4. **Push (manual)**: After a successful build via `run-fboss-docker.sh getdeps-build`, run [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>` to publish the resulting install tree to `TAAC_CACHE_URI`. Caller is responsible for setting `TAAC_CACHE_URI` to the destination URL appropriate for the current rev (e.g. `ng://vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz`), so the next developer's pull from the same URI hits.
 
 ### What's cached
 
@@ -80,11 +80,11 @@ Everything under `/scratch/installed/` except `taac-*` (TAAC's own build is fast
 
 ### Cache miss semantics
 
-Anything that would interrupt a smooth cache hit — empty bucket key, network failure, `ng` CLI missing on the host, corrupt tarball — falls through to the normal source build. No build fails because of a cache miss; the cache is strictly an optimization.
+Anything that would interrupt a smooth cache hit — unset `TAAC_CACHE_URI`, network failure, the scheme's CLI missing on the host (e.g. `ng` for `ng://`, `aws` for `s3://`), 404 from the URL, corrupt tarball — falls through to the normal source build. No build fails because of a cache miss; the cache is strictly an optimization.
 
 ### Bumping the fbthrift pin
 
-Edit the `rev = ...` line in `getdeps/manifests/fbthrift-python` and commit. `setup_getdeps.sh` will clone the bootstrap tooling at the matching SHA, and the cache key on the next build will reflect the new pin — guaranteeing a cache miss (and a one-time source rebuild) until someone runs `taac-cache-push.sh` at the new SHA.
+Edit the `rev = ...` line in `getdeps/manifests/fbthrift-python` and commit. `setup_getdeps.sh` will clone the bootstrap tooling at the matching SHA. To re-hit the cache after a pin bump, also update `TAAC_CACHE_URI` to point at a tarball built at the new SHA — until that's done (or someone runs `taac-cache-push.sh` to publish one), builds fall through to a one-time source rebuild.
 
 We pin `fbthrift-python` rather than `fbthrift` because `fbthrift-python` is the actual getdeps build target Layer B uses — the two are separate upstream manifests, and `fbthrift-python` doesn't transitively depend on `fbthrift`. Pinning `fbthrift` would silently no-op.
 
