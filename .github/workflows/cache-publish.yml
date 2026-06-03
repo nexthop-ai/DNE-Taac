@@ -1,0 +1,42 @@
+name: Publish fbthrift install-tree cache
+
+on:
+  # Manual trigger only. Flip to `push: branches: [main]` after the
+  # workflow has been validated against the actual runner.
+  workflow_dispatch:
+
+# Prevent overlapping runs — each one takes ~30 min.
+concurrency:
+  group: cache-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Self-hosted runner with docker, the configured cache CLI on PATH,
+    # and network access to the cache bucket. The cloudstack-* labels
+    # point at the same runner pool used by other workflows in this repo;
+    # -small (used by pre-commit.yml) probably can't handle a cold
+    # getdeps-build, so use -large.
+    runs-on: cloudstack-ubuntu24-large
+    timeout-minutes: 90
+    env:
+      # Cache storage configuration. Set in repo settings → Variables /
+      # Secrets so this YAML doesn't bake infrastructure details into the
+      # committed repo. See scripts/_cache-config.sh.example for the
+      # interface each variable provides.
+      TAAC_CACHE_BUCKET_PREFIX: ${{ vars.TAAC_CACHE_BUCKET_PREFIX }}
+      TAAC_CACHE_GET_CMD: ${{ vars.TAAC_CACHE_GET_CMD }}
+      TAAC_CACHE_PUT_CMD: ${{ vars.TAAC_CACHE_PUT_CMD }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build FBOSS base image
+        run: ./docker/run-fboss-docker.sh --distro centos build-base
+
+      - name: Build & publish fbthrift install-tree cache
+        # Pipeline 1 of the build/runtime design: docker/Dockerfile.fbthrift
+        # runs getdeps fresh in an isolated docker context, bakes the tarball
+        # at build time, then `docker buildx --output type=local` extracts it.
+        # No dependency on a persistent named volume — CI-clean.
+        run: ./scripts/taac-cache-build.sh --distro centos --push
