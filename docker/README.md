@@ -109,16 +109,6 @@ docker run --rm -it --network host \
     bash -c 'taac-regen-thrift /workspace/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH && exec bash'
 ```
 
-### How the overlay works
-
-Python's namespace-package mechanism merges three contributors under `taac.__path__` (and friends):
-
-  1. `/workspace` — bind-mounted source, overlays edited `.py` files
-  2. `/tmp/regen/gen-python` — regenerated thrift bindings (only when `taac-regen-thrift` is run)
-  3. `/scratch/installed/taac-*/lib/python3/site-packages/` — baked-in install tree (fallback for unchanged modules)
-
-So source edits AND regenerated bindings both override the baked-in versions; everything else falls through to the image.
-
 ## Where to look for details
 
 - **Multi-stage layout + layer cache contract**: header comment in [`Dockerfile.taac`](Dockerfile.taac).

@@ -50,9 +50,10 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "Cloning fbthrift at $FBTHRIFT_REV into $TMP (partial clone) ..."
-git clone --filter=blob:none "$FBTHRIFT_URL" "$TMP/fbthrift"
-git -C "$TMP/fbthrift" checkout "$FBTHRIFT_REV"
+echo "Fetching fbthrift at $FBTHRIFT_REV into $TMP (shallow) ..."
+git init "$TMP/fbthrift"
+git -C "$TMP/fbthrift" fetch --depth 1 "$FBTHRIFT_URL" "$FBTHRIFT_REV"
+git -C "$TMP/fbthrift" checkout FETCH_HEAD
 
 echo "Copying build/fbcode_builder/ into repo ..."
 mkdir -p "$(dirname "$TARGET")"
