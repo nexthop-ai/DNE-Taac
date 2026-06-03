@@ -11,7 +11,17 @@ Smoke-tested via [facebook/fboss](https://github.com/facebook/fboss)'s public Do
 ./docker/run-fboss-docker.sh --distro centos getdeps-build
 ```
 
-That single command does everything: shallow-clones fbthrift to seed `build/fbcode_builder/` if not already present, clones `facebook/fboss` for the Docker image build context, builds the Docker image (~10 min apt/dnf installs), then runs getdeps inside the container with this repo bind-mounted at `/taac` and a per-distro docker-managed named volume mounted at `/scratch` (default volume name `fboss-scratch-<distro>`). Subcommands: `build-base`, `shell`, `run <cmd>`, `getdeps-build`. Pass `--network host` before the subcommand for live-device runs that need internal-DNS hostnames.
+That single command does everything: shallow-clones fbthrift to seed `build/fbcode_builder/` if not already present, clones `facebook/fboss` for the Docker image build context, builds the Docker image (~10 min apt/dnf installs), then runs getdeps inside the container with this repo bind-mounted at `/taac` and a per-distro docker-managed named volume mounted at `/scratch` (default volume name `fboss-scratch-<distro>`). Subcommands: `build-base`, `shell`, `run <cmd>`, `getdeps-build`, `build-taac-image`. Pass `--network host` before the subcommand for live-device runs that need internal-DNS hostnames.
+
+### Pre-built image
+
+For vendor consumption, `build-taac-image` produces a self-contained image (`fboss-taac:<distro>`) with TAAC and all transitive deps baked in:
+
+```bash
+./docker/run-fboss-docker.sh --distro centos build-taac-image
+```
+
+The image's entrypoint sets `PYTHONPATH` and `LD_LIBRARY_PATH` automatically, so vendors can `docker run --rm fboss-taac:centos python3 ...` with no host-side state. See [`docker/README.md`](docker/README.md) for the build-flow diagram and layer-cache contract.
 
 ### Build cost
 

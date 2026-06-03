@@ -137,14 +137,19 @@ run_container() {
 
 usage() {
     cat <<EOF
-Usage: $0 --distro {centos|debian} [--network <mode>] {build-base|shell|run <CMD...>|getdeps-build}
+Usage: $0 --distro {centos|debian} [--network <mode>] {build-base|shell|run <CMD...>|getdeps-build|build-taac-image}
 
-  build-base      (re)build the $IMAGE_TAG image from FBOSS's open-source Dockerfile
-  shell           drop into an interactive shell with this repo mounted at /taac
-  run <CMD...>    run a command inside the container with the repo mounted
-  getdeps-build   build taac via getdeps with this repo's defaults
-                  (persistent scratch in docker volume \`$SCRATCH_VOLUME\`,
-                  --no-tests, --allow-system-packages)
+  build-base        (re)build the $IMAGE_TAG image from FBOSS's open-source Dockerfile
+  shell             drop into an interactive shell with this repo mounted at /taac
+  run <CMD...>      run a command inside the container with the repo mounted
+  getdeps-build     build taac via getdeps with this repo's defaults
+                    (persistent scratch in docker volume \`$SCRATCH_VOLUME\`,
+                    --no-tests, --allow-system-packages)
+  build-taac-image  build the vendor-shippable derived image fboss-taac:$DISTRO
+                    via docker/Dockerfile.taac. The image bakes TAAC + transitive
+                    deps in. First build is ~22 min cold; subsequent builds use
+                    Docker's layer cache — typical TAAC source edits rebuild in
+                    ~45 sec.
 
 Optional flags (must precede the subcommand):
   --network MODE  pass through to docker run --network (e.g. \`host\`); defaults to
@@ -169,6 +174,19 @@ case "${1:-}" in
             --scratch-path /scratch \
             --extra-cmake-defines='{"enable_tests": "OFF"}' \
             --allow-system-packages build --no-tests taac
+        ;;
+    build-taac-image)
+        if ! docker image inspect "$IMAGE_TAG" > /dev/null 2>&1; then
+            echo "Base image $IMAGE_TAG not found - building it first..."
+            build_base
+        fi
+        echo "Building fboss-taac:$DISTRO from docker/Dockerfile.taac (BASE=$IMAGE_TAG) ..."
+        docker build \
+            -f "$REPO_ROOT/docker/Dockerfile.taac" \
+            --build-arg "BASE=$IMAGE_TAG" \
+            -t "fboss-taac:$DISTRO" \
+            "$REPO_ROOT"
+        echo "Done: fboss-taac:$DISTRO"
         ;;
     *)
         usage
