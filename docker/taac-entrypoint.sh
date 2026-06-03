@@ -15,7 +15,7 @@ if [[ -z "$TAAC_INSTALL" ]]; then
 fi
 
 export PYTHONPATH="/taac:${TAAC_INSTALL}/lib/python3/site-packages${PYTHONPATH:+:${PYTHONPATH}}"
-export LD_LIBRARY_PATH="$(find /scratch/installed -maxdepth 2 -type d -name lib | tr '\n' ':')${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export LD_LIBRARY_PATH="$(find /scratch/installed -maxdepth 2 -type d \( -name lib -o -name lib64 \) | tr '\n' ':')${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 : "${TAAC_OSS:=1}"
 export TAAC_OSS
 

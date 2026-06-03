@@ -42,9 +42,16 @@ RUN python3 build/fbcode_builder/getdeps.py \
 RUN python3 -m pip install --break-system-packages --no-index \
         --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift
 
-# Bring in TAAC source + pip deps.
-COPY . /taac
+# pip deps — copy requirements.txt first so this layer is cached
+# independently of TAAC source changes.
+COPY requirements.txt /taac/requirements.txt
 RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
+
+# Bring in only what the builder needs — excludes docker/, docs, etc.
+# so edits to entrypoint/regen scripts don't bust the build cache.
+COPY CMakeLists.txt /taac/
+COPY taac/ /taac/taac/
+COPY thrift/ /taac/thrift/
 
 # Stub .git + .projectid so getdeps recognizes the local checkout
 # (the real .git is excluded from the build context via .dockerignore).
@@ -64,7 +71,7 @@ RUN find /scratch/installed \
         -name '*.so*' -type f \
         -exec strip --strip-unneeded {} + 2>/dev/null \
     && find /scratch/installed -name '*.a' -delete \
-    && rm -f /scratch/installed/fbthrift-python/libthrift_python_cpp.so.1.0.0 \
+    && rm -f /scratch/installed/fbthrift-python/libthrift_python_cpp.so* \
     && rm -rf /scratch/installed/fbthrift-python/share/thrift/wheels \
     && find /usr/local/lib/python3.12 /usr/local/lib64/python3.12 \
         -name '*.so*' -type f \
