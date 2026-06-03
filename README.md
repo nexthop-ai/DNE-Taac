@@ -4,72 +4,57 @@ Test As A Config (TAAC) — a configuration-driven network test automation frame
 
 ## Quick start
 
-Smoke-tested via [facebook/fboss](https://github.com/facebook/fboss)'s public Docker images on **CentOS Stream 9** and **Debian Bookworm**. Docker is the only host-side dependency.
+Smoke-tested via [facebook/fboss](https://github.com/facebook/fboss)'s public Docker images on **CentOS Stream 9**. Docker is the only host-side dependency.
 
 ```bash
-# Build TAAC inside the FBOSS CentOS image (or --distro debian for Debian Bookworm)
-./docker/run-fboss-docker.sh --distro centos getdeps-build
+# Build the vendor-shippable TAAC image (auto-builds base image if missing)
+./docker/build-taac-image.sh
 ```
 
-That single command does everything: shallow-clones fbthrift to seed `build/fbcode_builder/` if not already present, clones `facebook/fboss` for the Docker image build context, builds the Docker image (~10 min apt/dnf installs), then runs getdeps inside the container with this repo bind-mounted at `/taac` and a per-distro docker-managed named volume mounted at `/scratch` (default volume name `fboss-scratch-<distro>`). Subcommands: `build-base`, `shell`, `run <cmd>`, `getdeps-build`, `build-taac-image`. Pass `--network host` before the subcommand for live-device runs that need internal-DNS hostnames.
+That single command builds the FBOSS CentOS base image if missing, compiles the full dep tree (folly, fizz, wangle, mvfst, fbthrift), builds TAAC, and produces `fboss-taac` — a self-contained image with all transitive deps baked in.
 
-### Pre-built image
-
-For vendor consumption, `build-taac-image` produces a self-contained image (`fboss-taac:<distro>`) with TAAC and all transitive deps baked in:
-
-```bash
-./docker/run-fboss-docker.sh --distro centos build-taac-image
-```
-
-The image's entrypoint sets `PYTHONPATH` and `LD_LIBRARY_PATH` automatically, so vendors can `docker run --rm fboss-taac:centos python3 ...` with no host-side state. See [`docker/README.md`](docker/README.md) for the build-flow diagram and layer-cache contract.
+The image's entrypoint sets `PYTHONPATH` and `LD_LIBRARY_PATH` automatically, so vendors can `docker run --rm fboss-taac python3 ...` with no host-side state. See [`docker/README.md`](docker/README.md) for the build-flow diagram and layer-cache contract.
 
 For iterative work on TAAC source or thrift schemas in a bind-mounted workspace — no image rebuild required — see the in-container iteration section in [`docker/README.md`](docker/README.md) (Python source edits work via `PYTHONPATH`; thrift edits use the baked-in `taac-regen-thrift` helper).
 
 ### Build cost
 
-First build takes 30–60 min — folly + fizz + wangle + mvfst + fbthrift are compiled from source. The expensive output is the install tree under `/scratch/installed/` inside the container (in the `fboss-scratch-<distro>` docker volume), not anything `setup_getdeps.sh` produces (that script just copies fbthrift's `build/fbcode_builder/` into the repo and is fast). getdeps caches the install tree per cmake-defines hash, so subsequent invocations against the same volume skip rebuilding unchanged dependencies and finish in seconds. For nightly / shared-CI use, the whole volume is the artifact: persist with `docker volume export` / re-import, or tar from a throwaway container.
-
-For machines that have *never* built before, `build-taac-image` also tries to restore a prebuilt fbthrift install tree from the URI configured in `scripts/_cache-config.sh` (`TAAC_CACHE_URI`). Schemes dispatched: `file://`, `ng://`, `s3://`, `https://` (last is pull-only). See the [two-pipeline split section](docker/README.md#two-pipeline-split-fbthrift-install-tree-cache) in `docker/README.md`.
+First build takes ~22 min cold (mostly the deps compile). Docker's layer cache makes subsequent rebuilds after TAAC-only source changes finish in ~30 sec. See [`docker/README.md`](docker/README.md) for the layer cache contract and when to rebuild what.
 
 ## Outputs
 
-After `getdeps-build` completes, generated thrift bindings + the TAAC Python source land under (container path):
+Inside the `fboss-taac` image, generated thrift bindings + the TAAC Python source land under:
 
 ```
 /scratch/installed/taac-<HASH>/lib/python3/site-packages/
 ```
 
-inside the `fboss-scratch-<distro>` docker volume. They contain `taac/`, `ixia/`, `neteng/`, `facebook/`, `fb303/`. Each generated `thrift_types.py` ships a co-located `types.py` / `ttypes.py` / `clients.py` shim so legacy-style imports resolve.
+They contain `taac/`, `ixia/`, `neteng/`, `facebook/`, `fb303/`. Each generated `thrift_types.py` ships a co-located `types.py` / `ttypes.py` / `clients.py` shim so legacy-style imports resolve.
 
 The `<HASH>` suffix is getdeps' per-configuration cache key — it changes if you pass different `--extra-cmake-defines` to `getdeps.py build`.
 
 ## Using the bindings
 
-The bindings link against native libs that were compiled inside the build container, so the easiest way to use them is to run inside the same container. Drop into a shell:
+The image's entrypoint automatically sets `PYTHONPATH` and `LD_LIBRARY_PATH`, so imports work out of the box:
 
 ```bash
-./docker/run-fboss-docker.sh --distro centos shell
+docker run --rm fboss-taac python3 -c '
+    from neteng.fboss.ctrl.thrift_types import NdpEntryThrift
+    from taac.test_as_a_config.thrift_types import TestConfig
+    print("ok")
+'
 ```
 
-Inside the container, install the fbthrift Python runtime wheel and the project's pip deps, then point Python at the install prefix:
+## Running TAAC modules under OSS
+
+TAAC's Python modules (e.g. `taac.libs.taac_runner`) include Meta-internal imports that aren't shipped in this slice. Set `TAAC_OSS=1` so the imports take their OSS branch:
 
 ```bash
-python3 -m pip install --break-system-packages --no-index \
-    --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift
-python3 -m pip install --break-system-packages -r /taac/requirements.txt
-
-export PYTHONPATH=/scratch/installed/taac-<HASH>/lib/python3/site-packages
-export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr '\n' ':')
+export TAAC_OSS=1
+python3 -c 'import taac.libs.taac_runner; print("ok")'
 ```
 
-Then:
-
-```python
-from neteng.fboss.ctrl.thrift_types import NdpEntryThrift
-from taac.test_as_a_config.thrift_types import TestConfig
-```
-
-(Substitute `<HASH>` with the actual install-dir hash from `ls /scratch/installed/`.)
+Some runtime functionality is stubbed in OSS mode (NDS drainer, COOP patcher, ValidationStep, AristaSSHHelper, etc.) and will raise `NotImplementedError` if invoked on a code path that requires it. Imports succeed; trying to actually use those features fails.
 
 ## Running TAAC modules under OSS
 

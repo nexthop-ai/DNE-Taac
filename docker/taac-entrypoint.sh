@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entrypoint for fboss-taac:<distro> images (built from docker/Dockerfile.taac).
+# Entrypoint for the fboss-taac image (built from docker/Dockerfile.taac).
 #
 # Resolves the per-config install hash + native lib search paths so that
 # `python3 -c 'import taac.libs.taac_runner'` (and any TAAC entry point)
