@@ -1,208 +1,88 @@
-# syntax=docker/dockerfile:1
 # Derived image: TAAC built and installed, packaged for vendor consumption.
 #
 # Multi-stage build:
+#   Stage 1 (builder): FROM fboss-build-env:centos
+#       Full getdeps source build of fbthrift-python + fboss-thrift-defs +
+#       transitive deps (~20 min cold), then TAAC itself. Prune for runtime.
 #
-#   Stage 1 (builder): FROM fboss-build-env:<distro>
-#       Runs getdeps to compile folly/fizz/wangle/mvfst/fbthrift/fboss-thrift
-#       and TAAC itself. Same set of steps as the original single-stage
-#       Dockerfile. Ends with a cleanup pass that drops compile-time-only
-#       artifacts (static archives, build scratch, headers, cmake configs)
-#       and strips debug symbols from .so files. Safe to do all of this at
-#       the END of the builder stage because no more cmake configure runs.
-#
-#   Stage 2 (runtime): FROM ${BASE} — same fboss-build-env as Stage 1.
+#   Stage 2 (runtime): FROM fboss-build-env:centos
 #       Single ABI surface across build and run: no risk of glibc /
-#       libstdc++ drift between a separately-based runtime image and
-#       the builder, and no manual chasing of every new runtime lib
-#       that fbthrift / folly drag in over time. Selective
-#       COPY --from=builder pulls in the trimmed install tree and the
-#       Python site-packages. The base image carries the compilers and
-#       dev headers along — runtime is larger than a pure
-#       centos:stream9 + dnf-install design (~500 MB – 1 GB content
-#       growth), traded for consistency + simpler maintenance.
+#       libstdc++ drift. Selective COPY --from=builder pulls in the
+#       trimmed install tree and the Python site-packages.
 #
-# Builder cache layout — same volatility split as the single-stage version:
-#
-#   Builder layers A–C: stable. Inputs are scripts/setup_getdeps.sh,
-#               getdeps/manifests/*, and the fbthrift wheel install.
-#               These rarely change, so the cache stays warm.
-#
-#   Builder layers D–G: volatile. Triggered by `COPY . /taac`. Re-runs
-#               on every TAAC source change, but only TAAC's own getdeps
-#               build (~30 sec – 1 min) plus the cleanup pass.
-#
-# Inputs (build args):
-#   BASE   Pre-built FBOSS build image. Default: fboss-build-env:centos.
-#          Build it first via:
-#              ./docker/run-fboss-docker.sh --distro centos build-base
-#
-# Use as:
-#   docker build -f docker/Dockerfile.taac -t fboss-taac:centos .
-#   docker run --rm fboss-taac:centos python3 -c \
+# Usage:
+#   docker build -f docker/Dockerfile.taac -t fboss-taac .
+#   docker run --rm fboss-taac python3 -c \
 #       'import taac.libs.taac_runner; print("ok")'
 #
 # Override TAAC_OSS (default 1) at run time via -e TAAC_OSS=0.
 
-ARG BASE=fboss-build-env:centos
-
 # =====================================================================
-# Stage 1: builder
+# Stage 1: builder — deps + TAAC in one pass
 # =====================================================================
-FROM ${BASE} AS builder
+FROM fboss-build-env:centos AS builder
 
-# ---------- Builder Layer A: bootstrap getdeps tooling ----------
-# Cache key: scripts/setup_getdeps.sh, scripts/_lib_rev.sh, and
-# getdeps/manifests/* contents. _lib_rev.sh is sourced by
-# setup_getdeps.sh to parse the rev pin out of the manifest.
-COPY scripts/setup_getdeps.sh scripts/_lib_rev.sh /taac/scripts/
+# Bootstrap getdeps tooling.
+COPY scripts/setup_getdeps.sh /taac/scripts/
 COPY getdeps/manifests /taac/getdeps/manifests
 WORKDIR /taac
 RUN /taac/scripts/setup_getdeps.sh
 
-# ---------- Builder Layer A2: restore from cache (if present) ----------
-# scripts/taac-cache-pull.sh on the host (or a CI step) drops a single
-# tarball into .fbthrift-cache/ holding a prior successful build's
-# /scratch/installed/ tree. Extract it here and write a sentinel
-# /scratch/.cache-hit; Layer B then skips the getdeps invocation
-# entirely and trusts the restored tree.
-#
-# We glob *.tar.gz rather than constructing a name from the manifest
-# rev — the pull script's URI-based filename is opaque to this stage,
-# and the script auto-prunes so at most one tarball is present.
-#
-# Silent fall-through on miss OR corrupt tarball: no sentinel written,
-# Layer B falls through to the normal source build. The integrity check
-# (`tar -tzf`) is cheap and catches the case where the cache CLI
-# returned a truncated/partial object — without it, a corrupt cache
-# would fail the whole docker build instead of degrading gracefully.
-COPY .fbthrift-cache /taac/.fbthrift-cache
-RUN TARBALL=$(ls /taac/.fbthrift-cache/*.tar.gz 2>/dev/null | head -1) \
-    && if [ -z "$TARBALL" ] || [ ! -s "$TARBALL" ]; then \
-           echo "cache: no tarball found, fbthrift will be built from source." ; \
-       elif ! tar -tzf "$TARBALL" >/dev/null 2>&1; then \
-           echo "cache: $TARBALL exists but failed integrity check; falling through to source build." ; \
-       else \
-           echo "cache: restoring $TARBALL ..." \
-        && mkdir -p /scratch/installed \
-        && tar -xzf "$TARBALL" -C /scratch/installed/ \
-        && touch /scratch/.cache-hit \
-        && echo "cache: restored." ; \
-       fi
-
-# ---------- Builder Layer B: build the stable C++ deps (or skip if cached) ----------
-# Cache hit (sentinel /scratch/.cache-hit from Layer A2): skip the
-# getdeps invocation entirely and trust the restored install tree.
-# Cache miss (no sentinel): full source build, ~20 min cold.
-#
-# DRIFT WARNING: the cache-miss branch of this RUN mirrors
-# Dockerfile.fbthrift's getdeps invocation (the Pipeline 1 producer).
-# If you change cmake-defines, the set of pre-built targets, or any
-# flag below, mirror the change in Dockerfile.fbthrift — otherwise the
-# Pipeline 1 tarball that Layer A2 restores will be incompatible with
-# what Layer B's cache-miss branch would have produced.
-RUN if [ -f /scratch/.cache-hit ]; then \
-        echo "cache: skipping getdeps build (deps restored from cache)" ; \
-    else \
-        python3 build/fbcode_builder/getdeps.py \
-            --scratch-path /scratch \
-            --extra-cmake-defines='{"enable_tests": "OFF"}' \
-            --allow-system-packages build --no-tests fbthrift-python \
-        && python3 build/fbcode_builder/getdeps.py \
-            --scratch-path /scratch \
-            --extra-cmake-defines='{"enable_tests": "OFF"}' \
-            --allow-system-packages build --no-tests fboss-thrift-defs ; \
-    fi \
-    && rm -rf /scratch/build
-
-# ---------- Builder Layer C: pip install the fbthrift python wheel ----------
-RUN python3 -m pip install --break-system-packages --no-index \
-        --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift
-
-# ---------- Builder Layer D: bring in the TAAC source ----------
-COPY . /taac
-
-# ---------- Builder Layer E: pip install project requirements ----------
-RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
-
-# ---------- Builder Layer F: build TAAC ----------
-# --no-deps: trust the install tree from Layers A2 (cache restore) or B
-# (source build). Without --no-deps getdeps re-assesses every transitive
-# dep via its fetcher, which for git-based deps means re-cloning into
-# /scratch/repos/ and rebuilding even though install dirs are valid.
+# Build the full dep tree (~20 min cold).
 RUN python3 build/fbcode_builder/getdeps.py \
         --scratch-path /scratch \
         --extra-cmake-defines='{"enable_tests": "OFF"}' \
-        --allow-system-packages build --no-deps --no-tests taac \
-    && rm -rf /scratch/build
+        --allow-system-packages build --no-tests fbthrift-python \
+    && python3 build/fbcode_builder/getdeps.py \
+        --scratch-path /scratch \
+        --extra-cmake-defines='{"enable_tests": "OFF"}' \
+        --allow-system-packages build --no-tests fboss-thrift-defs
 
-# ---------- Builder Layer G: prune for runtime ----------
-# All cleanup happens here, AFTER every build/cmake-configure step.
-# No more getdeps freshness checks or cmake imported-target validations
-# will run, so it's safe to delete static archives and to strip debug
-# symbols.
-#
-# Strip targets both /scratch/installed (getdeps install tree) AND the
-# Python site-packages where pip installed the fbthrift wheel — auditwheel
-# bundles fbthrift's C++ deps into a `thrift.libs/` directory alongside
-# the wheel, and those `.so` files (notably the 645 MB
-# libthrift_python_cpp) would otherwise stay unstripped.
-#
-# Kept (not pruned) so the slim image can regenerate Python bindings
-# from edited .thrift files in a bind-mounted workspace:
-#   - /scratch/installed/fbthrift-python/bin/thrift1 (the codegen compiler)
-#   - /scratch/installed/fbthrift-python/include/  (thrift annotation .thrift files)
-#   - /scratch/installed/fboss-thrift-defs-*/fboss/ (FBOSS thrift schemas that
-#     TAAC schemas `include`)
-# A helper script `taac-regen-thrift` (installed below) wraps the thrift1
-# invocation with the right -I paths and output layout.
-RUN find /scratch/installed -name '*.a' -delete \
+# Install the fbthrift python wheel.
+RUN python3 -m pip install --break-system-packages --no-index \
+        --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift
+
+# Bring in TAAC source + pip deps.
+COPY . /taac
+RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
+
+# Build TAAC itself (--no-deps: trust the install tree we just built).
+RUN python3 build/fbcode_builder/getdeps.py \
+        --scratch-path /scratch \
+        --extra-cmake-defines='{"enable_tests": "OFF"}' \
+        --allow-system-packages build --no-deps --no-tests taac
+
+# Prune for runtime. Strip .so debug symbols, delete static archives,
+# cmake configs, most includes, pkgconfig, and build intermediates.
+# Preserve fbthrift-python/include (needed by taac-regen-thrift) and
+# fbthrift-python/bin/thrift1 (the compiler binary).
+RUN find /scratch/installed \
+        -name '*.so*' -type f \
+        -exec strip --strip-unneeded {} + 2>/dev/null \
+    && find /scratch/installed -name '*.a' -delete \
     && rm -f /scratch/installed/fbthrift-python/libthrift_python_cpp.so.1.0.0 \
     && rm -rf /scratch/installed/fbthrift-python/share/thrift/wheels \
-    && find /scratch/installed /usr/local/lib/python3.12 /usr/local/lib64/python3.12 \
+    && find /usr/local/lib/python3.12 /usr/local/lib64/python3.12 \
         -name '*.so*' -type f \
         -exec strip --strip-unneeded {} + 2>/dev/null \
     && find /scratch/installed -type d -name cmake -exec rm -rf {} + \
     && find /scratch/installed -type d -name include \
         -not -path '*/fbthrift-python/include' -exec rm -rf {} + \
-    && find /scratch/installed -type d -name pkgconfig -exec rm -rf {} + \
-    && rm -rf /scratch/extracted /scratch/downloads /scratch/repos
+    && find /scratch/installed -type d -name pkgconfig -exec rm -rf {} +
 
 # =====================================================================
 # Stage 2: runtime
 # =====================================================================
-# FROM ${BASE} — same fboss-build-env as the builder stage. Python 3.12
-# and the runtime system libs (libsodium / libdwarf / libunwind / etc.)
-# are already present from the base; no dnf install needed.
-FROM ${BASE} AS runtime
+FROM fboss-build-env:centos AS runtime
 
-# Pull the slimmed install tree across.
 COPY --from=builder /scratch/installed /scratch/installed
-
-# Pull the Python site-packages where pip (--break-system-packages) put
-# the thrift wrapper, requirements.txt deps, and any native extensions.
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/python3.12/site-packages
 
-# TAAC source (from build context — fresh, no builder artifacts).
-# --exclude=.fbthrift-cache keeps the ~1.6 GB cache tarball out of the
-# shippable image. The tarball is needed by Stage 1's Layer A2 (which
-# COPYs it explicitly), but Stage 2 doesn't need it; without this
-# exclusion `COPY . /taac` would drag it in. Requires the
-# `# syntax=docker/dockerfile:1` directive at the top of this file.
-COPY --exclude=.fbthrift-cache . /taac
-
-# Entrypoint resolves the per-config install hash + LD paths and sets
-# PYTHONPATH / LD_LIBRARY_PATH / TAAC_OSS before exec'ing the user cmd.
-COPY docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint
-
-# Helper for the "pull slim, edit thrift on host, run in container"
-# workflow: wraps `thrift1 --gen mstch_python` with the right include
-# paths so a bind-mounted workspace's .thrift edits can be regenerated
-# inside the running container.
-COPY docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift
-
-RUN chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
+COPY . /taac
+RUN cp /taac/docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint \
+    && cp /taac/docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift \
+    && chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
 
 WORKDIR /taac
 ENTRYPOINT ["/usr/local/bin/taac-entrypoint"]

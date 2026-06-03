@@ -5,16 +5,3 @@ build/
 # getdeps scratch / CMake build output
 __pycache__/
 *.pyc
-
-# Host-side fbthrift install-tree cache populated by scripts/taac-cache-pull.sh
-# and consumed by Dockerfile.taac. Downloaded artifacts, not source. The
-# directory itself is tracked (via .gitkeep) so the Dockerfile's COPY step
-# always finds it, even on a fresh checkout that hasn't run cache-pull yet.
-/.fbthrift-cache/*
-!/.fbthrift-cache/.gitkeep
-
-# Org-specific cache storage config (bucket prefix + CLI commands).
-# scripts/_cache-config.sh.example documents the variables; copy it
-# to _cache-config.sh and fill in your environment's values. Kept
-# untracked to avoid baking infrastructure details into the repo.
-/scripts/_cache-config.sh

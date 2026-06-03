@@ -1,45 +1,30 @@
-# Files excluded from the docker build context (i.e. from any COPY in
-# Dockerfile.taac or Dockerfile.fbthrift). Docker honors .dockerignore
-# but NOT .gitignore, so these have to live here separately.
+# Allowlist: ignore everything, then include only what COPY needs.
+# This way new getdeps source dirs (folly-python/, mvfst-python/, etc.)
+# that appear at the repo root after local builds are excluded
+# automatically — no maintenance required.
 #
-# Note on .fbthrift-cache/: NOT excluded here, because Dockerfile.taac's
-# Layer A2 explicitly COPYs it into the builder stage to restore the
-# install tree. The runtime stage's COPY . /taac uses a per-COPY
-# `--exclude=.fbthrift-cache` to keep the tarball out of the shippable
-# image instead. .dockerignore is build-context-wide, so excluding
-# here would also block Layer A2.
+# If you add a new top-level dir that Dockerfile.taac needs, add a
+# `!dirname/` line here. A missing entry causes a loud build failure
+# (file not found), not a silent context bloat.
 
-# Python bytecode that has no business in either the build context or
-# the final image.
-__pycache__/
-*.pyc
+*
+# Re-include the root so BuildKit doesn't warn on `COPY . /taac`.
+!.
 
-# getdeps bootstrap output. The host's copy is irrelevant inside the
-# docker build — setup_getdeps.sh runs fresh in Layer A and produces
-# its own build/fbcode_builder/.
-build/
+# Selective COPYs (setup_getdeps.sh, manifests)
+!scripts/
+!getdeps/
 
-# Sibling getdeps source dirs at the repo root from local packaging
-# runs. The in-container build regenerates these fresh in Layer A —
-# they're pure context bloat (multi-GB) and not used by any COPY.
-fbthrift-python/
-fizz-python/
-folly-python/
-mvfst-python/
-wangle-python/
-benchmark-*/
-boost-python-*/
-fast_float-*/
-fboss-thrift-defs-*/
-fmt-python-*/
-gflags-*/
-glog-*/
-googletest-*/
-libevent-python-*/
-liboqs-*/
+# COPY . /taac (builder + runtime stages)
+!.git/
+!.projectid
+!CMakeLists.txt
+!requirements.txt
+!taac/
+!thrift/
+!docker/
 
-# Local-dev cruft that occasionally lands in the repo root.
-.vscode/
-.idea/
-*.swp
-.DS_Store
+# Top-level files that ship with the source
+!README.md
+!CODE_OF_CONDUCT.md
+!CONTRIBUTING.md

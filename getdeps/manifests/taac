@@ -7,15 +7,11 @@ repo_url = https://github.com/nexthop-ai/private-DNE-Taac.git
 [build]
 builder = cmake
 
-# IMPORTANT: docker/Dockerfile.taac's Layer F invokes
+# IMPORTANT: docker/Dockerfile.taac's builder stage invokes
 #   getdeps build --no-deps taac
-# to skip dep re-assessment (the cache restore in Layer A2 + the
-# explicit pre-build in Layer B already cover the deps). Any new entry
-# below MUST either:
-#   (a) be added to Layer B's explicit pre-build list in
-#       docker/Dockerfile.taac (and Dockerfile.fbthrift's mirror), OR
-#   (b) be paired with dropping --no-deps from Layer F (accept the
-#       per-build cost of getdeps's dep-assessment pass).
+# to skip dep re-assessment (the deps are built earlier in the same
+# stage). Any new entry below MUST also be added to the dep-build
+# RUN block in Dockerfile.taac.
 [dependencies]
 fbthrift-python
 fboss-thrift-defs
