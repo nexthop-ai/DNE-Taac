@@ -65,20 +65,25 @@ RUN /taac/scripts/setup_getdeps.sh
 # Extract it here and write a sentinel /scratch/.cache-hit; Layer B then
 # skips the getdeps invocation entirely and trusts the restored tree.
 #
-# Silent fall-through on miss: no sentinel written, Layer B falls
-# through to the normal source build.
+# Silent fall-through on miss OR corrupt tarball: no sentinel written,
+# Layer B falls through to the normal source build. The integrity check
+# (`tar -tzf`) is cheap and catches the case where ng bucket get
+# returned a truncated/partial object — without it, a corrupt cache
+# would fail the whole docker build instead of degrading gracefully.
 COPY .fbthrift-cache /taac/.fbthrift-cache
 RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift-python \
               | head -1 | awk -F'=' '{print $2}' | tr -d ' ') \
     && TARBALL="/taac/.fbthrift-cache/fbthrift-python-${REV}.tar.gz" \
-    && if [ -s "$TARBALL" ]; then \
+    && if [ ! -s "$TARBALL" ]; then \
+           echo "cache: no tarball found, fbthrift will be built from source." ; \
+       elif ! tar -tzf "$TARBALL" >/dev/null 2>&1; then \
+           echo "cache: $TARBALL exists but failed integrity check; falling through to source build." ; \
+       else \
            echo "cache: restoring $TARBALL ..." \
         && mkdir -p /scratch/installed \
         && tar -xzf "$TARBALL" -C /scratch/installed/ \
         && touch /scratch/.cache-hit \
         && echo "cache: restored." ; \
-       else \
-           echo "cache: no tarball found, fbthrift will be built from source." ; \
        fi
 
 # ---------- Builder Layer B: build the stable C++ deps (or skip if cached) ----------
