@@ -347,6 +347,61 @@ add_taac_thrift_python_library(
     DEPENDS thrift_roots
 )
 
+# BGP thrift schemas. These schemas live in Meta's configerator/ tree
+# (not in the public fboss repo), so they're vendored here under the
+# matching relative paths so thrift1 include resolution works. Required
+# by several TAAC health checks and fboss_switch.py driver imports of
+# neteng.fboss.bgp_thrift.* and neteng.fboss.bgp_attr.*.
+add_taac_thrift_python_library(
+    bgp_attr_py
+    "${TAAC_THRIFT_DIR}/configerator/fboss/bgp/bgp_attr.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    bgp_policy_py
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/bgp_policy.thrift"
+    NAMESPACE "configerator.structs.neteng.bgp_policy.thrift"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    rib_policy_py
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/bgp_policy/thrift/rib_policy.thrift"
+    NAMESPACE "configerator.structs.neteng.bgp_policy.thrift"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    policy_thrift_py
+    "${TAAC_THRIFT_DIR}/routing/policy/policy_thrift.thrift"
+    NAMESPACE "neteng.routing"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    vip_service_config_py
+    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/config/vip_service_config.thrift"
+    NAMESPACE "configerator.structs.neteng.config"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    bgp_config_py
+    "${TAAC_THRIFT_DIR}/configerator/fboss/bgp/bgp_config.thrift"
+    NAMESPACE "configerator.structs.neteng.fboss.bgp"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+add_taac_thrift_python_library(
+    bgp_thrift_py
+    "${TAAC_THRIFT_DIR}/bgp/bgp_thrift.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots
+)
+
 add_taac_thrift_python_library(
     health_check_py
     "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/health_check.thrift"
@@ -408,6 +463,13 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     ixia_py.py_sources_built
     qos_config_py.py_sources_built
     ixia_config_thrift_py.py_sources_built
+    bgp_attr_py.py_sources_built
+    bgp_policy_py.py_sources_built
+    rib_policy_py.py_sources_built
+    policy_thrift_py.py_sources_built
+    vip_service_config_py.py_sources_built
+    bgp_config_py.py_sources_built
+    bgp_thrift_py.py_sources_built
     health_check_py.py_sources_built
     test_as_a_config_py.py_sources_built
 )
