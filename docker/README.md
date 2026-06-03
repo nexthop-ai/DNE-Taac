@@ -58,6 +58,32 @@ fboss-taac:<distro>                    (vendor-shippable, ~1.3 GB; entrypoint + 
 
 The `getdeps-build` subcommand (separate from `build-taac-image`) instead writes to a docker-managed scratch volume (`fboss-scratch-<distro>`) — that workflow is for contributors iterating on the TAAC source itself; `build-taac-image` is for producing the artifact.
 
+## First-build acceleration: fbthrift install-tree cache
+
+On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps via getdeps is the dominant cost (~20 min). To avoid every developer paying that on their first `build-taac-image`, the builder stage pulls a prebuilt install-tree tarball from a shared Nexthop S3 bucket keyed on the pinned fbthrift SHA.
+
+### How it works
+
+1. [`getdeps/manifests/fbthrift`](../getdeps/manifests/fbthrift) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. This is the single source of truth for the cache key — the bucket path, the bootstrap clone in `setup_getdeps.sh`, and getdeps' own checkout all derive from it.
+
+2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads the rev, does `ng bucket get vol-shared/fboss/taac/fbthrift-<sha>.tar.gz` into `.fbthrift-cache/`, and exits 0 either way. Stale tarballs from prior rev pins are auto-pruned.
+
+3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball matching the pinned SHA is present, extracts it into `/scratch/installed/`. Layer B's getdeps step then sees the dep tree already installed and skips the 20-minute compile.
+
+4. **Push (manual)**: After a successful build via `run-fboss-docker.sh getdeps-build`, run [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>` to publish the resulting install tree under the current pinned rev's key, so the next developer hits the cache.
+
+### What's cached
+
+Everything under `/scratch/installed/` except `taac-*` (TAAC's own build is fast and source-dependent). That covers folly, fizz, wangle, mvfst, fbthrift, fbthrift-python, fboss-thrift-defs, and all their transitive deps — anything that would otherwise rebuild when `getdeps/manifests/*` or `scripts/setup_getdeps.sh` changes.
+
+### Cache miss semantics
+
+Anything that would interrupt a smooth cache hit — empty bucket key, network failure, `ng` CLI missing on the host, corrupt tarball — falls through to the normal source build. No build fails because of a cache miss; the cache is strictly an optimization.
+
+### Bumping the fbthrift pin
+
+Edit the `rev = ...` line in `getdeps/manifests/fbthrift` and commit. `setup_getdeps.sh` will clone the bootstrap tooling at the matching SHA, and the cache key on the next build will reflect the new pin — guaranteeing a cache miss (and a one-time source rebuild) until someone runs `taac-cache-push.sh` at the new SHA.
+
 ## In-container iteration
 
 After pulling the derived image, local edits to TAAC source or thrift schemas in a bind-mounted workspace can be picked up by the running container without rebuilding the image.
