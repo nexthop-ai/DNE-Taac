@@ -17,9 +17,8 @@
 !scripts/
 !getdeps/
 
-# COPY . /taac (builder + runtime stages)
-!.git/
-!.projectid
+# COPY . /taac (builder stage; .git/ and .projectid are excluded —
+# the builder stubs them for getdeps project detection)
 !CMakeLists.txt
 !requirements.txt
 !taac/
