@@ -52,8 +52,10 @@ ARG BASE=fboss-build-env:centos
 FROM ${BASE} AS builder
 
 # ---------- Builder Layer A: bootstrap getdeps tooling ----------
-# Cache key: scripts/setup_getdeps.sh and getdeps/manifests/* contents.
-COPY scripts/setup_getdeps.sh /taac/scripts/setup_getdeps.sh
+# Cache key: scripts/setup_getdeps.sh, scripts/_lib_rev.sh, and
+# getdeps/manifests/* contents. _lib_rev.sh is sourced by
+# setup_getdeps.sh to parse the rev pin out of the manifest.
+COPY scripts/setup_getdeps.sh scripts/_lib_rev.sh /taac/scripts/
 COPY getdeps/manifests /taac/getdeps/manifests
 WORKDIR /taac
 RUN /taac/scripts/setup_getdeps.sh
