@@ -5,7 +5,8 @@
 | File | Purpose |
 |---|---|
 | `run-fboss-docker.sh` | Wrapper script. Builds FBOSS's public base image and offers subcommands (`build-base`, `getdeps-build`, `shell`, `run`, `build-taac-image`). Entry point for everything below. |
-| `Dockerfile.taac` | Multi-stage recipe for the vendor-shippable derived image (`fboss-taac:<distro>`). Stage 1 (builder) uses `fboss-build-env` to compile TAAC + transitive deps and prune compile-time-only artifacts; Stage 2 (runtime) uses the **same** `fboss-build-env` base for a single ABI surface across build and run, with selective `COPY --from=builder` to pull in just the pruned install tree and Python site-packages. |
+| `Dockerfile.fbthrift` | **Pipeline 1** dockerfile — builds only the fbthrift install tree (fbthrift-python + fboss-thrift-defs + transitive deps) and emits it as a tarball baked into a `FROM scratch` stage. Driven by `scripts/taac-cache-build.sh`; consumed by the cache-publish workflow. |
+| `Dockerfile.taac` | **Pipeline 2** dockerfile — multi-stage recipe for the vendor-shippable derived image (`fboss-taac:<distro>`). Stage 1 (builder) restores the Pipeline 1 tarball if present (or falls through to a full source build on cache miss / `--no-cache`), then builds TAAC and prunes compile-time artifacts; Stage 2 (runtime) uses the **same** `fboss-build-env` base for a single ABI surface across build and run, with selective `COPY --from=builder` to pull in just the pruned install tree and Python site-packages. |
 | `taac-entrypoint.sh` | `ENTRYPOINT` for the derived image. Resolves the per-config install hash + native lib paths and exports `PYTHONPATH` / `LD_LIBRARY_PATH` / `TAAC_OSS` before exec'ing the user command. |
 | `taac-regen-thrift.sh` | Installed as `/usr/local/bin/taac-regen-thrift` inside the derived image. Regenerates TAAC's Python thrift bindings from a bind-mounted workspace using the baked-in `thrift1` compiler + fbthrift annotation headers + FBOSS schema tree. Enables "pull image, edit thrift on host, run in container" iteration without rebuilding the image. |
 
@@ -58,21 +59,65 @@ fboss-taac:<distro>                    (vendor-shippable, ~1.3 GB; entrypoint + 
 
 The `getdeps-build` subcommand (separate from `build-taac-image`) instead writes to a docker-managed scratch volume (`fboss-scratch-<distro>`) — that workflow is for contributors iterating on the TAAC source itself; `build-taac-image` is for producing the artifact.
 
-## First-build acceleration: fbthrift install-tree cache
+## Two-pipeline split: fbthrift install-tree cache
 
-On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps via getdeps is the dominant cost (~20 min). To avoid every developer paying that on their first `build-taac-image`, the builder stage pulls a prebuilt install-tree tarball from a configured cache URI (local, Nexthop bucket, S3, or static HTTPS).
+The TAAC build is split into two independent pipelines:
 
-### How it works
+- **Pipeline 1** (build & publish fbthrift compiler tarball) — produces an install-tree tarball at a configured cache URI. Dedicated [`Dockerfile.fbthrift`](Dockerfile.fbthrift). Run nightly / on-demand to keep the cache fresh.
+- **Pipeline 2** (build TAAC environment) — consumes the cached tarball, builds TAAC source on top, produces the slim runtime image `fboss-taac:<distro>`. [`Dockerfile.taac`](Dockerfile.taac). Run by every developer / vendor.
 
-1. [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbthrift-python) pins fbthrift to a specific upstream SHA via the `[git] rev = ...` field. The bootstrap clone in `setup_getdeps.sh` and getdeps' own checkout derive from this pin. The cache `TAAC_CACHE_URI` is set externally — the operator is responsible for matching it to the current pin (the upload step typically encodes the rev in the URL).
+On a fresh checkout or machine, building `fbthrift-python` + transitive C++ deps via getdeps is the dominant cost (~20 min). With the Pipeline 1 cache in place, Pipeline 2 restores the prebuilt tree and skips the heavy compile entirely — `build-taac-image` runs in ~2-3 min instead of ~22 min.
 
-2. **Pull (auto, on `build-taac-image`)**: [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads `TAAC_CACHE_URI` (the full URL of the tarball — `file://`, `ng://`, `s3://`, or `https://`) and fetches it into `.fbthrift-cache/` under the URI's basename; exits 0 either way. A URI change auto-prunes any stale tarball with a different basename. `TAAC_CACHE_URI` comes from `scripts/_cache-config.sh` (gitignored) — see `scripts/_cache-config.sh.example`. Without the config the cache silently no-ops.
+### Storage configuration
 
-3. **Restore (in docker build, Layer A2)**: `Dockerfile.taac` COPYs `.fbthrift-cache/` in and, if a tarball is present (globbing `*.tar.gz` since the filename is opaque), extracts it into `/scratch/installed/` and writes a sentinel file `/scratch/.cache-hit`. Layer B detects the sentinel and **skips the getdeps invocation entirely**, trusting the restored install tree. Layer F (TAAC's own build) uses `--no-deps` so it doesn't re-assess transitive deps either.
+The cache scripts (`taac-cache-pull.sh`, `taac-cache-push.sh`, `taac-cache-build.sh`) read a single env var holding the full tarball URI; pull/push dispatch on URI scheme:
 
-   The "skip entirely" strategy (vs. "let getdeps verify the install tree") avoids a subtle issue: getdeps's `GitFetcher.update()` re-clones source into `/scratch/repos/` when missing and sets `sources_changed=True`, which forces a full rebuild even with a valid install tree. Skipping at the layer boundary sidesteps this — we own the cache trust decision, not getdeps.
+- `TAAC_CACHE_URI` — full URL of the tarball. Supported schemes:
+    - `file:///abs/path/fbthrift-python-<rev>.tar.gz` (local, `cp`)
+    - `ng://bucket/path/fbthrift-python-<rev>.tar.gz` (Nexthop bucket, `ng bucket get/put`)
+    - `s3://bucket/path/fbthrift-python-<rev>.tar.gz` (AWS S3, `aws s3 cp`)
+    - `https://host/path/fbthrift-python-<rev>.tar.gz` (static HTTPS, pull-only via `curl`)
 
-4. **Push (manual)**: After a successful build via `run-fboss-docker.sh getdeps-build`, run [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>` to publish the resulting install tree to `TAAC_CACHE_URI`. Caller is responsible for setting `TAAC_CACHE_URI` to the destination URL appropriate for the current rev (e.g. `ng://vol-shared/fboss/taac/fbthrift-python-<sha>.tar.gz`), so the next developer's pull from the same URI hits.
+The URI names the full object — the caller is responsible for encoding the manifest rev (or any other cache-key axis) into the URL.
+
+Locally, set it in [`scripts/_cache-config.sh`](../scripts/_cache-config.sh.example) (gitignored — copy `_cache-config.sh.example` and fill in the value). In CI, set it via repo vars / secrets at job level. Without the config the cache scripts silently no-op and Pipeline 2 falls through to source build.
+
+### Pipeline 1: build & publish
+
+Manual (host or runner):
+
+```bash
+./scripts/taac-cache-build.sh --distro centos --push
+```
+
+What happens:
+
+1. Reads the pinned rev from [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbthrift-python) (single source of truth for the cache key).
+2. Runs `docker buildx build -f docker/Dockerfile.fbthrift --target export --output type=local,dest=.fbthrift-cache .` — the Dockerfile builds fbthrift-python + fboss-thrift-defs from source via getdeps and bakes the tarball at build time. The `export` stage (`FROM scratch`) holds only the tarball + rev marker.
+3. `docker buildx` writes the tarball directly to `.fbthrift-cache/fbthrift-python-<sha>.tar.gz` on the host.
+4. `--push` uploads to `$TAAC_CACHE_URI` via the scheme's backend tool.
+
+CI: [`.github/workflows/cache-publish.yml`](../.github/workflows/cache-publish.yml) runs `taac-cache-build.sh --push` on a self-hosted runner. Currently `workflow_dispatch`-only — fire it from the Actions tab when the pin gets bumped. Once validated, the trigger can flip to `push: branches: [main]` for auto-publish on every main merge.
+
+### Pipeline 2: build the TAAC image (cache consumer)
+
+The standard `build-taac-image` path. The host wrapper auto-resolves the cache:
+
+```bash
+./docker/run-fboss-docker.sh --distro centos build-taac-image
+```
+
+What happens:
+
+1. [`run-fboss-docker.sh`](run-fboss-docker.sh) invokes [`scripts/taac-cache-pull.sh`](../scripts/taac-cache-pull.sh) on the host before docker build. The script reads `$TAAC_CACHE_URI` and fetches it into `.fbthrift-cache/` under the URI's basename via the scheme's backend tool; exits 0 either way. A URI change auto-prunes any stale tarball with a different basename. If storage isn't configured, the cache silently no-ops and Layer B falls through to the source build.
+2. `Dockerfile.taac` Layer A2 COPYs `.fbthrift-cache/` in and, if a tarball is present (globbing `*.tar.gz` — the filename is opaque from this layer), extracts it into `/scratch/installed/` and writes a sentinel file `/scratch/.cache-hit`. Layer B detects the sentinel and **skips the getdeps invocation entirely**, trusting the restored install tree. Layer F (TAAC's own build) uses `--no-deps` so it doesn't re-assess transitive deps either.
+3. **Cache miss / `--no-cache`**: no sentinel, Layer B does the full source build inline (~22 min). Layer F's `--no-deps` still applies — the deps are valid either way.
+
+The "skip entirely" strategy (vs. "let getdeps verify the install tree") avoids a subtle issue: getdeps's `GitFetcher.update()` re-clones source into `/scratch/repos/` when missing and sets `sources_changed=True`, which forces a full rebuild even with a valid install tree. Skipping at the layer boundary sidesteps this — we own the cache trust decision, not getdeps.
+
+### Alternative: publish from a local named volume
+
+Pipeline 1 builds fbthrift in a fresh docker context — clean, reproducible, CI-friendly. For local dev when you've already done a `run-fboss-docker.sh getdeps-build` (which populates the `fboss-scratch-<distro>` named volume) and want to publish that specific build without re-running getdeps, use [`scripts/taac-cache-push.sh`](../scripts/taac-cache-push.sh) `--distro <d>`. It tars from the named volume and uploads to `$TAAC_CACHE_URI`.
 
 ### What's cached
 

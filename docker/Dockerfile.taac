@@ -94,6 +94,13 @@ RUN TARBALL=$(ls /taac/.fbthrift-cache/*.tar.gz 2>/dev/null | head -1) \
 # Cache hit (sentinel /scratch/.cache-hit from Layer A2): skip the
 # getdeps invocation entirely and trust the restored install tree.
 # Cache miss (no sentinel): full source build, ~20 min cold.
+#
+# DRIFT WARNING: the cache-miss branch of this RUN mirrors
+# Dockerfile.fbthrift's getdeps invocation (the Pipeline 1 producer).
+# If you change cmake-defines, the set of pre-built targets, or any
+# flag below, mirror the change in Dockerfile.fbthrift — otherwise the
+# Pipeline 1 tarball that Layer A2 restores will be incompatible with
+# what Layer B's cache-miss branch would have produced.
 RUN if [ -f /scratch/.cache-hit ]; then \
         echo "cache: skipping getdeps build (deps restored from cache)" ; \
     else \
