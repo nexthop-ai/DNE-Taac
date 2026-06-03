@@ -57,7 +57,12 @@ fi
 echo "Using image: $IMAGE" >&2
 
 if [[ "$SUBCMD" = "run" ]]; then
-    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE" bash -c "$INIT && $*"
+    # Hybrid quoting so command args survive intact: INIT expands at
+    # the outer shell (its body uses single-quoted '$PYTHONPATH' to
+    # defer to the inner bash); 'exec "$@"' stays literal and is
+    # resolved by the inner bash from the positional args we append.
+    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE" \
+        bash -c "$INIT"' && exec "$@"' _ "$@"
 else
     exec docker run "${DOCKER_ARGS[@]}" "$IMAGE" bash -c "$INIT && exec bash"
 fi
