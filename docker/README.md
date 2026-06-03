@@ -19,7 +19,7 @@ Two independent pipelines share `fboss-build-env:<distro>` as their base and pro
                         │
                         │  ./docker/run-fboss-docker.sh build-base
                         ▼
-                fboss-build-env:<distro>           (shared base, ~4 GB)
+                fboss-build-env:<distro>           (shared base, 1.09 GB content)
                         │
             ┌───────────┴────────────┐
             ▼                        ▼
@@ -59,7 +59,7 @@ FBOSS public Dockerfile               (~/.taac-fboss-image-src/fboss/oss/docker/
         │
         │  ./docker/run-fboss-docker.sh build-base
         ▼
-fboss-build-env:<distro>              (FBOSS's open-source build environment, ~4 GB)
+fboss-build-env:<distro>              (FBOSS's open-source build environment, 1.09 GB content)
         │
         │  Stage 1 (builder) in Dockerfile.taac, via build-arg BASE.
         │  Runs the getdeps build + pip installs, then prunes
