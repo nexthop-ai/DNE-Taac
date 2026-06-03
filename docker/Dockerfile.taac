@@ -60,23 +60,25 @@ COPY getdeps/manifests /taac/getdeps/manifests
 WORKDIR /taac
 RUN /taac/scripts/setup_getdeps.sh
 
-# ---------- Builder Layer A2: restore from S3 cache (if present) ----------
-# scripts/taac-cache-pull.sh on the host (or a CI step) populates
-# .fbthrift-cache/fbthrift-python-<sha>.tar.gz with a prior successful
-# build's /scratch/installed/ tree at the same pinned fbthrift-python SHA.
-# Extract it here and write a sentinel /scratch/.cache-hit; Layer B then
-# skips the getdeps invocation entirely and trusts the restored tree.
+# ---------- Builder Layer A2: restore from cache (if present) ----------
+# scripts/taac-cache-pull.sh on the host (or a CI step) drops a single
+# tarball into .fbthrift-cache/ holding a prior successful build's
+# /scratch/installed/ tree. Extract it here and write a sentinel
+# /scratch/.cache-hit; Layer B then skips the getdeps invocation
+# entirely and trusts the restored tree.
+#
+# We glob *.tar.gz rather than constructing a name from the manifest
+# rev — the pull script's URI-based filename is opaque to this stage,
+# and the script auto-prunes so at most one tarball is present.
 #
 # Silent fall-through on miss OR corrupt tarball: no sentinel written,
 # Layer B falls through to the normal source build. The integrity check
-# (`tar -tzf`) is cheap and catches the case where ng bucket get
+# (`tar -tzf`) is cheap and catches the case where the cache CLI
 # returned a truncated/partial object — without it, a corrupt cache
 # would fail the whole docker build instead of degrading gracefully.
 COPY .fbthrift-cache /taac/.fbthrift-cache
-RUN REV=$(grep -E '^rev[[:space:]]*=' /taac/getdeps/manifests/fbthrift-python \
-              | head -1 | awk -F'=' '{print $2}' | tr -d ' ') \
-    && TARBALL="/taac/.fbthrift-cache/fbthrift-python-${REV}.tar.gz" \
-    && if [ ! -s "$TARBALL" ]; then \
+RUN TARBALL=$(ls /taac/.fbthrift-cache/*.tar.gz 2>/dev/null | head -1) \
+    && if [ -z "$TARBALL" ] || [ ! -s "$TARBALL" ]; then \
            echo "cache: no tarball found, fbthrift will be built from source." ; \
        elif ! tar -tzf "$TARBALL" >/dev/null 2>&1; then \
            echo "cache: $TARBALL exists but failed integrity check; falling through to source build." ; \

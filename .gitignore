@@ -12,3 +12,9 @@ __pycache__/
 # always finds it, even on a fresh checkout that hasn't run cache-pull yet.
 /.fbthrift-cache/*
 !/.fbthrift-cache/.gitkeep
+
+# Org-specific cache storage config (bucket prefix + CLI commands).
+# scripts/_cache-config.sh.example documents the variables; copy it
+# to _cache-config.sh and fill in your environment's values. Kept
+# untracked to avoid baking infrastructure details into the repo.
+/scripts/_cache-config.sh
