@@ -4,8 +4,10 @@
 # automatically — no maintenance required.
 #
 # If you add a new top-level dir that Dockerfile.taac needs, add a
-# `!dirname/` line here. A missing entry causes a loud build failure
-# (file not found), not a silent context bloat.
+# `!dirname/` line here. For explicit `COPY scripts/...` lines a
+# missing entry produces a clear "file not found" build error; for
+# the `COPY . /taac` wildcard it's silent (the file just isn't in
+# the image), so audit additions accordingly.
 
 *
 # Re-include the root so BuildKit doesn't warn on `COPY . /taac`.

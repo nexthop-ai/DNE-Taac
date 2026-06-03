@@ -13,13 +13,17 @@
 #   FBOSS_IMAGE_SRC   Where to clone/find facebook/fboss for the base image
 #                     build context (default: ~/.taac-fboss-image-src)
 
-set -e
+set -euo pipefail
 
 TAG="fboss-taac"
 NO_CACHE=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --tag requires a value" >&2
+                exit 1
+            fi
             TAG="$2"
             shift 2
             ;;
@@ -48,6 +52,10 @@ if ! docker image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
         echo "Cloning $FBOSS_PUBLIC_URL into $FBOSS_IMAGE_SRC (shallow) ..."
         git clone --depth=1 "$FBOSS_PUBLIC_URL" "$FBOSS_IMAGE_SRC"
     fi
+    # USE_CLANG=false: on CentOS, this makes glog and friends link
+    # against system libunwind.so.8 instead of LLVM's libunwind.so.1,
+    # which isn't on the runtime search path and breaks auditwheel
+    # during fbthrift-python wheel repair.
     docker build --build-arg USE_CLANG=false \
         -t "$BASE_IMAGE" \
         -f "$FBOSS_IMAGE_SRC/fboss/oss/docker/Dockerfile" \
