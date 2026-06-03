@@ -24,10 +24,18 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --image)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --image requires a value" >&2
+                exit 1
+            fi
             IMAGE="$2"
             shift 2
             ;;
         --workspace)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --workspace requires a value" >&2
+                exit 1
+            fi
             WORKSPACE="$(cd "$2" && pwd)"
             shift 2
             ;;
