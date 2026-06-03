@@ -1,0 +1,26 @@
+# Files excluded from the docker build context (i.e. from any COPY in
+# Dockerfile.taac or Dockerfile.fbthrift). Docker honors .dockerignore
+# but NOT .gitignore, so these have to live here separately.
+#
+# Note on .fbthrift-cache/: NOT excluded here, because Dockerfile.taac's
+# Layer A2 explicitly COPYs it into the builder stage to restore the
+# install tree. The runtime stage's COPY . /taac uses a per-COPY
+# `--exclude=.fbthrift-cache` to keep the tarball out of the shippable
+# image instead. .dockerignore is build-context-wide, so excluding
+# here would also block Layer A2.
+
+# Python bytecode that has no business in either the build context or
+# the final image.
+__pycache__/
+*.pyc
+
+# getdeps bootstrap output. The host's copy is irrelevant inside the
+# docker build — setup_getdeps.sh runs fresh in Layer A and produces
+# its own build/fbcode_builder/.
+build/
+
+# Local-dev cruft that occasionally lands in the repo root.
+.vscode/
+.idea/
+*.swp
+.DS_Store
