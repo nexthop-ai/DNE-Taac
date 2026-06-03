@@ -26,7 +26,13 @@
 
 set -euo pipefail
 
-SRC="${1:?Usage: taac-regen-thrift <thrift_src_dir> [<output_dir>]}"
+QUIET=0
+if [[ "${1:-}" = "--quiet" ]]; then
+    QUIET=1
+    shift
+fi
+
+SRC="${1:?Usage: taac-regen-thrift [--quiet] <thrift_src_dir> [<output_dir>]}"
 OUT="${2:-/tmp/taac-regen}"
 
 THRIFT1=/scratch/installed/fbthrift-python/bin/thrift1
@@ -60,7 +66,7 @@ while IFS= read -r -d '' f; do
         -I "$FBOSS_SCHEMAS" \
         -I "$FBTHRIFT_INCLUDE" \
         -o "$OUT" \
-        "$f"
+        "$f" 2>/dev/null
     count=$((count + 1))
 done < <(find "$SRC" -name '*.thrift' -type f -print0)
 
@@ -79,15 +85,14 @@ while IFS= read -r -d '' f; do
     echo 'from .thrift_clients import *' > "$dir/clients.py"
 done < <(find "$OUT/gen-python" -name 'thrift_clients.py' -print0)
 
-echo ""
 echo "Regenerated $count .thrift file(s) → $OUT/gen-python/"
-echo ""
-echo "To pick them up, prepend the regen tree to PYTHONPATH:"
-echo "  export PYTHONPATH=$OUT/gen-python:\$PYTHONPATH"
-echo ""
-echo "If your workspace is bind-mounted at e.g. /workspace, prepend it too"
-echo "so edited TAAC .py source overrides the baked-in install tree:"
-echo "  export PYTHONPATH=/workspace:$OUT/gen-python:\$PYTHONPATH"
-echo ""
-echo "(\$PYTHONPATH at this point is the entrypoint-set value with the"
-echo "taac-<HASH> install tree glob already resolved — don't overwrite it.)"
+
+if [[ "$QUIET" -eq 0 ]]; then
+    echo ""
+    echo "To pick them up, prepend the regen tree to PYTHONPATH:"
+    echo "  export PYTHONPATH=$OUT/gen-python:\$PYTHONPATH"
+    echo ""
+    echo "If your workspace is bind-mounted at e.g. /workspace, prepend it too"
+    echo "so edited TAAC .py source overrides the baked-in install tree:"
+    echo "  export PYTHONPATH=/workspace:$OUT/gen-python:\$PYTHONPATH"
+fi

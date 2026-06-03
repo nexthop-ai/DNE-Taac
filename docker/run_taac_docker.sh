@@ -1,0 +1,63 @@
+#!/bin/bash
+# Developer shell into the TAAC container with workspace bind-mounted.
+#
+# Usage:
+#   ./docker/run_taac_docker.sh                          # shell with local source overlay
+#   ./docker/run_taac_docker.sh --regen                  # regen thrift bindings on entry, then shell
+#   ./docker/run_taac_docker.sh --image <image>          # use a specific image
+#   ./docker/run_taac_docker.sh run <cmd>                # run a command instead of interactive shell
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+IMAGE="fboss-taac"
+WORKSPACE="$REPO_ROOT"
+REGEN=0
+SUBCMD=shell
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --regen)
+            REGEN=1
+            shift
+            ;;
+        --image)
+            IMAGE="$2"
+            shift 2
+            ;;
+        --workspace)
+            WORKSPACE="$(cd "$2" && pwd)"
+            shift 2
+            ;;
+        run)
+            SUBCMD=run
+            shift
+            break
+            ;;
+        *)
+            echo "Usage: $0 [--regen] [--image <name>] [--workspace <path>] [run <cmd...>]" >&2
+            exit 1
+            ;;
+    esac
+done
+
+DOCKER_ARGS=(
+    --rm -it --network host
+    -v "$WORKSPACE":/workspace
+)
+
+if [[ "$REGEN" -eq 1 ]]; then
+    INIT='taac-regen-thrift --quiet /workspace/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH'
+else
+    INIT='export PYTHONPATH=/workspace:$PYTHONPATH'
+fi
+
+echo "Using image: $IMAGE" >&2
+
+if [[ "$SUBCMD" = "run" ]]; then
+    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE" bash -c "$INIT && $*"
+else
+    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE" bash -c "$INIT && exec bash"
+fi
