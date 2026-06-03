@@ -180,6 +180,12 @@ case "${1:-}" in
             echo "Base image $IMAGE_TAG not found - building it first..."
             build_base
         fi
+        # Best-effort restore the fbthrift install tree from the Nexthop
+        # bucket. Silent fall-through on miss. Dockerfile.taac's Layer A2
+        # COPYs .fbthrift-cache/ in and extracts if a matching tarball is
+        # present.
+        mkdir -p "$REPO_ROOT/.fbthrift-cache"
+        "$REPO_ROOT/scripts/taac-cache-pull.sh" || true
         echo "Building fboss-taac:$DISTRO from docker/Dockerfile.taac (BASE=$IMAGE_TAG) ..."
         docker build \
             -f "$REPO_ROOT/docker/Dockerfile.taac" \
