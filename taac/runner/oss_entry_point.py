@@ -31,6 +31,7 @@ import importlib.util
 import logging
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import List, Optional
 
@@ -227,16 +228,133 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.info("Dry-run mode: All configurations validated successfully")
             return OSSReturnCode.SUCCESS
 
-        # Test execution wiring (TaacRunner instantiation + per-playbook
-        # invocation) lands in a follow-up PR. This foundation only supports
-        # --dry-run / --list-tests; bail out cleanly rather than silently
-        # falling through to a stub that fabricates PASSED.
-        logger.error(
-            "Test execution is not implemented in this build. "
-            "Pass --dry-run to validate the config or --list-tests to list "
-            "available tests."
-        )
-        return OSSReturnCode.CONFIG_ERROR
+        # Execute playbooks from all configs
+        # Per VP1 spec: Use OSSTestExecutor to run each playbook and capture results
+        logger.info("Starting test execution...")
+
+        from taac.libs.taac_runner import TaacRunner
+
+        # Group playbooks by config
+        configs_to_run = {}
+        for config_path, config, playbook in all_playbooks:
+            if not playbook.enabled:
+                logger.info(f"Skipping disabled playbook: {playbook.name}")
+                continue
+            key = (config_path, config.name)
+            if key not in configs_to_run:
+                configs_to_run[key] = (config_path, config, [])
+            configs_to_run[key][2].append(playbook)
+
+        # Execute each config with all its playbooks and all DUTs
+        for (config_path, config_name), (path, config, playbooks) in configs_to_run.items():
+            logger.info(f"\n{'=' * 70}")
+            logger.info(f"Executing test config: {config_name}")
+            logger.info(f"  Config path: {path}")
+            logger.info(f"  Playbooks: {[pb.name for pb in playbooks]}")
+            logger.info(f"  DUTs: {args.duts}")
+            logger.info(f"{'=' * 70}\n")
+
+            # Ensure config.endpoints includes every --dut: TaacRunner builds
+            # its topology from test_config.endpoints, so DUTs that aren't
+            # listed there fail with "not found in topology". Append missing
+            # --dut entries (don't overwrite endpoints the user already
+            # declared, e.g. for traffic generators).
+            from taac.test_as_a_config.thrift_types import Endpoint
+            existing_dut_names = {ep.name for ep in config.endpoints if ep.dut}
+            missing_duts = [d for d in args.duts if d not in existing_dut_names]
+            if missing_duts:
+                new_endpoints = tuple(config.endpoints) + tuple(
+                    Endpoint(name=d, dut=True) for d in missing_duts
+                )
+                config = config(endpoints=new_endpoints)
+
+            # Create TaacRunner for this config
+            taac_runner = TaacRunner(
+                test_config=config,
+                ixia_api_server=args.ixia_api_server,
+                ixia_session_id=args.ixia_session_id,
+                skip_ixia_setup=args.skip_ixia_setup,
+                skip_ixia_cleanup=args.skip_ixia_cleanup,
+                skip_testbed_isolation=args.skip_testbed_isolation,
+                skip_setup_tasks=args.skip_setup_tasks,
+                skip_teardown_tasks=args.skip_teardown_tasks,
+            )
+
+            # Create executor for this config
+            executor = OSSTestExecutor(
+                taac_runner=taac_runner,
+                logger=logger,
+            )
+
+            # Execute each playbook/DUT combination
+            try:
+                # Step 1: Setup (once per config)
+                logger.info("Running async_test_setUp()...")
+                asyncio.run(taac_runner.async_test_setUp())
+
+                # Step 2: Execute playbooks using OSSTestExecutor
+                for playbook in playbooks:
+                    for dut in args.duts:
+                        logger.info(f"\nExecuting {playbook.name} on {dut}...")
+                        result = executor.execute_playbook(
+                            playbook=playbook,
+                            dut=dut,
+                            test_config=config_name,
+                        )
+                        aggregator.add_result(result)
+
+                        # Handle retries for transient failures
+                        if args.retry and result.is_transient and result.status.failed:
+                            for retry_attempt in range(args.retry):
+                                logger.info(f"Retry attempt {retry_attempt + 1}/{args.retry} for {playbook.name} on {dut}")
+                                retry_result = executor.execute_playbook(
+                                    playbook=playbook,
+                                    dut=dut,
+                                    test_config=config_name,
+                                )
+                                retry_result.retry_count = retry_attempt + 1
+
+                                # If retry succeeded, mark original as RETRIED
+                                if not retry_result.status.failed:
+                                    result.status = OSSTestStatus.RETRIED
+                                    aggregator.add_result(retry_result)
+                                    break
+                                else:
+                                    # Add failed retry result
+                                    aggregator.add_result(retry_result)
+
+            except Exception as e:
+                logger.error(f"Error executing test config {config_name}: {e}")
+                logger.exception(e)
+                # Mark remaining playbooks/duts as failed for this config
+                from taac.runner.oss_exceptions import classify_exception
+                status, is_transient = classify_exception(e)
+                for playbook in playbooks:
+                    for dut in args.duts:
+                        # Only add error result if we haven't already executed this combo
+                        if not any(r.playbook == playbook.name and r.dut == dut for r in aggregator.results):
+                            result = OSSTestResult(
+                                test_config=config_name,
+                                playbook=playbook.name,
+                                dut=dut,
+                                status=status,
+                                duration=0.0,
+                                message=str(e),
+                                exception_type=type(e).__name__,
+                                exception_message=str(e),
+                                is_transient=is_transient,
+                                stacktrace=traceback.format_exc(),
+                            )
+                            aggregator.add_result(result)
+
+            finally:
+                # Step 3: Teardown (always run)
+                try:
+                    logger.info("Running async_test_tearDown()...")
+                    asyncio.run(taac_runner.async_test_tearDown())
+                except Exception as e:
+                    logger.error(f"Error during teardown: {e}")
+                    logger.exception(e)
 
         # Print summary
         aggregator.print_summary(logger)
