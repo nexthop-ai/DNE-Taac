@@ -321,9 +321,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                                     )
                                     retry_result.retry_count = retry_attempt + 1
 
-                                    # If retry succeeded, mark original as RETRIED
+                                    # If retry succeeded, mark original as RETRIED.
+                                    # Also clear is_transient on the original so it
+                                    # doesn't trip get_exit_code's `any(is_transient)`
+                                    # check — a fully-recovered run must exit 0, not
+                                    # TRANSIENT_ERROR (130), or --retry is pointless.
                                     if not retry_result.status.failed:
                                         result.status = OSSTestStatus.RETRIED
+                                        result.is_transient = False
                                         aggregator.add_result(retry_result)
                                         break
                                     else:
