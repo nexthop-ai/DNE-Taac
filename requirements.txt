@@ -3,26 +3,30 @@
 # Kept minimal on purpose — add entries only when a concrete
 # ImportError or runtime failure proves the dep is needed. If you add
 # something, leave a short note or mention the symptom in the commit.
+#
+# Lower-bound version floors keep the vendor-shippable image reproducible
+# against API-breaking releases. Bump the floors when picking up newer
+# baseline versions.
 
 # Imported at module scope in taac/libs/taac_runner.py.
-tabulate
+tabulate>=0.9.0
 
 # IXIA traffic-generator client library. Imported at module scope in
 # taac/ixia/taac_ixia.py (from ixnetwork_restpy.assistants.statistics...).
-ixnetwork-restpy
+ixnetwork-restpy>=1.0.0
 
 # Pyre's public typing helpers (JSON alias, none_throws). Imported at
 # module scope in taac/utils/json_thrift_utils.py (from pyre_extensions
 # import JSON).
-pyre-extensions
+pyre-extensions>=0.0.30
 
 # SSH / CLI automation used at module scope in taac/driver/fboss_switch.py.
-pexpect
+pexpect>=4.8.0
 
 # LRU cache decorators used in taac/driver/memoize_on_app_overload.py
 # (from cachetools import LRUCache).
-cachetools
+cachetools>=5.0.0
 
 # Async SSH client. Lazy-imported in taac/utils/oss_driver_utils.py
 # under the OSS-driver SSH code path (driver.async_run_cmd_on_shell).
-asyncssh
+asyncssh>=2.13.0
