@@ -14,8 +14,9 @@ Main Components:
 - oss_return_code.py: Exit code enum
 - oss_test_result.py: Test result dataclass
 - result_formatter.py: Result collection and summarization
-- oss_test_executor.py: Exception → Status mapping
-- oss_exceptions.py: OSS-specific exceptions
+- oss_test_executor.py: Test execution + retry logic
+- oss_exceptions.py: OSS-specific exception classes
+- oss_exception_classifier.py: Maps exceptions → OSSTestStatus + infra/user split
 """
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "result_formatter",
     "oss_test_executor",
     "oss_exceptions",
+    "oss_exception_classifier",
 ]
