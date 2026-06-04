@@ -11,6 +11,6 @@
 # check filtering).
 #
 # Lines starting with # are treated as comments by the loader.
-fboss101.internal.nexthop.ai,,,,,FBOSS,
-fboss102.internal.nexthop.ai,,,,,FBOSS,
-fboss103.internal.nexthop.ai,,,,,FBOSS,
+device01.example.com,,,,,FBOSS,
+device02.example.com,,,,,FBOSS,
+device03.example.com,,,,,FBOSS,

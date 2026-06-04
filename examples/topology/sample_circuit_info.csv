@@ -16,5 +16,5 @@
 # do. Populate from `lldpctl -f json` output or your NMS / source-of-truth.
 #
 # Example rows (commented out):
-# fboss101.internal.nexthop.ai,eth1/1/1,FBOSS,,fboss102.internal.nexthop.ai,eth1/1/1,FBOSS,,3,
-# fboss102.internal.nexthop.ai,eth1/1/1,FBOSS,,fboss101.internal.nexthop.ai,eth1/1/1,FBOSS,,3,
+# device01.example.com,eth1/1/1,FBOSS,,device02.example.com,eth1/1/1,FBOSS,,3,
+# device02.example.com,eth1/1/1,FBOSS,,device01.example.com,eth1/1/1,FBOSS,,3,
