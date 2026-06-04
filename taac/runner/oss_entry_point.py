@@ -117,14 +117,19 @@ def filter_playbooks(config, playbook_names: Optional[List[str]] = None):
     playbooks = config.playbooks if hasattr(config, "playbooks") else []
 
     if playbook_names:
-        # Filter by name
-        filtered = [pb for pb in playbooks if pb.name in playbook_names]
+        # Filter by name, but only return enabled playbooks (mirrors the else
+        # branch — a disabled playbook whose name matches shouldn't run).
+        filtered = [pb for pb in playbooks if pb.name in playbook_names and pb.enabled]
         return filtered
     else:
         # Return all enabled playbooks
         return [pb for pb in playbooks if pb.enabled]
 
 
+# TODO([VP1 3/5]): delete this free function. It's the active code path in
+# this PR, but [VP1 3/5] replaces it with OSSTestExecutor.execute_playbook()
+# and the free version becomes dead code. Remove together with the new
+# OSSTestExecutor wiring so the dead version never ships.
 async def execute_playbook(
     taac_runner,
     playbook,
