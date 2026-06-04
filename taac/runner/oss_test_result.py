@@ -6,6 +6,7 @@ OSS Test Result Dataclass
 Represents the result of a single test execution.
 """
 
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -112,9 +113,20 @@ class OSSTestResult:
         }
 
     def summary(self) -> str:
-        """One-line summary of the test result (VP1 spec)."""
-        color = self.status.color
-        reset = OSSTestStatus.reset_color()
+        """One-line summary of the test result (VP1 spec).
+
+        ANSI color is emitted only when stdout is a TTY so that
+        --log-file output and non-tty CI captures (Jenkins / GHA console
+        / redirected stdout) get plain `[NAME]` instead of raw escape
+        sequences. Re-checked on every call so test-suite captures
+        (which may replace sys.stdout per-test) see the right answer.
+        """
+        if sys.stdout.isatty():
+            color = self.status.color
+            reset = OSSTestStatus.reset_color()
+        else:
+            color = ""
+            reset = ""
         duration_str = f"{self.duration:.2f}s" if self.duration else "N/A"
         return f"{color}[{self.status.name}]{reset} {self.test_case} ({duration_str})"
 

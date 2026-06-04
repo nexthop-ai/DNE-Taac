@@ -69,8 +69,16 @@ class OSSResultAggregator:
 
     @property
     def skipped_count(self) -> int:
-        """Number of skipped tests (VP1 spec)."""
-        return sum(1 for r in self.results if r.status == OSSTestStatus.SKIPPED)
+        """Number of skipped tests (VP1 spec).
+
+        Mirrors OSSTestStatus.is_skipped() — SKIPPED + OMITTED + NOT_RUN —
+        so the suite-level `skipped=` attribute in to_junit_xml() agrees
+        with the per-testcase `<skipped>` markup branch (which uses
+        is_skipped()). Otherwise an OMITTED result would emit `<skipped>`
+        but not be counted in the suite total, breaking
+        `tests = passed + failed + errors + skipped`.
+        """
+        return sum(1 for r in self.results if r.status.is_skipped())
 
     @property
     def has_failures(self) -> bool:
@@ -117,10 +125,19 @@ class OSSResultAggregator:
         if not self.results:
             return OSSReturnCode.NO_TESTS_FOUND
 
-        # Map fine-grained failure modes to dedicated exit codes before the
-        # generic INFRA_ERROR / TEST_CASE_FAILURE fall-throughs. Order is
-        # specific → generic so a TIMEOUT marked is_transient still yields
-        # TIMEOUT_ERROR (more informative than TRANSIENT_ERROR alone).
+        # Real test failures (FAILED / ERROR) dominate infra-class signals:
+        # a run of 49 FAILED + 1 TIMEOUT should exit TEST_CASE_FAILURE (2),
+        # not TIMEOUT_ERROR (131). Callers keying on "2 == real test
+        # regression, 128+ == environment" must not see real regressions
+        # masked by an infra blip on a sibling result.
+        if any(
+            result.status in (OSSTestStatus.FAILED, OSSTestStatus.ERROR)
+            for result in self.results
+        ):
+            return OSSReturnCode.TEST_CASE_FAILURE
+
+        # No real test failure — map remaining infra-class signals to
+        # their dedicated codes. Order is specific → generic.
         if any(result.status == OSSTestStatus.TIMEOUT for result in self.results):
             return OSSReturnCode.TIMEOUT_ERROR
         if any(result.is_transient for result in self.results):
@@ -128,7 +145,8 @@ class OSSResultAggregator:
         if any(result.status == OSSTestStatus.SETUP_FAILED for result in self.results):
             return OSSReturnCode.INFRA_ERROR
 
-        # Check for test failures
+        # Catch-all for any remaining status.failed (e.g. TEARDOWN_FAILED)
+        # that didn't match a more specific bucket above.
         if any(result.status.failed for result in self.results):
             return OSSReturnCode.TEST_CASE_FAILURE
 
