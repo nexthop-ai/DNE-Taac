@@ -342,13 +342,30 @@ def main(argv: Optional[List[str]] = None) -> int:
                         logger.error(f"Error during teardown: {td_exc}")
                         logger.exception(td_exc)
 
+            # Enforce --timeout on the full setUp → execute → tearDown
+            # lifecycle. `asyncio.wait_for` cancels the wrapped coroutine
+            # (which lets the `finally:` inside _run_lifecycle run the
+            # teardown) and re-raises asyncio.TimeoutError, which we map
+            # to OSSTestStatus.TIMEOUT for any playbook×dut combos that
+            # never produced a result. Wrap+run inside one asyncio.run()
+            # so the timer and the lifecycle share a single event loop.
+            async def _timed_lifecycle() -> None:
+                await asyncio.wait_for(_run_lifecycle(), timeout=args.timeout)
+
             try:
-                asyncio.run(_run_lifecycle())
+                asyncio.run(_timed_lifecycle())
             except Exception as e:
-                logger.error(f"Error executing test config {config_name}: {e}")
-                logger.exception(e)
+                if isinstance(e, asyncio.TimeoutError):
+                    logger.error(
+                        f"Timeout after {args.timeout}s executing test config "
+                        f"{config_name}"
+                    )
+                    status, is_transient = OSSTestStatus.TIMEOUT, False
+                else:
+                    logger.error(f"Error executing test config {config_name}: {e}")
+                    logger.exception(e)
+                    status, is_transient = classify_exception(e)
                 # Mark remaining playbooks/duts as failed for this config
-                status, is_transient = classify_exception(e)
                 for playbook in playbooks:
                     for dut in args.duts:
                         # Only add error result if we haven't already executed this combo
@@ -359,7 +376,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                                 dut=dut,
                                 status=status,
                                 duration=0.0,
-                                message=str(e),
+                                message=str(e) or f"Timeout after {args.timeout}s",
                                 exception_type=type(e).__name__,
                                 exception_message=str(e),
                                 is_transient=is_transient,
