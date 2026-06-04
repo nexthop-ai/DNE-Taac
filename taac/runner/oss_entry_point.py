@@ -35,7 +35,10 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
+from taac.test_as_a_config.thrift_types import Endpoint
+
 from taac.runner.cli_parser import parse_args
+from taac.runner.oss_exception_classifier import classify_exception
 from taac.runner.oss_exceptions import (
     OSSConfigError,
     OSSConnectionError,
@@ -259,13 +262,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             # listed there fail with "not found in topology". Append missing
             # --dut entries (don't overwrite endpoints the user already
             # declared, e.g. for traffic generators).
-            from taac.test_as_a_config.thrift_types import Endpoint
             existing_dut_names = {ep.name for ep in config.endpoints if ep.dut}
             missing_duts = [d for d in args.duts if d not in existing_dut_names]
             if missing_duts:
                 new_endpoints = tuple(config.endpoints) + tuple(
                     Endpoint(name=d, dut=True) for d in missing_duts
                 )
+                # thrift struct copy-with-override: thrift-python structs are
+                # callable with kwargs to produce a copy with the named fields
+                # replaced (the original is immutable).
                 config = config(endpoints=new_endpoints)
 
             # Create TaacRunner for this config
@@ -286,48 +291,58 @@ def main(argv: Optional[List[str]] = None) -> int:
                 logger=logger,
             )
 
-            # Execute each playbook/DUT combination
+            # Run the full setUp → execute → tearDown lifecycle inside ONE
+            # asyncio.run() so all three phases share the same event loop.
+            # If setUp creates resources tied to the loop (connection pools,
+            # async context managers, etc.), running it on a separate loop
+            # from execute_playbook / tearDown produces "attached to a
+            # different loop" errors or silent connection failures.
+            async def _run_lifecycle() -> None:
+                await taac_runner.async_test_setUp()
+                try:
+                    for playbook in playbooks:
+                        for dut in args.duts:
+                            logger.info(f"\nExecuting {playbook.name} on {dut}...")
+                            result = await executor.execute_playbook(
+                                playbook=playbook,
+                                dut=dut,
+                                test_config=config_name,
+                            )
+                            aggregator.add_result(result)
+
+                            # Handle retries for transient failures
+                            if args.retry and result.is_transient and result.status.failed:
+                                for retry_attempt in range(args.retry):
+                                    logger.info(f"Retry attempt {retry_attempt + 1}/{args.retry} for {playbook.name} on {dut}")
+                                    retry_result = await executor.execute_playbook(
+                                        playbook=playbook,
+                                        dut=dut,
+                                        test_config=config_name,
+                                    )
+                                    retry_result.retry_count = retry_attempt + 1
+
+                                    # If retry succeeded, mark original as RETRIED
+                                    if not retry_result.status.failed:
+                                        result.status = OSSTestStatus.RETRIED
+                                        aggregator.add_result(retry_result)
+                                        break
+                                    else:
+                                        # Add failed retry result
+                                        aggregator.add_result(retry_result)
+                finally:
+                    try:
+                        logger.info("Running async_test_tearDown()...")
+                        await taac_runner.async_test_tearDown()
+                    except Exception as td_exc:
+                        logger.error(f"Error during teardown: {td_exc}")
+                        logger.exception(td_exc)
+
             try:
-                # Step 1: Setup (once per config)
-                logger.info("Running async_test_setUp()...")
-                asyncio.run(taac_runner.async_test_setUp())
-
-                # Step 2: Execute playbooks using OSSTestExecutor
-                for playbook in playbooks:
-                    for dut in args.duts:
-                        logger.info(f"\nExecuting {playbook.name} on {dut}...")
-                        result = executor.execute_playbook(
-                            playbook=playbook,
-                            dut=dut,
-                            test_config=config_name,
-                        )
-                        aggregator.add_result(result)
-
-                        # Handle retries for transient failures
-                        if args.retry and result.is_transient and result.status.failed:
-                            for retry_attempt in range(args.retry):
-                                logger.info(f"Retry attempt {retry_attempt + 1}/{args.retry} for {playbook.name} on {dut}")
-                                retry_result = executor.execute_playbook(
-                                    playbook=playbook,
-                                    dut=dut,
-                                    test_config=config_name,
-                                )
-                                retry_result.retry_count = retry_attempt + 1
-
-                                # If retry succeeded, mark original as RETRIED
-                                if not retry_result.status.failed:
-                                    result.status = OSSTestStatus.RETRIED
-                                    aggregator.add_result(retry_result)
-                                    break
-                                else:
-                                    # Add failed retry result
-                                    aggregator.add_result(retry_result)
-
+                asyncio.run(_run_lifecycle())
             except Exception as e:
                 logger.error(f"Error executing test config {config_name}: {e}")
                 logger.exception(e)
                 # Mark remaining playbooks/duts as failed for this config
-                from taac.runner.oss_exception_classifier import classify_exception
                 status, is_transient = classify_exception(e)
                 for playbook in playbooks:
                     for dut in args.duts:
@@ -343,18 +358,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                                 exception_type=type(e).__name__,
                                 exception_message=str(e),
                                 is_transient=is_transient,
-                                stacktrace=traceback.format_exc(),
+                                traceback=traceback.format_exc(),
                             )
                             aggregator.add_result(result)
-
-            finally:
-                # Step 3: Teardown (always run)
-                try:
-                    logger.info("Running async_test_tearDown()...")
-                    asyncio.run(taac_runner.async_test_tearDown())
-                except Exception as e:
-                    logger.error(f"Error during teardown: {e}")
-                    logger.exception(e)
 
         # Print summary
         aggregator.print_summary(logger)
