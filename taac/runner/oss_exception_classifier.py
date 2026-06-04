@@ -14,6 +14,7 @@ import asyncio
 import unittest
 from typing import Tuple
 
+from taac.constants import TestCaseFailure
 from taac.runner.oss_exceptions import (
     OSSConnectionError,
     OSSInfrastructureError,
@@ -26,8 +27,21 @@ from taac.runner.oss_test_status import OSSTestStatus
 
 
 def get_exception_to_status_map():
-    """Get the exception-to-status mapping dict."""
+    """Get the exception-to-status mapping dict.
+
+    Order is significant — classify_exception iterates this dict and the
+    first isinstance() match wins. Put narrower types before broader ones
+    (e.g. TestCaseFailure before AssertionError) when an exception class
+    could be matched by multiple entries.
+    """
     return {
+        # TAAC playbooks signal a failed health-check / validation by
+        # raising TestCaseFailure (taac/constants.py) — NOT AssertionError.
+        # Without this entry, every real test failure falls through to
+        # the unknown-Exception branch and gets reported as ERROR, which
+        # then JUnit-emits as `<error>` instead of `<failure>`. That makes
+        # CI dashboards misclassify genuine regressions as infra flakes.
+        TestCaseFailure: OSSTestStatus.FAILED,
         AssertionError: OSSTestStatus.FAILED,
         unittest.SkipTest: OSSTestStatus.SKIPPED,
         # Both the builtin TimeoutError and asyncio.TimeoutError. They
