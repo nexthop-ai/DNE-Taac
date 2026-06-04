@@ -8,21 +8,21 @@ This is the main entry point for running TAAC tests without Netcastle.
 It replaces the Netcastle test framework integration and calls TaacRunner directly.
 
 Usage:
-    python -m neteng.test_infra.dne.taac.oss.oss_entry_point \\
+    python -m taac.runner.oss_entry_point \\
         --test-config <config> --dut <device> [options]
 
 Examples:
     # Run all tests in a config against a single DUT
-    python -m neteng.test_infra.dne.taac.oss.oss_entry_point \\
+    python -m taac.runner.oss_entry_point \\
         --test-config my_config --dut switch1.example.com
 
     # Run specific playbooks against multiple DUTs
-    python -m neteng.test_infra.dne.taac.oss.oss_entry_point \\
+    python -m taac.runner.oss_entry_point \\
         --test-config my_config --dut switch1 switch2 \\
         --playbook test_bgp test_agent
 
     # Enable debug logging
-    python -m neteng.test_infra.dne.taac.oss.oss_entry_point \\
+    python -m taac.runner.oss_entry_point \\
         --test-config my_config --dut switch1 --debug
 """
 
@@ -244,33 +244,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.info("Dry-run mode: All configurations validated successfully")
             return OSSReturnCode.SUCCESS
 
-        # Execute playbooks from all configs
-        logger.info("Starting test execution...")
-
-        for config_path, config, playbook in all_playbooks:
-            if not playbook.enabled:
-                logger.info(f"Skipping disabled playbook: {playbook.name}")
-                continue
-
-            # Create TaacRunner for this config
-            from neteng.test_infra.dne.taac.libs.taac_runner import TaacRunner
-
-            taac_runner = TaacRunner(
-                test_config=config,
-                ixia_api_server=args.ixia_api_server,
-                ixia_session_id=args.ixia_session_id,
-                skip_ixia_setup=args.skip_ixia_setup,
-                skip_ixia_cleanup=args.skip_ixia_cleanup,
-                skip_testbed_isolation=args.skip_testbed_isolation,
-                skip_setup_tasks=args.skip_setup_tasks,
-                skip_teardown_tasks=args.skip_teardown_tasks,
-            )
-
-            for dut in args.duts:
-                result = asyncio.run(
-                    execute_playbook(taac_runner, playbook, dut, Path(config_path).name, logger)
-                )
-                aggregator.add_result(result)
+        # Test execution wiring (TaacRunner instantiation + per-playbook
+        # invocation) lands in [VP1 3/5]. This foundation PR only supports
+        # --dry-run / --list-tests; bail out cleanly rather than silently
+        # falling through to a stub that fabricates PASSED.
+        logger.error(
+            "Test execution is not implemented in this build. "
+            "Pass --dry-run to validate the config or --list-tests to list "
+            "available tests. Real execution wiring lands in [VP1 3/5]."
+        )
+        return OSSReturnCode.CONFIG_ERROR
 
         # Print summary
         aggregator.print_summary(logger)
@@ -300,7 +283,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return OSSReturnCode.INFRASTRUCTURE_ERROR
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        logger.debug(f"Traceback:", exc_info=True)
+        logger.debug("Traceback:", exc_info=True)
         return OSSReturnCode.CONFIG_ERROR
 
 
