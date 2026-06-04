@@ -79,8 +79,12 @@ cfg = TestConfig(
 
 # skip_post_setup_wait skips a 180s interface-stabilization sleep
 # that's only useful when booting real hardware.
-runner = TaacRunner(test_config=cfg, skip_post_setup_wait=True)
-asyncio.run(runner.run_tests())
+async def main():
+    runner = TaacRunner(test_config=cfg, skip_post_setup_wait=True)
+    await runner.async_test_setUp()
+    await runner.run_tests()
+
+asyncio.run(main())
 ```
 
 ### Plugging in a custom driver
