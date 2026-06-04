@@ -1,54 +1,49 @@
 #!/usr/bin/env python3
-"""End-to-end OSS smoke test against one or more real FBOSS devices.
+"""End-to-end OSS smoke test against real FBOSS devices, via VP1.
 
-Constructs a minimal TestConfig with a DummyStep playbook and a
-RunSSHCmdStep playbook, points it at the host(s) supplied on the
-command line, and drives it through TaacRunner under TAAC_OSS=1.
+Drives examples/live_smoke_config.py (a DummyStep + RunSSHCmdStep
+playbook that runs `uname -a`) through the VP1 oss_entry_point CLI,
+then prints the per-DUT `uname -a` output for visual confirmation
+that the SSH step actually executed on each device.
 
-Designed to run *inside* the `fboss-taac` image via
-`docker/run_taac_docker.sh`. The wrapper bind-mounts the repo at
-/workspace, sets PYTHONPATH (the image entrypoint sets LD_LIBRARY_PATH
-+ the baked-in install path), and auto-forwards `TAAC_*` env vars from
-the host, so passwords stay out of inline `bash -c` strings:
+Designed to run inside the `fboss-taac` derived image. The image
+contains `taac/` but NOT `examples/`, so bind-mount the repo root
+at `/taac` to expose this script and the topology CSVs:
 
-    # Auth: either TAAC_SSH_KEY (path to a private key, default ~/.ssh/id_rsa)
-    # or TAAC_SSH_PASSWORD — set whichever your devices accept.
-    export TAAC_OSS=1 TAAC_SSH_USER=netops
-    export TAAC_SSH_KEY=~/.ssh/id_rsa             # key auth, OR:
-    source ~/.taac-secrets                        # password auth (chmod 600)
+    docker run --rm --network host \\
+        -v "$PWD":/taac \\
+        -e TAAC_OSS=1 -e TAAC_SSH_USER=<user> -e TAAC_SSH_PASSWORD=<pw> \\
+        fboss-taac \\
+        python3 /taac/examples/smoke_live_device.py \\
+            --device-info-csv /taac/examples/topology/sample_device_info.csv \\
+            --circuit-info-csv /taac/examples/topology/sample_circuit_info.csv
 
-    ./docker/run_taac_docker.sh run \\
-        python3 /workspace/examples/smoke_live_device.py \\
-            --device-info-csv /workspace/examples/topology/sample_device_info.csv \\
-            --circuit-info-csv /workspace/examples/topology/sample_circuit_info.csv \\
-            --command "uname -a"
-
-(`--network host` is baked into the wrapper so internal-DNS hostnames
- resolve from inside the container.)
+`--network host` is required so internal-DNS hostnames resolve from
+inside the container. The image's entrypoint pre-exports PYTHONPATH /
+LD_LIBRARY_PATH / TAAC_OSS, so no env wiring is needed at the caller.
 
 Flag summary:
-  --hosts             Optional. Subset of CSV hosts (or required if no CSV).
-  --device-info-csv   Sets TAAC_DEVICE_INFO_PATH so the OSS topology loader
-                      picks up an environment-specific fixture. If omitted,
-                      every hostname in the CSV is used as a DUT.
+  --device-info-csv   REQUIRED. Sets TAAC_DEVICE_INFO_PATH so the OSS
+                      topology loader picks up an environment-specific
+                      fixture and `async_get_device_driver` can dispatch
+                      to FbossSwitch via the per-host `operating_system`
+                      column. Every hostname listed is used as a DUT,
+                      unless --hosts narrows the set.
+  --hosts             Optional. Subset of --device-info-csv's hosts.
   --circuit-info-csv  Sets TAAC_CIRCUIT_INFO_PATH for adjacency-aware tests.
                       Optional; DummyStep + RunSSHCmdStep don't need it.
-  --command           Shell command to run via RunSSHCmdStep (default: hostname).
 
-Exits 0 on success, 1 on failure (any step raising or the runner
-returning an exception).
+Exits with oss_entry_point's exit code (0 on PASS, non-zero on failure).
 """
 
 import argparse
 import asyncio
 import csv
-import json
 import os
 import sys
 
 
-REQUIRED_ENV = ("TAAC_OSS", "TAAC_SSH_USER")
-AUTH_ENV = ("TAAC_SSH_KEY", "TAAC_SSH_PASSWORD")  # at least one required
+REQUIRED_ENV = ("TAAC_OSS", "TAAC_SSH_USER", "TAAC_SSH_PASSWORD")
 
 
 def _read_hostnames_from_csv(path: str) -> list:
@@ -65,111 +60,52 @@ def _preflight() -> None:
             f"Missing required env vars: {', '.join(missing)}.\n"
             f"See the docstring at the top of this file for the full setup."
         )
-    if not any(os.environ.get(v) for v in AUTH_ENV):
-        sys.exit(
-            f"Need at least one of {', '.join(AUTH_ENV)} set for SSH auth.\n"
-            f"See the docstring at the top of this file for the full setup."
-        )
 
 
-async def _smoke(hosts: list, command: str, resolve_os_from_csv: bool) -> None:
-    # Imports happen after the env-var preflight so the OSS gates take
-    # the right branch at import time.
-    from taac.test_as_a_config.thrift_types import (
-        DeviceOsType,
-        Endpoint,
-        Params,
-        Playbook,
-        Stage,
-        Step,
-        StepName,
-        TestConfig,
-    )
-    from taac.libs.taac_runner import TaacRunner
+async def _demo_ssh_output(hosts: list) -> None:
+    """Re-run `uname -a` per DUT and print stdout.
 
-    # When the device_info CSV is provided, leave host_os_type_map empty
-    # so async_get_device_driver falls through to the OSS topology
-    # loader (which honors per-host OS from the CSV). Hardcoding FBOSS
-    # here would otherwise shadow the CSV for any host you list, even
-    # if the CSV says ARISTA / CISCO / etc.
-    if resolve_os_from_csv:
-        host_os_type_map = {}
-    else:
-        host_os_type_map = {h: DeviceOsType.FBOSS for h in hosts}
+    Strictly for visual confirmation that VP1's RunSSHCmdStep actually
+    reached each device — it's not part of the VP1 test flow. The VP1
+    pass/fail signal is already produced by oss_entry_point above.
 
-    cfg = TestConfig(
-        name="live_smoke",
-        basset_pool="",
-        playbooks=[
-            Playbook(
-                name="dummy_playbook",
-                stages=[Stage(steps=[Step(name=StepName.DUMMY_STEP)])],
-            ),
-            Playbook(
-                name="ssh_playbook",
-                stages=[
-                    Stage(
-                        steps=[
-                            Step(
-                                name=StepName.RUN_SSH_COMMAND_STEP,
-                                step_params=Params(
-                                    json_params=json.dumps(
-                                        {"cmd": command, "log_output": True}
-                                    )
-                                ),
-                            )
-                        ]
-                    )
-                ],
-            ),
-        ],
-        endpoints=[Endpoint(name=h, dut=True) for h in hosts],
-        host_os_type_map=host_os_type_map,
-        startup_checks=[],
-    )
-    runner = TaacRunner(test_config=cfg, skip_post_setup_wait=True)
-    print(f"duts: {runner.duts}")
-    await runner.async_test_setUp()
-    await runner.run_tests()
-
-    # Surface the actual SSH command output per device so the demo shows what
-    # came back (the runner's RunSSHCmdStep logs it under log_output=True but
-    # buries it under runner formatting; this is the explicit version).
+    Uses AsyncSSHClient as an async context manager so each per-host
+    connection is closed before moving to the next; otherwise a long
+    DUT list builds up open sockets / asyncssh tasks until interpreter
+    teardown (harmless on a tiny smoke, but a bad pattern to leave in
+    an example).
+    """
     from taac.utils.oss_driver_utils import AsyncSSHClient
-    print()
-    print(f"=== output of `{command}` per DUT ===")
+    print("\n=== uname -a per DUT (visual confirmation) ===")
     for h in hosts:
-        cli = AsyncSSHClient(h)
-        result = await cli.async_run(command)
-        print(f"--- {h} ---")
-        print((result.stdout or "").rstrip())
+        async with AsyncSSHClient(h) as cli:
+            result = await cli.async_run("uname -a")
+            print(f"--- {h} ---")
+            print((result.stdout or "").rstrip())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
+        "--device-info-csv",
+        required=True,
+        help=(
+            "Required path to a device_info.csv file. Sets "
+            "TAAC_DEVICE_INFO_PATH so the OSS topology loader picks up "
+            "your environment's device list (hostname -> OS / role / "
+            "hardware) — the OS column is what async_get_device_driver "
+            "dispatches on, so the smoke can't pick FbossSwitch (or any "
+            "driver) without it. See examples/topology/ for a sample."
+        ),
+    )
+    parser.add_argument(
         "--hosts",
         nargs="+",
         required=False,
         help=(
-            "One or more device hostnames to smoke-test. If omitted, every "
-            "hostname listed in --device-info-csv is used. Required if "
-            "--device-info-csv is not given."
-        ),
-    )
-    parser.add_argument(
-        "--command",
-        default="hostname",
-        help="Shell command to run via RunSSHCmdStep (default: hostname).",
-    )
-    parser.add_argument(
-        "--device-info-csv",
-        default=None,
-        help=(
-            "Optional path to a device_info.csv file. Sets "
-            "TAAC_DEVICE_INFO_PATH so the OSS topology loader picks up "
-            "your environment's device list (hostname -> OS / role / "
-            "hardware). See examples/topology/ for a sample."
+            "Optional subset of hostnames from --device-info-csv to "
+            "smoke-test. If omitted, every hostname listed in the CSV "
+            "is used as a DUT."
         ),
     )
     parser.add_argument(
@@ -183,45 +119,40 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.hosts and not args.device_info_csv:
-        parser.error(
-            "Provide --hosts, --device-info-csv, or both. "
-            "(With --device-info-csv alone, every hostname in the CSV is used.)"
-        )
-
     _preflight()
 
-    # Set the topology env vars BEFORE importing the runner / loader, so
-    # the @memoize_forever-cached load_device_info / load_circuit_info
-    # calls land on the right CSV paths.
-    if args.device_info_csv:
-        os.environ["TAAC_DEVICE_INFO_PATH"] = os.path.abspath(args.device_info_csv)
+    # Set topology env vars BEFORE importing the runner so the
+    # @memoize_forever-cached loaders land on the right paths.
+    os.environ["TAAC_DEVICE_INFO_PATH"] = os.path.abspath(args.device_info_csv)
     if args.circuit_info_csv:
         os.environ["TAAC_CIRCUIT_INFO_PATH"] = os.path.abspath(args.circuit_info_csv)
 
-    if args.device_info_csv:
-        csv_hosts = _read_hostnames_from_csv(args.device_info_csv)
-        if not args.hosts:
-            hosts = csv_hosts
-        else:
-            unknown = [h for h in args.hosts if h not in csv_hosts]
-            if unknown:
-                parser.error(
-                    f"--hosts not present in --device-info-csv: {', '.join(unknown)}. "
-                    f"CSV contains: {', '.join(csv_hosts)}."
-                )
-            hosts = args.hosts
-        resolve_os_from_csv = True
-    else:
+    # Resolve hosts: full CSV, optionally narrowed by --hosts.
+    csv_hosts = _read_hostnames_from_csv(args.device_info_csv)
+    if args.hosts:
+        unknown = [h for h in args.hosts if h not in csv_hosts]
+        if unknown:
+            parser.error(
+                f"--hosts not present in --device-info-csv: {', '.join(unknown)}. "
+                f"CSV contains: {', '.join(csv_hosts)}."
+            )
         hosts = args.hosts
-        resolve_os_from_csv = False
+    else:
+        hosts = csv_hosts
 
-    try:
-        asyncio.run(_smoke(hosts, args.command, resolve_os_from_csv))
-    except Exception as exc:
-        print(f"\nSMOKE FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
-    print("\nSMOKE PASSED")
+    # Drive VP1's oss_entry_point against the static test config.
+    from taac.runner.oss_entry_point import main as oss_main
+    config_path = os.path.join(os.path.dirname(__file__), "live_smoke_config.py")
+    exit_code = oss_main([
+        "--test-configs", config_path,
+        "--dut", *hosts,
+        "--skip-post-setup-wait",
+    ])
+    if exit_code != 0:
+        return exit_code
+
+    # Visual confirmation that the SSH step actually executed on each DUT.
+    asyncio.run(_demo_ssh_output(hosts))
     return 0
 
 
