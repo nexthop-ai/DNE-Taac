@@ -1,0 +1,16 @@
+# Sample device_info fixture — copy this file, replace the hostnames /
+# OS column with your own fleet, and pass --device-info-csv path/to/copy.csv
+# to examples/smoke_live_device.py (or set TAAC_DEVICE_INFO_PATH directly).
+#
+# Format: hostname,ipv6_address,ipv4_address,mac_address,role,operating_system,hardware
+#
+# Only the hostname and operating_system fields need to be populated — those
+# are enough for async_get_device_driver to pick FbossSwitch from
+# DEVICE_OS_DRIVER_CLASS_MAP. Add IP / MAC / role / hardware once they're
+# known if you want richer SwitchAttributes (e.g. for role-based health
+# check filtering).
+#
+# Lines starting with # are treated as comments by the loader.
+fboss101.internal.nexthop.ai,,,,,FBOSS,
+fboss102.internal.nexthop.ai,,,,,FBOSS,
+fboss103.internal.nexthop.ai,,,,,FBOSS,
