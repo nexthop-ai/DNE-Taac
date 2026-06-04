@@ -5,41 +5,34 @@ Constructs a minimal TestConfig with a DummyStep playbook and a
 RunSSHCmdStep playbook, points it at the host(s) supplied on the
 command line, and drives it through TaacRunner under TAAC_OSS=1.
 
-Usage:
-
-    export TAAC_OSS=1
-    export TAAC_SSH_USER=<username>
-    export TAAC_SSH_PASSWORD=<password>
-    python3 examples/smoke_live_device.py \\
-        --hosts fboss101.internal.nexthop.ai fboss102.internal.nexthop.ai \\
-        --command 'uname -a' \\
-        --device-info-csv examples/topology/fboss101_102_device_info.csv \\
-        --circuit-info-csv examples/topology/fboss101_102_circuit_info.csv
-
-The --device-info-csv / --circuit-info-csv flags are optional. They set
-TAAC_DEVICE_INFO_PATH / TAAC_CIRCUIT_INFO_PATH so the OSS topology
-loader picks up an environment-specific fixture instead of the bundled
-defaults. Sample fixtures live under examples/topology/. Without them,
-host_os_type_map (set inline in this script) provides enough OS hints
-for FBOSS devices but you'll get empty SwitchAttributes (role,
-hardware) and no circuit data.
-
-Through the public docker wrapper:
+Designed to run *inside* a build container produced by
+docker/run-fboss-docker.sh — there is no bare-metal path. Invoke via:
 
     ./docker/run-fboss-docker.sh --distro centos --network host run bash -c '
-        export TAAC_OSS=1 TAAC_SSH_USER=netops TAAC_SSH_PASSWORD=netops
+        export TAAC_OSS=1 TAAC_SSH_USER=<user> TAAC_SSH_PASSWORD=<pw>
         python3 -m pip install --break-system-packages --no-index \\
             --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift > /dev/null
         python3 -m pip install --break-system-packages -r /taac/requirements.txt > /dev/null
         export PYTHONPATH=/taac:/scratch/installed/taac-<HASH>/lib/python3/site-packages
         export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr "\\n" ":")
         python3 /taac/examples/smoke_live_device.py \\
-            --hosts fboss101.internal.nexthop.ai
+            --device-info-csv /taac/examples/topology/sample_device_info.csv \\
+            --circuit-info-csv /taac/examples/topology/sample_circuit_info.csv \\
+            --command "uname -a"
     '
 
 (Substitute <HASH> with the actual taac install-dir hash from
  `ls /scratch/installed/`. `--network host` is required so internal-DNS
  hostnames resolve from inside the container.)
+
+Flag summary:
+  --hosts             Optional. Subset of CSV hosts (or required if no CSV).
+  --device-info-csv   Sets TAAC_DEVICE_INFO_PATH so the OSS topology loader
+                      picks up an environment-specific fixture. If omitted,
+                      every hostname in the CSV is used as a DUT.
+  --circuit-info-csv  Sets TAAC_CIRCUIT_INFO_PATH for adjacency-aware tests.
+                      Optional; DummyStep + RunSSHCmdStep don't need it.
+  --command           Shell command to run via RunSSHCmdStep (default: hostname).
 
 Exits 0 on success, 1 on failure (any step raising or the runner
 returning an exception).
@@ -131,6 +124,18 @@ async def _smoke(hosts: list, command: str, resolve_os_from_csv: bool) -> None:
     print(f"duts: {runner.duts}")
     await runner.async_test_setUp()
     await runner.run_tests()
+
+    # Surface the actual SSH command output per device so the demo shows what
+    # came back (the runner's RunSSHCmdStep logs it under log_output=True but
+    # buries it under runner formatting; this is the explicit version).
+    from taac.utils.oss_driver_utils import AsyncSSHClient
+    print()
+    print(f"=== output of `{command}` per DUT ===")
+    for h in hosts:
+        cli = AsyncSSHClient(h)
+        result = await cli.async_run(command)
+        print(f"--- {h} ---")
+        print((result.stdout or "").rstrip())
 
 
 def main() -> int:
