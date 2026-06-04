@@ -105,8 +105,8 @@ container:
     export PYTHONPATH=/taac:/scratch/installed/taac-<HASH>/lib/python3/site-packages
     export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr "\n" ":")
     python3 /taac/examples/smoke_live_device.py \
-        --device-info-csv /taac/examples/topology/fboss101_102_device_info.csv \
-        --circuit-info-csv /taac/examples/topology/fboss101_102_circuit_info.csv \
+        --device-info-csv /taac/examples/topology/sample_device_info.csv \
+        --circuit-info-csv /taac/examples/topology/sample_circuit_info.csv \
         --command "uname -a"
 '
 ```
