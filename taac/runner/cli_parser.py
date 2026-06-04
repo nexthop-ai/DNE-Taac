@@ -79,7 +79,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-testbed-isolation",
         action="store_true",
-        default=True,
         help="Skip testbed isolation checks",
     )
     parser.add_argument(
