@@ -82,10 +82,6 @@ class OSSTestStatus(str, Enum):
         """Check if this status represents a successful test."""
         return self == OSSTestStatus.PASSED
 
-    def is_failure(self) -> bool:
-        """Check if this status represents a test failure."""
-        return self.failed
-
     def is_skipped(self) -> bool:
         """Check if this status represents a skipped test."""
         return self in (OSSTestStatus.SKIPPED, OSSTestStatus.OMITTED, OSSTestStatus.NOT_RUN)

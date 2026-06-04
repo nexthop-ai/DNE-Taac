@@ -315,7 +315,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # User-caused errors (bad config / bad args) are already caught by
         # the OSSConfigError / OSSInfrastructureError handlers above, so an
         # unhandled exception this far down is more likely an infra problem
-        # than a config error.
+        # than a user error.
         logger.error(f"Unexpected error: {e}")
         logger.debug("Traceback:", exc_info=True)
         return OSSReturnCode.INFRA_ERROR

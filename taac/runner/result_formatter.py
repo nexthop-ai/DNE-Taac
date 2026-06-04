@@ -117,12 +117,19 @@ class OSSResultAggregator:
         if not self.results:
             return OSSReturnCode.NO_TESTS_FOUND
 
-        # Check for infrastructure errors
+        # Map fine-grained failure modes to dedicated exit codes before the
+        # generic INFRA_ERROR / TEST_CASE_FAILURE fall-throughs. Order is
+        # specific → generic so a TIMEOUT marked is_transient still yields
+        # TIMEOUT_ERROR (more informative than TRANSIENT_ERROR alone).
+        if any(result.status == OSSTestStatus.TIMEOUT for result in self.results):
+            return OSSReturnCode.TIMEOUT_ERROR
+        if any(result.is_transient for result in self.results):
+            return OSSReturnCode.TRANSIENT_ERROR
         if any(result.status == OSSTestStatus.SETUP_FAILED for result in self.results):
             return OSSReturnCode.INFRA_ERROR
 
         # Check for test failures
-        if any(result.status.is_failure() for result in self.results):
+        if any(result.status.failed for result in self.results):
             return OSSReturnCode.TEST_CASE_FAILURE
 
         # All tests passed or skipped
@@ -155,7 +162,7 @@ class OSSResultAggregator:
         # Create root testsuites element. TIMEOUT folds into the `errors`
         # bucket (mirrors the `<error>` element emitted per-testcase below)
         # so the suite-level totals stay consistent with both the per-test
-        # markup and get_exit_code (which treats TIMEOUT as is_failure()).
+        # markup and get_exit_code (where TIMEOUT now routes to TIMEOUT_ERROR).
         errors_count = (
             summary["error"]
             + summary["setup_failed"]
