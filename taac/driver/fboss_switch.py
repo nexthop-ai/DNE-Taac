@@ -46,13 +46,12 @@ import neteng.fboss.fsdb.types as fsdb_types
 import pexpect
 from fboss.fb_thrift_clients import FbossAgentClient, FbossAgentClientWrapper
 from neteng.fboss.bgp_attr.types import TBgpAfi, TIpPrefix
+from neteng.fboss.bgp_route_types.types import TBgpPath, TRibEntry
 from neteng.fboss.bgp_thrift.clients import TBgpService
 from neteng.fboss.bgp_thrift.types import (
-    TBgpPath,
     TBgpPeerState,
     TBgpSession,
     TOriginatedRoute,
-    TRibEntry,
 )
 from neteng.fboss.ctrl.clients import FbossCtrl
 from neteng.fboss.ctrl.types import (
