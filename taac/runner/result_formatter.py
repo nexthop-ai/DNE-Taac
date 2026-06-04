@@ -118,11 +118,20 @@ class OSSResultAggregator:
         """
         summary = self.get_summary()
 
-        # Create root testsuites element
+        # Create root testsuites element. TIMEOUT folds into the `errors`
+        # bucket (mirrors the `<error>` element emitted per-testcase below)
+        # so the suite-level totals stay consistent with both the per-test
+        # markup and get_exit_code (which treats TIMEOUT as is_failure()).
+        errors_count = (
+            summary["error"]
+            + summary["setup_failed"]
+            + summary["teardown_failed"]
+            + summary["timeout"]
+        )
         testsuites = ET.Element("testsuites")
         testsuites.set("tests", str(summary["total"]))
         testsuites.set("failures", str(summary["failed"]))
-        testsuites.set("errors", str(summary["error"] + summary["setup_failed"] + summary["teardown_failed"]))
+        testsuites.set("errors", str(errors_count))
         testsuites.set("skipped", str(summary["skipped"]))
 
         # Create a testsuite element
@@ -130,7 +139,7 @@ class OSSResultAggregator:
         testsuite.set("name", "TAAC_OSS_Tests")
         testsuite.set("tests", str(summary["total"]))
         testsuite.set("failures", str(summary["failed"]))
-        testsuite.set("errors", str(summary["error"] + summary["setup_failed"] + summary["teardown_failed"]))
+        testsuite.set("errors", str(errors_count))
         testsuite.set("skipped", str(summary["skipped"]))
         testsuite.set("timestamp", datetime.now().isoformat())
 
@@ -149,7 +158,12 @@ class OSSResultAggregator:
                 failure.set("message", result.message or "Test failed")
                 if result.traceback:
                     failure.text = result.traceback
-            elif result.status in (OSSTestStatus.ERROR, OSSTestStatus.SETUP_FAILED, OSSTestStatus.TEARDOWN_FAILED):
+            elif result.status in (
+                OSSTestStatus.ERROR,
+                OSSTestStatus.SETUP_FAILED,
+                OSSTestStatus.TEARDOWN_FAILED,
+                OSSTestStatus.TIMEOUT,
+            ):
                 error = ET.SubElement(testcase, "error")
                 error.set("message", result.message or "Test error")
                 if result.traceback:
