@@ -1,0 +1,20 @@
+# Sample circuit_info fixture — copy this file, populate with your fleet's
+# physical/logical adjacency rows, and pass --circuit-info-csv path/to/copy.csv
+# to examples/smoke_live_device.py (or set TAAC_CIRCUIT_INFO_PATH directly).
+#
+# Format:
+#   hostname,local_interface,local_platform,local_parent_interface,
+#   neighbor_hostname,neighbor_interface,neighbor_platform,
+#   neighbor_parent_interface,status,role
+#
+# `status=3` (or empty) is treated as "active" by the loader; other values
+# are filtered out unless ignore_ckt_status=True is passed. List one row
+# per direction of each link (i.e., two rows per bidirectional adjacency).
+#
+# This file ships empty (header only). DummyStep + RunSSHCmdStep playbooks
+# don't need circuit data; LLDP-aware health checks and test-bed chunking
+# do. Populate from `lldpctl -f json` output or your NMS / source-of-truth.
+#
+# Example rows (commented out):
+# device01.example.com,eth1/1/1,FBOSS,,device02.example.com,eth1/1/1,FBOSS,,3,
+# device02.example.com,eth1/1/1,FBOSS,,device01.example.com,eth1/1/1,FBOSS,,3,
