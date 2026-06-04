@@ -30,3 +30,9 @@ cachetools>=5.0.0
 # Async SSH client. Lazy-imported in taac/utils/oss_driver_utils.py
 # under the OSS-driver SSH code path (driver.async_run_cmd_on_shell).
 asyncssh>=2.13.0
+
+# Sync SSH client used by ParamikoClient in oss_driver_utils.py. Triggered
+# by the runner's rsyslog setup path (driver.async_create_dir_if_not_exists
+# -> oss_driver_utils.create_dir_if_not_exists) when a device's
+# operating_system is FBOSS.
+paramiko>=2.12.0
