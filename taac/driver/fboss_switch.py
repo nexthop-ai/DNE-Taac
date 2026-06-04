@@ -20,6 +20,7 @@ from functools import reduce
 from ipaddress import ip_address, ip_network, IPv4Interface, IPv6Interface
 from typing import (
     Any,
+    AsyncContextManager,
     AsyncGenerator,
     DefaultDict,
     Dict,
@@ -208,22 +209,6 @@ class MnpuNotEnabled(Exception):
 class FbossSwitch(AbstractSwitch):
     def __init__(self, hostname: str, logger: logging.Logger, *args, **kwargs) -> None:
         super().__init__(hostname, logger)
-
-    # pyre-fixme[11]: Annotation `FbossAgentClient` is not defined as a type.
-    def _get_fboss_agent_client(self) -> FbossAgentClient:
-        client = FbossAgentClient(
-            self.hostname,
-            port=DEFAULT_AGENT_REMOTE_PORT,
-            timeout=DEFAULT_THRIFT_TIMEOUT,
-        )
-        if not client:
-            self.logger.info(
-                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
-            )
-            raise Exception(
-                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
-            )
-        return client
 
     async def async_get_fboss_build_info_show(self) -> str:
         raise NotImplementedError(
@@ -506,8 +491,8 @@ class FbossSwitch(AbstractSwitch):
         """
         intf_map: Dict = {}
 
-        with self._get_fboss_agent_client() as client:
-            port_info_result = client.getAllPortInfo()
+        async with self.async_agent_client as client:
+            port_info_result = await client.getAllPortInfo()
 
         if not port_info_result:
             raise EmptyOutputReturnError(
@@ -1202,8 +1187,8 @@ class FbossSwitch(AbstractSwitch):
             await self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
         )
         port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            port_status: PortStatus = client.getPortStatus([port_id])
+        async with self.async_agent_client as client:
+            port_status: PortStatus = await client.getPortStatus([port_id])
 
         # pyre-fixme[16]: `PortStatus` has no attribute `__getitem__`.
         port_status_obj = port_status[port_id]
@@ -2313,12 +2298,16 @@ class FbossSwitch(AbstractSwitch):
         Interface will be SHUT if enable is False. Else, interface will be
         UNSHUT. True will be returned.
         """
-        port_vlan_id_res: InterfaceInfo = asyncio.run(
-            self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
-        )
-        port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            client.setPortState(port_id, enable)
+        async def _bounce() -> None:
+            port_vlan_id_res: InterfaceInfo = (
+                await self.async_get_interface_name_to_port_id_and_vlan_id(
+                    interface_name
+                )
+            )
+            async with self.async_agent_client as client:
+                await client.setPortState(port_vlan_id_res.port_id, enable)
+
+        asyncio.run(_bounce())
         return True
 
     async def async_thrift_disable_enable(
@@ -2895,13 +2884,22 @@ class FbossSwitch(AbstractSwitch):
         )
 
     @property
-    def async_agent_client(self) -> FbossCtrl:
+    def async_agent_client(self) -> AsyncContextManager[FbossCtrl]:
         """
-        Create FBOSS Agent async client
+        Create FBOSS Agent async client.
+
+        Returns an async context manager (via thrift.py3.client.get_client)
+        that yields an FbossCtrl.Async client connected to the device's
+        agent thrift port. Used as 'async with self.async_agent_client as
+        client: ...' by methods like async_get_lldp_neighbors.
         """
-        raise NotImplementedError(
-            "FBOSS Agent async client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+        from thrift.py3.client import get_client
+
+        return get_client(
+            FbossCtrl,
+            host=self.hostname,
+            port=DEFAULT_AGENT_REMOTE_PORT,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     async def async_get_lldp_neighbors(self) -> Dict[str, SwitchLldpData]:
