@@ -95,24 +95,26 @@ asyncio.run(main())
 `examples/smoke_live_device.py` runs the same shape against real
 device(s), driving both a `DUMMY_STEP` playbook and a
 `RUN_SSH_COMMAND_STEP` playbook. It expects `TAAC_OSS=1`, `TAAC_SSH_USER`,
-and `TAAC_SSH_PASSWORD` to be set. Run it via the docker wrapper with
-`--network host` so internal-DNS hostnames resolve from inside the
-container:
+and `TAAC_SSH_PASSWORD` to be set on the host — `run_taac_docker.sh`
+auto-forwards any `TAAC_*` env var into the container, so keep secrets
+out of inline `bash -c` strings (e.g. source them from a gitignored
+file or a vault):
 
 ```bash
-./docker/run-fboss-docker.sh --distro centos --network host run bash -c '
-    export TAAC_OSS=1 TAAC_SSH_USER=<user> TAAC_SSH_PASSWORD=<pw>
-    python3 -m pip install --break-system-packages --no-index \
-        --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift > /dev/null
-    python3 -m pip install --break-system-packages -r /taac/requirements.txt > /dev/null
-    export PYTHONPATH=/taac:/scratch/installed/taac-<HASH>/lib/python3/site-packages
-    export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr "\n" ":")
-    python3 /taac/examples/smoke_live_device.py \
-        --device-info-csv /taac/examples/topology/sample_device_info.csv \
-        --circuit-info-csv /taac/examples/topology/sample_circuit_info.csv \
+# Source the password from a file (chmod 600), not the command line.
+export TAAC_OSS=1 TAAC_SSH_USER=netops
+source ~/.taac-secrets  # exports TAAC_SSH_PASSWORD=...
+
+./docker/run_taac_docker.sh run \
+    python3 /workspace/examples/smoke_live_device.py \
+        --device-info-csv /workspace/examples/topology/sample_device_info.csv \
+        --circuit-info-csv /workspace/examples/topology/sample_circuit_info.csv \
         --command "uname -a"
-'
 ```
+
+The wrapper bind-mounts the repo at `/workspace`, sets `PYTHONPATH` to
+include it, and runs `--network host` so internal-DNS hostnames resolve
+inside the container.
 
 Without `--hosts`, every hostname listed in `--device-info-csv` is used as a DUT. Pass `--hosts host1 host2` to run against a subset. `examples/topology/` ships sample CSVs as templates — copy them, replace the placeholder hostnames / OS column with your own fleet, and point `--device-info-csv` / `--circuit-info-csv` at your copies.
 

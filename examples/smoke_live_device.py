@@ -5,25 +5,24 @@ Constructs a minimal TestConfig with a DummyStep playbook and a
 RunSSHCmdStep playbook, points it at the host(s) supplied on the
 command line, and drives it through TaacRunner under TAAC_OSS=1.
 
-Designed to run *inside* a build container produced by
-docker/run-fboss-docker.sh — there is no bare-metal path. Invoke via:
+Designed to run *inside* the `fboss-taac` image via
+`docker/run_taac_docker.sh`. The wrapper bind-mounts the repo at
+/workspace, sets PYTHONPATH (the image entrypoint sets LD_LIBRARY_PATH
++ the baked-in install path), and auto-forwards `TAAC_*` env vars from
+the host, so passwords stay out of inline `bash -c` strings:
 
-    ./docker/run-fboss-docker.sh --distro centos --network host run bash -c '
-        export TAAC_OSS=1 TAAC_SSH_USER=<user> TAAC_SSH_PASSWORD=<pw>
-        python3 -m pip install --break-system-packages --no-index \\
-            --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift > /dev/null
-        python3 -m pip install --break-system-packages -r /taac/requirements.txt > /dev/null
-        export PYTHONPATH=/taac:/scratch/installed/taac-<HASH>/lib/python3/site-packages
-        export LD_LIBRARY_PATH=$(find /scratch/installed -maxdepth 2 -type d -name lib | tr "\\n" ":")
-        python3 /taac/examples/smoke_live_device.py \\
-            --device-info-csv /taac/examples/topology/sample_device_info.csv \\
-            --circuit-info-csv /taac/examples/topology/sample_circuit_info.csv \\
+    # Source the password from a file (chmod 600), not the command line.
+    export TAAC_OSS=1 TAAC_SSH_USER=netops
+    source ~/.taac-secrets  # exports TAAC_SSH_PASSWORD=...
+
+    ./docker/run_taac_docker.sh run \\
+        python3 /workspace/examples/smoke_live_device.py \\
+            --device-info-csv /workspace/examples/topology/sample_device_info.csv \\
+            --circuit-info-csv /workspace/examples/topology/sample_circuit_info.csv \\
             --command "uname -a"
-    '
 
-(Substitute <HASH> with the actual taac install-dir hash from
- `ls /scratch/installed/`. `--network host` is required so internal-DNS
- hostnames resolve from inside the container.)
+(`--network host` is baked into the wrapper so internal-DNS hostnames
+ resolve from inside the container.)
 
 Flag summary:
   --hosts             Optional. Subset of CSV hosts (or required if no CSV).

@@ -56,6 +56,14 @@ DOCKER_ARGS=(
     -v "$WORKSPACE":/workspace
 )
 
+# Auto-forward TAAC_* env vars (TAAC_OSS, TAAC_SSH_USER, TAAC_SSH_PASSWORD,
+# TAAC_DEVICE_INFO_PATH, etc.) so callers can `export TAAC_FOO=bar` on the
+# host and have it visible in the container — keeps secrets like
+# TAAC_SSH_PASSWORD out of `bash -c '...'` strings + shell history.
+while IFS= read -r _taac_var; do
+    DOCKER_ARGS+=(-e "$_taac_var")
+done < <(env | grep '^TAAC_' | cut -d= -f1)
+
 if [[ "$REGEN" -eq 1 ]]; then
     INIT='taac-regen-thrift --quiet /workspace/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH'
 else
