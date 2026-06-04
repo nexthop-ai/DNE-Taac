@@ -327,7 +327,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 logger.error(f"Error executing test config {config_name}: {e}")
                 logger.exception(e)
                 # Mark remaining playbooks/duts as failed for this config
-                from taac.runner.oss_exceptions import classify_exception
+                from taac.runner.oss_exception_classifier import classify_exception
                 status, is_transient = classify_exception(e)
                 for playbook in playbooks:
                     for dut in args.duts:
