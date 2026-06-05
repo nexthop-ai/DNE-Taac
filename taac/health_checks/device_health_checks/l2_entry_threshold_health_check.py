@@ -62,6 +62,7 @@ class L2EntryThresholdHealthCheck(
             if arp_entry_pattern_threshold:
                 tasks.append(
                     self.async_verify_arp_entry_threshold_mapping(
+                        # pyrefly: ignore [bad-argument-type]
                         mac_entry_pattern_threshold
                     )
                 )
@@ -69,6 +70,7 @@ class L2EntryThresholdHealthCheck(
             if ndp_entry_pattern_threshold:
                 tasks.append(
                     self.async_verify_ndp_entry_threshold_mapping(
+                        # pyrefly: ignore [bad-argument-type]
                         mac_entry_pattern_threshold
                     )
                 )
@@ -122,6 +124,7 @@ class L2EntryThresholdHealthCheck(
             f"Verifying mac entry threshold is between {upper_threshold, lower_threshold}"
         )
         # currently only works for fboss
+        # pyrefly: ignore [missing-attribute]
         mac_table = await self.driver.async_get_mac_table()
         mac_table_everpaste = await async_everpaste_str(str(mac_table))
         self.logger.info(
@@ -129,6 +132,7 @@ class L2EntryThresholdHealthCheck(
         )
         if len(mac_table) > upper_threshold or len(mac_table) < lower_threshold:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of mac entries on {self.driver.hostname} is not in range of {lower_threshold, upper_threshold}: {mac_table_everpaste}"
             )
 
@@ -139,6 +143,7 @@ class L2EntryThresholdHealthCheck(
         self.logger.info(
             f"Verifying arp entry threshold is between {upper_threshold, lower_threshold}"
         )
+        # pyrefly: ignore [missing-attribute]
         arp_table = await self.driver.async_get_arp_table()
         arp_table_everpaste = await async_everpaste_str(str(arp_table))
         self.logger.info(
@@ -146,6 +151,7 @@ class L2EntryThresholdHealthCheck(
         )
         if len(arp_table) > upper_threshold or len(arp_table) < lower_threshold:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of arp entries on {self.driver.hostname} is not in range of {lower_threshold, upper_threshold}: {arp_table_everpaste}"
             )
 
@@ -155,6 +161,7 @@ class L2EntryThresholdHealthCheck(
         self.logger.info(
             f"Verifying ndp entry threshold is between {upper_threshold, lower_threshold}"
         )
+        # pyrefly: ignore [missing-attribute]
         ndp_table = await self.driver.async_get_ndp_table()
         mac_table_everpaste = await async_everpaste_str(str(ndp_table))
         self.logger.info(
@@ -166,6 +173,7 @@ class L2EntryThresholdHealthCheck(
             or len(ndp_table) < lower_threshold
         ):
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of NDP entries on {self.driver.hostname} is not in range of {lower_threshold, upper_threshold + NDP_THRESHOLD_TOLERANCE}: {mac_table_everpaste}"
             )
 
@@ -180,6 +188,7 @@ class L2EntryThresholdHealthCheck(
             None
         """
         # Get the ARP table from the driver
+        # pyrefly: ignore [missing-attribute]
         arp_table = await self.driver.async_get_arp_table()
         # Convert the ARP table to a dictionary with decimal IP addresses
         arp_data = {
@@ -199,10 +208,12 @@ class L2EntryThresholdHealthCheck(
             actual_count = actual_counts.get(ip_network)
             if actual_count and actual_count > threshold:
                 raise Exception(
+                    # pyrefly: ignore [missing-attribute]
                     f"The number of arp entries on {self.driver.hostname} and expected entries do not match"
                 )
         if len(arp_data) > ARP_SOFT_LIMIT:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of arp entries on {self.driver.hostname} greater than {ARP_SOFT_LIMIT}"
             )
 
@@ -217,6 +228,7 @@ class L2EntryThresholdHealthCheck(
             None
         """
         # Get the ARP table from the driver
+        # pyrefly: ignore [missing-attribute]
         ndp_table = await self.driver.async_get_ndp_table()
         ndp_data = {
             str(ipaddress.IPv6Address(entry.ip.addr)): entry.mac for entry in ndp_table
@@ -235,11 +247,13 @@ class L2EntryThresholdHealthCheck(
             actual_count = actual_counts.get(ip_network)
             if actual_count and actual_count > threshold:
                 raise Exception(
+                    # pyrefly: ignore [missing-attribute]
                     f"The number of ndp entries on {self.driver.hostname} and expected entries do not match"
                 )
 
         if len(ndp_data) > NDP_SOFT_LIMIT:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of ndp entries on {self.driver.hostname} greater than {NDP_SOFT_LIMIT}"
             )
 
@@ -254,6 +268,7 @@ class L2EntryThresholdHealthCheck(
             None
         """
         # Get the ARP table from the driver
+        # pyrefly: ignore [missing-attribute]
         mac_table = await self.driver.async_get_mac_table()
         mac_data = {str(entry.mac) for entry in mac_table}
         # Initialize a dictionary to store the actual MAC entry counts for each IP network
@@ -268,10 +283,12 @@ class L2EntryThresholdHealthCheck(
             actual_count = actual_counts.get(mac_network)
             if actual_count and actual_count > threshold:
                 raise Exception(
+                    # pyrefly: ignore [missing-attribute]
                     f"The number of mac entries on {self.driver.hostname} and expected entries do not match"
                 )
 
         if len(mac_data) > MAC_SOFT_LIMIT:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of mac entries on {self.driver.hostname} greater than {MAC_SOFT_LIMIT}"
             )

@@ -72,6 +72,7 @@ class ParameterEvaluator:
     def _run_jq_lib(self, jq_expr: str) -> t.Any:
         jq_vars = self.jq_vars
         if "cached" in jq_expr.split("."):
+            # pyrefly: ignore [bad-index]
             jq_vars = self.jq_vars[self.cache_uuid]
         return eval_jq(jq_expr, jq_vars)
 

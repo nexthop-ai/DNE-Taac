@@ -50,6 +50,7 @@ class QoSDscpTxQueueHealthCheck(
 
     async def _get_all_fb303_counters(self, hostname: str) -> dict:
         async with await get_fb303_client(hostname) as client:
+            # pyrefly: ignore [bad-return]
             return await client.getCounters()
 
     async def capture_pre_snapshot(

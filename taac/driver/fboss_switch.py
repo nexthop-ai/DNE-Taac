@@ -45,14 +45,9 @@ import neteng.fboss.fsdb.types as fsdb_types
 import pexpect
 from fboss.fb_thrift_clients import FbossAgentClient, FbossAgentClientWrapper
 from neteng.fboss.bgp_attr.types import TBgpAfi, TIpPrefix
+from neteng.fboss.bgp_route_types.types import TBgpPath, TRibEntry
 from neteng.fboss.bgp_thrift.clients import TBgpService
-from neteng.fboss.bgp_thrift.types import (
-    TBgpPath,
-    TBgpPeerState,
-    TBgpSession,
-    TOriginatedRoute,
-    TRibEntry,
-)
+from neteng.fboss.bgp_thrift.types import TBgpPeerState, TBgpSession, TOriginatedRoute
 from neteng.fboss.ctrl.clients import FbossCtrl
 from neteng.fboss.ctrl.types import (
     AggregatePortThrift,
@@ -522,6 +517,7 @@ class FbossSwitch(AbstractSwitch):
         for port_info in port_info_result.values():
             interface_name: str = port_info.name
             port_id: int = port_info.portId
+            # pyrefly: ignore [bad-assignment]
             vlan_id: int = port_info.vlans[0] if port_info.vlans else None
             intf_map[interface_name] = InterfaceInfo(port_id=port_id, vlan_id=vlan_id)
 
@@ -1412,6 +1408,7 @@ class FbossSwitch(AbstractSwitch):
         if temp_flag.warn.high or temp_flag.warn.low:
             await self._async_log_dom_warning(
                 "Temperature",
+                # pyrefly: ignore [missing-attribute]
                 transceiver_data.tcvrStats.sensor.temp.value,
                 temp_threshold,
                 temp_flag,
@@ -1442,6 +1439,7 @@ class FbossSwitch(AbstractSwitch):
         if vcc_flag.warn.high or vcc_flag.warn.low:
             await self._async_log_dom_warning(
                 "Voltage",
+                # pyrefly: ignore [missing-attribute]
                 transceiver_data.tcvrStats.sensor.vcc.value,
                 vcc_threshold,
                 vcc_flag,
@@ -1661,6 +1659,7 @@ class FbossSwitch(AbstractSwitch):
             interface_vlan_map[interface_name] = vlan_id
 
         for interface, vlan_id in interface_vlan_map.items():
+            # pyrefly: ignore [bad-argument-type]
             intf_detail = vlan_to_interface_detail.get(vlan_id)
             if not intf_detail:
                 self.logger.debug(
@@ -1723,6 +1722,7 @@ class FbossSwitch(AbstractSwitch):
                 peer_ip_addresses.append(ip_address)
             elif bgp_v6_local_ip and re.match(rf"^{bgp_v6_local_ip}$", session.my_addr):
                 ip_address = ipaddress.IPv6Address(str(session.peer_addr))
+                # pyrefly: ignore [bad-argument-type]
                 peer_ip_addresses.append(ip_address)
 
         if not any(
@@ -1734,6 +1734,7 @@ class FbossSwitch(AbstractSwitch):
                 f"Please investigate! peer_ip_addresses: {peer_ip_addresses}"
             )
 
+        # pyrefly: ignore [bad-return]
         return peer_ip_addresses
 
     async def _async_get_formatted_bgp_neighbor_table_output(
@@ -2003,6 +2004,7 @@ class FbossSwitch(AbstractSwitch):
                 )
         return bgp_session_uptime_map
 
+    # pyrefly: ignore [bad-override]
     async def stress_system_memory_cmd(
         self, n_workers: str, bytes_per_worker: str, timeout: str = "60s"
     ):
@@ -3061,6 +3063,7 @@ class FbossSwitch(AbstractSwitch):
                 return_on_msg=return_on_msg,
             )
 
+        # pyrefly: ignore [bad-return]
         return result.stdout if result else None
 
     async def async_create_dir_if_not_exists(self, file_path: str) -> None:
@@ -3406,6 +3409,50 @@ class FbossSwitch(AbstractSwitch):
             f"Device {self.hostname} on-box drain state is '{on_box_drain_state.name}'"
         )
         return on_box_drain_state
+
+    async def async_softdrain_interface(self, interface: str, task_id: int = 0) -> None:
+        """
+        Soft-drain a single interface on this FBOSS switch via the on-box
+        local drainer's `softdrain_interface` API. Equivalent to:
+
+            fboss_local_drainer softdrain-interface <interface>
+
+        Soft-drain depreferences the BGP advertisements via community without
+        bringing the link down at the data plane.
+
+        Args:
+            interface: FBOSS interface name (e.g. "eth1/33/5").
+            task_id: Optional task identifier passed through to the
+                local drainer (default 0, matching the CLI default).
+        """
+        self.logger.info(
+            f"Softdraining interface '{interface}' on {self.hostname} "
+            f"(task_id={task_id})"
+        )
+        async with self.get_async_local_drainer_client() as client:
+            await client.softdrain_interface(interface, task_id)
+        self.logger.info(
+            f"Softdrain of interface '{interface}' on {self.hostname} completed"
+        )
+
+    async def async_undrain_interface(self, interface: str) -> None:
+        """
+        Undrain a single interface on this FBOSS switch via the on-box
+        local drainer's `undrain_interface` API. Equivalent to:
+
+            fboss_local_drainer undrain-interface <interface>
+
+        Reverses both hard- and soft-drain state for the named interface.
+
+        Args:
+            interface: FBOSS interface name (e.g. "eth1/33/5").
+        """
+        self.logger.info(f"Undraining interface '{interface}' on {self.hostname}")
+        async with self.get_async_local_drainer_client() as client:
+            await client.undrain_interface(interface)
+        self.logger.info(
+            f"Undrain of interface '{interface}' on {self.hostname} completed"
+        )
 
     @memoize_on_app_overload()
     async def async_get_interface_detail(self, vlan_id) -> InterfaceDetail:
@@ -4581,6 +4628,7 @@ class FbossSwitch(AbstractSwitch):
 
         return []
 
+    # pyrefly: ignore [bad-override]
     async def async_enable_ports_via_ssh(
         self, interfaces: List[str], enable: bool
     ) -> None:

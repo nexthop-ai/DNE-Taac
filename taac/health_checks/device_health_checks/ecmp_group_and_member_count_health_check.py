@@ -53,6 +53,7 @@ class EcmpGroupAndMemberCountHealthCheck(
     async def async_verify_ecmp_nexthop_group_count(self, max_count: int) -> None:
         # currently only works for fboss
         cmd = "fboss2 show hw-object NEXT_HOP_GROUP"
+        # pyrefly: ignore [missing-attribute]
         res = await self.driver.async_run_cmd_on_shell(cmd)
         parent_nhop_group_id_set = set()
         group_to_mbr_intf_map = defaultdict(list)
@@ -80,6 +81,7 @@ class EcmpGroupAndMemberCountHealthCheck(
             )
         if len(group_to_mbr_intf_map.keys()) > max_count:
             raise Exception(
+                # pyrefly: ignore [missing-attribute]
                 f"The number of ecmp groups on {self.driver.hostname} exceeded the defined threshold {max_count}"
             )
 
@@ -92,6 +94,7 @@ class EcmpGroupAndMemberCountHealthCheck(
         # Define the command to run on the shell
         cmd = "fboss2 show hw-object NEXT_HOP_GROUP"
         # Run the command on the shell and get the result
+        # pyrefly: ignore [missing-attribute]
         res = await self.driver.async_run_cmd_on_shell(cmd)
         # Use regular expression to find all occurrences of NextHopGroupMemberSaiId(xxxx):
         pattern = r"NextHopGroupMemberSaiId\(\d+\):"
@@ -160,6 +163,7 @@ class EcmpGroupAndMemberCountHealthCheck(
             else:
                 cmd = f"show ipv6 route {prefix} | json"
 
+            # pyrefly: ignore [missing-attribute]
             result = await self.driver.async_execute_show_json_on_shell(cmd)
 
             # Parse next-hops from the route entry

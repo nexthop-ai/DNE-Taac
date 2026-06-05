@@ -87,6 +87,11 @@ class BgpTcpdumpTask(BaseTask):
             f"Starting BGP capture daemon '{self.DAEMON_NAME}' on {self.hostname}"
         )
 
+        # Kill any leftover tcpdump from a previous run before starting fresh
+        await self.driver().async_execute_show_or_configure_cmd_on_shell(
+            "bash sudo pkill -9 tcpdump || true"
+        )
+
         # Clean up any existing capture file
         await self.driver().async_execute_show_or_configure_cmd_on_shell(
             f"bash sudo rm -f {capture_file}"

@@ -16,7 +16,18 @@ from taac.constants import (
     TestTopology,
 )
 from taac.driver.abstract_switch import AbstractSwitch
+from taac.health_checks.healthcheck_definitions import (
+    create_bare_health_check,
+)
 from taac.ixia.taac_ixia import TaacIxia
+
+# NOTE (Phase 5.0g): The `steps/` -> `libs/` import below is an INTENTIONAL
+# architectural exception. `ParameterEvaluator` is the runtime contract every
+# Step plugin needs (passed by `TaacRunner` into `Step.__init__`). Refactoring
+# to inject from above adds boilerplate (every Step subclass would have to
+# re-declare and forward the kwarg) without solving real coupling — the type
+# is still a hard runtime dep of every Step. This is the one cross-layer link
+# we explicitly accept.
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.utils.common import (
     async_everpaste_if_needed,
@@ -76,12 +87,16 @@ class Step(t.Generic[StepInput], ABC):
         self.hostname: str = self.device.name
         self.logger = logger or get_root_logger()
         self.parameter_evaluator = parameter_evaluator
+        # pyrefly: ignore [bad-assignment]
         self.driver: AbstractSwitch = ...
         self.failures = []
 
         # to be initialized in TaacRunner
+        # pyrefly: ignore [bad-assignment]
         self._input: StepInput = ...
+        # pyrefly: ignore [bad-assignment]
         self._step_params: t.Dict[str, t.Any] = ...
+        # pyrefly: ignore [bad-assignment]
         self._initialize_and_run_step_callable: t.Callable = ...
 
     async def _run(self, input: StepInput, params: t.Dict[str, t.Any]) -> None:
@@ -95,11 +110,15 @@ class Step(t.Generic[StepInput], ABC):
                 action="setUp",
                 logger=self.logger,
             )
-            self.logger.debug(
-                await async_everpaste_if_needed(
-                    f"Step input: {input} | params: {params}", 100
+            try:
+                self.logger.debug(
+                    await async_everpaste_if_needed(
+                        f"Step input: {input} | params: {params}", 100
+                    )
                 )
-            )
+            except Exception as e:
+                self.logger.warning(f"Failed to everpaste step input: {str(e)}")
+                self.logger.debug(f"Step input: {input} | params: {params}")
             await self.setUp(input, params)
             log_step_info(
                 self.__class__.STEP_NAME.name,
@@ -117,16 +136,23 @@ class Step(t.Generic[StepInput], ABC):
             failure_reason = (
                 f"Step {self.__class__.__name__} failed on {self.device.name}: {str(e)}"
             )
+            try:
+                message = (
+                    await async_get_fburl(await async_everpaste_str(failure_reason))
+                    if len(failure_reason) > 100
+                    else failure_reason
+                )
+            except Exception as ep_err:
+                message = failure_reason
+                self.logger.warning(
+                    f"Failed to everpaste failure reason: {str(ep_err)}"
+                )
             test_result = await async_write_test_result(
                 self.test_case_name,
                 devices=[self.device],
                 test_status=hc_types.HealthCheckStatus.FAIL,
                 start_time=self.test_case_start_time,
-                message=(
-                    await async_get_fburl(await async_everpaste_str(failure_reason))
-                    if len(failure_reason) > 100
-                    else failure_reason
-                ),
+                message=message,
             )
             self.test_case_results.append(test_result)
             self.logger.error(failure_reason)
@@ -201,11 +227,7 @@ class Step(t.Generic[StepInput], ABC):
         point_in_time_health_checks = []
         for check in health_checks:
             if isinstance(check, hc_types.CheckName):
-                point_in_time_health_checks.append(
-                    taac_types.PointInTimeHealthCheck(
-                        name=check,
-                    )
-                )
+                point_in_time_health_checks.append(create_bare_health_check(check))
             else:
                 point_in_time_health_checks.append(check)
         await self.run_steps(

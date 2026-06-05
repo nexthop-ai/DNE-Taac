@@ -123,6 +123,7 @@ class BgpRouteCountVerificationHealthCheck(
 
         try:
             # Get all BGP sessions
+            # pyrefly: ignore [missing-attribute]
             bgp_sessions = await self.driver.async_get_bgp_sessions()
             self.logger.info(
                 f"Found {len(bgp_sessions)} total BGP sessions on {hostname}"
@@ -264,6 +265,7 @@ class BgpRouteCountVerificationHealthCheck(
             else:
                 cmd = "show bgp ipv6 unicast summary | json"
 
+            # pyrefly: ignore [missing-attribute]
             result = await self.driver.async_execute_show_json_on_shell(cmd)
             peers = result.get("vrfs", {}).get("default", {}).get("peers", {})
 

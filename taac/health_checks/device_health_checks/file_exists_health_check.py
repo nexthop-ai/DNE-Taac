@@ -40,6 +40,7 @@ class FileExistsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
             HealthCheckResult indicating whether the file exists as expected
         """
         try:
+            # pyrefly: ignore [missing-attribute]
             file_check = await self.driver.async_execute_show_or_configure_cmd_on_shell(
                 ls_command
             )

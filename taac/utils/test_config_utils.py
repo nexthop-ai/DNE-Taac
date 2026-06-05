@@ -220,6 +220,7 @@ def flatten_multiple_test_configs(
         if hasattr(config, "prechecks") and config.prechecks is not None:
             last_prechecks = config.prechecks
     if last_prechecks is not None:
+        # pyrefly: ignore [unsupported-operation]
         flattened_config_dict["prechecks"] = last_prechecks
 
     # Handle postchecks explicitly (use values from the last config that has them defined)
@@ -228,6 +229,7 @@ def flatten_multiple_test_configs(
         if hasattr(config, "postchecks") and config.postchecks is not None:
             last_postchecks = config.postchecks
     if last_postchecks is not None:
+        # pyrefly: ignore [unsupported-operation]
         flattened_config_dict["postchecks"] = last_postchecks
 
     # Handle startup_checks explicitly (use values from the last config that has them defined)
@@ -236,6 +238,7 @@ def flatten_multiple_test_configs(
         if hasattr(config, "startup_checks") and config.startup_checks is not None:
             last_startup_checks = config.startup_checks
     if last_startup_checks is not None:
+        # pyrefly: ignore [unsupported-operation]
         flattened_config_dict["startup_checks"] = last_startup_checks
 
     # Handle basic_traffic_item_configs explicitly
@@ -252,6 +255,7 @@ def flatten_multiple_test_configs(
     if additive_basic_traffic_item_configs is not None:
         all_traffic_configs.extend(additive_basic_traffic_item_configs)
 
+    # pyrefly: ignore [unsupported-operation]
     flattened_config_dict["basic_traffic_item_configs"] = all_traffic_configs
 
     # Handle endpoints explicitly
@@ -259,6 +263,7 @@ def flatten_multiple_test_configs(
     for config in test_configs:
         if hasattr(config, "endpoints") and config.endpoints is not None:
             all_endpoints.extend(config.endpoints)
+    # pyrefly: ignore [unsupported-operation]
     flattened_config_dict["endpoints"] = all_endpoints
 
     # Handle traffic_items_to_start explicitly (similar to endpoints)
@@ -269,6 +274,7 @@ def flatten_multiple_test_configs(
             and config.traffic_items_to_start is not None
         ):
             all_traffic_items_to_start.extend(config.traffic_items_to_start)
+    # pyrefly: ignore [unsupported-operation]
     flattened_config_dict["traffic_items_to_start"] = all_traffic_items_to_start
 
     # Handle basic_port_configs explicitly (similar to endpoints)
@@ -279,6 +285,7 @@ def flatten_multiple_test_configs(
             and config.basic_port_configs is not None
         ):
             all_basic_port_configs.extend(config.basic_port_configs)
+    # pyrefly: ignore [unsupported-operation]
     flattened_config_dict["basic_port_configs"] = all_basic_port_configs
 
     # Handle teardown_tasks explicitly
@@ -320,6 +327,7 @@ def flatten_multiple_test_configs(
                 config_value = getattr(config, attr_name, 0)
                 if isinstance(config_value, int) and config_value > max_value:
                     max_value = config_value
+            # pyrefly: ignore [unsupported-operation]
             flattened_config_dict[attr_name] = max_value
         elif isinstance(attr_value, bool):
             # For boolean attributes, use OR operation (True if any is True)
@@ -329,14 +337,17 @@ def flatten_multiple_test_configs(
                 if isinstance(config_value, bool) and config_value:
                     any_true = True
                     break
+            # pyrefly: ignore [unsupported-operation]
             flattened_config_dict[attr_name] = any_true
         else:
             # For string and other attributes, use the value from the first config
             flattened_config_dict[attr_name] = attr_value
 
+    # pyrefly: ignore [unsupported-operation]
     flattened_config_dict["name"] = config_name
 
     # Create a new TestConfig with the flattened attributes
+    # pyrefly: ignore [bad-argument-type]
     flattened_config = taac_types.TestConfig(**flattened_config_dict)
 
     # Format the flattened config in a human-readable format and put it in everpaste

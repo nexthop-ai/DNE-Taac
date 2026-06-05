@@ -82,6 +82,7 @@ class BgpNonBestRouteHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCh
         self.logger.info(f"Starting BGP non-best route check for {hostname}")
 
         try:
+            # pyrefly: ignore [missing-attribute]
             entries = await self.driver.async_get_bgp_rib_entries()
 
             if not entries:

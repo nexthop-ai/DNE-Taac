@@ -4,6 +4,9 @@ import os
 TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 if not TAAC_OSS:
+    from taac.internal.tasks.ixia_diagnostics_collection_task import (
+        IxiaDiagnosticsCollectionTask,
+    )
     from taac.internal.tasks.openr_route_action_task import (
         OpenRRouteActionTask,
     )
@@ -84,6 +87,11 @@ from taac.tasks.eos import (
     CreateEosBgpPeerGroup,
     RestoreRunningConfigTask,
 )
+from taac.tasks.fpf_collector_tasks import (
+    FpfStartCollectorsTask,
+    FpfStopCollectorsTask,
+)
+from taac.tasks.full_reboot_task import FullRebootTask
 from taac.tasks.interface_ip_configuration_task import (
     InterfaceIpCleanupTask,
     InterfaceIpConfigurationTask,
@@ -182,10 +190,15 @@ TASK_REGISTRY = [
     GenerateMultipleCommunityBgpPoliciesTask,
     GenerateCommunityBgpPolicyAndInjectTask,
     SetPortChannelMinLinkPatcherTask,
+    FullRebootTask,
+    FpfStartCollectorsTask,
+    FpfStopCollectorsTask,
 ]
 
 if not TAAC_OSS:
     # pyre-fixme[6]: For 1st argument expected `Type[Union[AddBgpPolicyMatchPrefixToP...
     TASK_REGISTRY.append(OpenRRouteActionTask)
+    # pyre-fixme[6]: For 1st argument expected `Type[Union[AddBgpPolicyMatchPrefixToP...
+    TASK_REGISTRY.append(IxiaDiagnosticsCollectionTask)
 
 TASK_NAME_TO_CLASS = {task.NAME: task for task in TASK_REGISTRY}

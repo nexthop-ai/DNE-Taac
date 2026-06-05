@@ -41,12 +41,15 @@ class LogParsingHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
             ]
             formatted_times_regex = r"\(" + r"\|".join(formatted_times) + r"\)"
             cmd = f'cat {log_file_path} | grep -ia "{formatted_times_regex}"'
+            # pyrefly: ignore [missing-attribute]
             log_content = await self.driver.async_run_cmd_on_shell(cmd)
         else:
+            # pyrefly: ignore [missing-attribute]
             log_content = await self.driver.async_read_file(log_file_path)
         matching_lines = [
             line
             for line in log_content.splitlines()
+            # pyrefly: ignore [no-matching-overload]
             if re.search(include_regex or exclude_regex, line)
         ]
         if include_regex:
@@ -55,15 +58,18 @@ class LogParsingHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
                     status=hc_types.HealthCheckStatus.FAIL,
                     message=f"No lines matched the regex {include_regex}",
                 )
-        else:
-            if matching_lines:
-                return hc_types.HealthCheckResult(
-                    status=hc_types.HealthCheckStatus.FAIL,
-                    message=f"Found {len(matching_lines)} lines matching criteria: {matching_lines}",
-                )
+            return hc_types.HealthCheckResult(
+                status=hc_types.HealthCheckStatus.PASS,
+                message=f"Found {len(matching_lines)} line(s) matching include regex {include_regex}",
+            )
+        if matching_lines:
+            return hc_types.HealthCheckResult(
+                status=hc_types.HealthCheckStatus.FAIL,
+                message=f"Found {len(matching_lines)} lines matching criteria: {matching_lines}",
+            )
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.PASS,
-            message="No matching lines found for the specified criteria",
+            message=f"No lines matched exclude regex {exclude_regex}",
         )
 
     async def _run_arista(
@@ -162,6 +168,7 @@ class LogParsingHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
         )
 
         # Read the full file content first
+        # pyrefly: ignore [missing-attribute]
         content = await self.driver.async_read_file(log_file)
         if not content:
             self.logger.info("[LOG_PARSING] File is empty")

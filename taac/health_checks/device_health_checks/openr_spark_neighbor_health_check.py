@@ -41,6 +41,7 @@ class OpenrSparkNeighborHealthCheck(
         expected_neighbors = check_params.get("expected_neighbors", [])
         allow_zero = check_params.get("allow_zero", False)
 
+        # pyrefly: ignore [missing-attribute]
         neighbors = await self.driver.async_get_openr_spark_neighbors()
         established = [n for n in neighbors if str(n.state) == "ESTABLISHED"]
         non_established = [n for n in neighbors if str(n.state) != "ESTABLISHED"]

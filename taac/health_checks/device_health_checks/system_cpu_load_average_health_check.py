@@ -38,6 +38,7 @@ class SystemCpuLoadAverageHealthCheck(
         hostname = obj.name
         self.logger.info(f"Starting System CPU health check for {hostname}")
         baseline = check_params.get("baseline", -1.0)
+        # pyrefly: ignore [missing-attribute]
         output = await self.driver.async_get_system_cpu_load_average()
 
         load_info = f"CPU load average: 1 min: {output[0]}, 5 min: {output[1]}, 15 min: {output[2]}"

@@ -9,7 +9,7 @@ TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 OSS_TEST_CONFIGS = []
 
 if not TAAC_OSS:
-    from taac.internal.test_configs.internal_test_configs import (
+    from taac.testconfigs.internal.all import (
         INTERNAL_TEST_CONFIGS,
     )
 else:

@@ -170,6 +170,7 @@ class AsyncSSHClient:
 
         try:
             result = await asyncio.wait_for(
+                # pyrefly: ignore [missing-attribute]
                 self._conn.run(cmd, check=False),
                 timeout=timeout_sec,
             )
@@ -335,6 +336,7 @@ class ParamikoClient:
             self.connect()
 
         try:
+            # pyrefly: ignore [missing-attribute]
             _, stdout_channel, stderr_channel = self._client.exec_command(
                 cmd, timeout=timeout_sec
             )

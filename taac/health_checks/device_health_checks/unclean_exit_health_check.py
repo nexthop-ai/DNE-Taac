@@ -54,7 +54,7 @@ class UncleanExitHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckI
         sleep_timer = check_params.get("sleep_timer", 120)
         if sleep_timer > 0:
             await asyncio.sleep(sleep_timer)
-        end_time = time.time()
+        end_time = check_params.get("end_time", time.time())
         key_desc = ",".join(
             [UNCLEAN_EXIT_KEY_DESC.format(service=service) for service in services]
         )

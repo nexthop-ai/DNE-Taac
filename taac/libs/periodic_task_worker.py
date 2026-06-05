@@ -40,7 +40,9 @@ class PeriodicTaskWorker:
             self.periodic_task.task,
             logger=self.logger,
             ixia=ixia,
+            # pyrefly: ignore [bad-argument-type]
             shared_data=self.shared_data,
+            # pyrefly: ignore [bad-argument-type]
             shared_params=self.shared_params,
         )
 

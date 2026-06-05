@@ -2,6 +2,7 @@
 
 # pyre-unsafe
 
+import ipaddress
 import typing as t
 from collections import namedtuple
 
@@ -140,6 +141,27 @@ class BgpSessionHealthCheck(
             uptime_issues_str = "\n    • ".join(uptime_issues)
             issues.append(f"BGP session uptime issues:\n    • {uptime_issues_str}")
 
+        # Validate peer identities against expected mappings from check_params
+        expected_peer_identity = check_params.get("expected_peer_identity")
+        if expected_peer_identity:
+            parent_prefixes_to_ignore = check_params.get(
+                "parent_prefixes_to_ignore", []
+            )
+            if parent_prefixes_to_ignore:
+                expected_peer_identity = {
+                    peer: local
+                    for peer, local in expected_peer_identity.items()
+                    if not any(
+                        is_parent_prefix(peer, prefix)
+                        for prefix in parent_prefixes_to_ignore
+                    )
+                }
+            peer_issues = self._validate_peer_identity(
+                expected_peer_identity, post_snapshot_bgp_sessions, obj.name
+            )
+            if peer_issues:
+                issues.extend(peer_issues)
+
         if issues:
             formatted_message = "BGP session issues detected:\n\n" + "\n\n".join(issues)
             return hc_types.HealthCheckResult(
@@ -158,11 +180,11 @@ class BgpSessionHealthCheck(
         """
         Retrieves BGP sessions from the driver and maps them to a dictionary.
         Args:
-            hostname (str): The hostname of the device.
-            rogue_bgp_peer_parent_prefix (Optional[str]): The parent prefix of the rogue BGP peer.
+            parent_prefixes_to_ignore: CIDR prefixes to exclude (subnet_of matching).
         Returns:
             A dictionary mapping BgpSessionId to TBgpSession.
         """
+        # pyrefly: ignore [missing-attribute]
         bgp_sessions = await self.driver.async_get_bgp_sessions()
         bgp_sessions_map: t.Dict[BgpSessionId, TBgpSession] = {}
         for bgp_session in bgp_sessions:
@@ -230,6 +252,117 @@ class BgpSessionHealthCheck(
                 issues.append(
                     f"{session_str}: Uptime discrepancy (actual: {actual_post_uptime}s, "
                     f"expected: ~{expected_post_uptime}s, diff: {uptime_diff}s)"
+                )
+
+        return issues
+
+    @staticmethod
+    def _normalize_ip(addr: str) -> str:
+        """Normalize an IP address string for consistent comparison."""
+        try:
+            return str(ipaddress.ip_address(addr))
+        except (ValueError, TypeError):
+            return addr
+
+    def _validate_peer_identity(
+        self,
+        expected_peer_identity: t.Dict[str, str],
+        session_map: t.Dict[BgpSessionId, TBgpSession],
+        hostname: str,
+    ) -> t.List[str]:
+        """Validate established sessions against expected local_addr -> peer_addr.
+
+        Returns list of issue strings for mismatches, missing, or unexpected peers.
+        """
+        expected = {
+            self._normalize_ip(p): self._normalize_ip(l)
+            for p, l in expected_peer_identity.items()
+        }
+
+        actual_by_peer: t.Dict[str, str] = {}
+        for session_id in session_map.keys():
+            norm_peer = self._normalize_ip(str(session_id.peer_addr))
+            norm_local = self._normalize_ip(str(session_id.my_addr))
+            actual_by_peer[norm_peer] = norm_local
+
+        actual_addrs = set(actual_by_peer.keys())
+        expected_addrs = set(expected.keys())
+
+        matched = 0
+        local_mismatches = []
+        for peer_addr in actual_addrs & expected_addrs:
+            expected_local = expected[peer_addr]
+            actual_local = actual_by_peer[peer_addr]
+            if actual_local == expected_local:
+                matched += 1
+            else:
+                local_mismatches.append(
+                    f"expected {expected_local} -> {peer_addr}, "
+                    f"actual {actual_local} -> {peer_addr}"
+                )
+                self.logger.warning(
+                    f"{hostname}: local_addr mismatch for peer {peer_addr}: "
+                    f"expected local_addr={expected_local} -> peer_addr={peer_addr}, "
+                    f"actual local_addr={actual_local} -> peer_addr={peer_addr}"
+                )
+
+        missing = expected_addrs - actual_addrs
+        unexpected = actual_addrs - expected_addrs
+
+        self.logger.info(
+            f"{hostname}: Peer identity check — "
+            f"matched={matched}, missing={len(missing)}, "
+            f"unexpected={len(unexpected)}, local_mismatch={len(local_mismatches)}"
+        )
+
+        issues = []
+
+        if local_mismatches:
+            mismatch_str = "\n    • ".join(local_mismatches[:10])
+            suffix = (
+                f"\n    • ... and {len(local_mismatches) - 10} more"
+                if len(local_mismatches) > 10
+                else ""
+            )
+            issues.append(
+                f"Peer identity local_addr mismatches ({len(local_mismatches)}):"
+                f"\n    • {mismatch_str}{suffix}"
+            )
+
+        if missing:
+            missing_samples = [f"{expected[p]} -> {p}" for p in sorted(missing)[:10]]
+            missing_str = "\n    • ".join(missing_samples)
+            suffix = (
+                f"\n    • ... and {len(missing) - 10} more" if len(missing) > 10 else ""
+            )
+            issues.append(
+                f"Missing expected peers ({len(missing)}):\n    • {missing_str}{suffix}"
+            )
+            for peer_addr in sorted(missing):
+                self.logger.warning(
+                    f"{hostname}: Expected peer not found in sessions: "
+                    f"expected local_addr={expected[peer_addr]} -> "
+                    f"peer_addr={peer_addr}"
+                )
+
+        if unexpected:
+            unexpected_samples = [
+                f"{actual_by_peer[p]} -> {p}" for p in sorted(unexpected)[:10]
+            ]
+            unexpected_str = "\n    • ".join(unexpected_samples)
+            suffix = (
+                f"\n    • ... and {len(unexpected) - 10} more"
+                if len(unexpected) > 10
+                else ""
+            )
+            issues.append(
+                f"Unexpected peers ({len(unexpected)}):\n    • {unexpected_str}{suffix}"
+            )
+            for peer_addr in sorted(unexpected):
+                self.logger.warning(
+                    f"{hostname}: Unexpected peer in sessions (not in expected config): "
+                    f"actual local_addr={actual_by_peer[peer_addr]} -> "
+                    f"peer_addr={peer_addr}"
                 )
 
         return issues

@@ -4,7 +4,6 @@ import time
 import typing as t
 
 from taac.internal.ods_utils import async_query_ods
-from taac.tasks.periodic_tasks import _parse_memory_value
 from taac.utils.driver_factory import async_get_device_driver
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
@@ -13,6 +12,41 @@ from taac.utils.oss_taac_lib_utils import (
 
 
 LOGGER: ConsoleFileLogger = get_root_logger()
+
+
+def _parse_memory_value(mem_str: str) -> int:
+    """
+    Parse memory value from string format to KB.
+
+    Handles formats like:
+    - "288236" (KB)
+    - "3.3g" (GB)
+    - "1.5m" (MB)
+
+    Args:
+        mem_str: Memory value as string
+
+    Returns:
+        Memory value in KB
+
+    Note:
+        Inlined here in Phase 5.0f to break the `utils/` -> `tasks/` cross-layer
+        import. The original definition still lives in `tasks/periodic_tasks.py`
+        for callers within that module; this is a small enough function (one
+        regex-free string parse) that duplication is preferable to introducing
+        a third "memory_utils" module just to host one symbol.
+    """
+    mem_str = mem_str.strip().lower()
+
+    if mem_str.endswith("g"):
+        # Convert GB to KB
+        return int(float(mem_str[:-1]) * 1024 * 1024)
+    elif mem_str.endswith("m"):
+        # Convert MB to KB
+        return int(float(mem_str[:-1]) * 1024)
+    else:
+        # Already in KB
+        return int(mem_str)
 
 
 async def async_get_memory_current_pct(

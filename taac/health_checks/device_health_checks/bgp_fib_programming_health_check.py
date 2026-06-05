@@ -67,6 +67,7 @@ class BgpFibProgrammingCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckI
             f"[BGP_FIB_PROGRAMMING] Getting log file from device: {log_file}"
         )
 
+        # pyrefly: ignore [missing-attribute]
         log_content_active = await self.driver.async_read_file(log_file)
         if not log_content_active:
             return hc_types.HealthCheckResult(
@@ -125,6 +126,7 @@ class BgpFibProgrammingCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckI
     async def _get_number_device_bgp_routes(self) -> int:
         total_routes = set()
         try:
+            # pyrefly: ignore [missing-attribute]
             routes_dict = await self.driver.async_get_static_routes()
             for route, route_info in routes_dict.items():
                 preference = route_info.get("preference")

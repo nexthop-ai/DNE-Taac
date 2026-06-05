@@ -22,9 +22,10 @@ from taac.constants import (
     DEFAULT_OPENR_START_IPV6S,
     DEFAULT_OTHER_LINK,
     Gigabyte,
+    OpenRRouteAction,
 )
 from taac.test_as_a_config import types as taac_types
-from taac.test_as_a_config.types import Params, Task
+from taac.test_as_a_config.types import Params, PeriodicTask, Task
 
 
 # =============================================================================
@@ -86,20 +87,25 @@ def create_deploy_eos_image_task(
 
 def create_coop_unregister_patchers_task(
     hostnames: t.List[str] | str,
+    config_names: t.Optional[t.List[str]] = None,
 ) -> Task:
     """
     Create a task to unregister all patchers for the given host(s).
 
     Args:
         hostnames: Single hostname or list of hostnames to unregister patchers from
+        config_names: Optional list of config names to scope the unregister
+            (e.g. ["bgpcpp", "agent"]). If None, unregisters all configs.
 
     Returns:
         Task object to unregister patchers
     """
     if isinstance(hostnames, str):
-        params = {"hostname": hostnames}
+        params: t.Dict[str, t.Any] = {"hostname": hostnames}
     else:
         params = {"hostnames": hostnames}
+    if config_names is not None:
+        params["config_names"] = config_names
 
     return Task(
         task_name="coop_unregister_patchers",
@@ -109,9 +115,10 @@ def create_coop_unregister_patchers_task(
 
 def create_coop_register_patcher_task(
     hostname: str,
-    config_name: str,
     patcher_name: str,
-    task_name: str,
+    config_name: t.Optional[str] = None,
+    config_names: t.Optional[t.List[str]] = None,
+    task_name: t.Optional[str] = None,
     patcher_args: t.Optional[t.Dict[str, t.Any]] = None,
     py_func_name: t.Optional[str] = None,
 ) -> Task:
@@ -120,21 +127,27 @@ def create_coop_register_patcher_task(
 
     Args:
         hostname: Name of the device to register patcher on
-        config_name: Config type (e.g., "bgpcpp", "agent")
         patcher_name: Unique name for this patcher
-        task_name: Task name that this patcher performs
-        patcher_args: Optional arguments for the patcher
+        config_name: Config type (e.g., "bgpcpp", "agent"). Mutually exclusive with config_names.
+        config_names: List of config types (used when patcher applies across multiple configs).
+        task_name: Task name that this patcher performs (optional — many call sites omit it
+            and rely on py_func_name as the dispatch key).
+        patcher_args: Optional arguments for the patcher (serialized via inner json.dumps)
         py_func_name: Optional Python function name for the patcher
 
     Returns:
         Task object to register the patcher
     """
-    params: t.Dict[str, t.Any] = {
-        "hostname": hostname,
-        "config_name": config_name,
-        "patcher_name": patcher_name,
-        "task_name": task_name,
-    }
+    # Preserve original key insertion order (hostname, config_name, patcher_name,
+    # task_name) for byte-equivalence with pre-Phase-8 callers' JSON serialization.
+    params: t.Dict[str, t.Any] = {"hostname": hostname}
+    if config_name is not None:
+        params["config_name"] = config_name
+    if config_names is not None:
+        params["config_names"] = config_names
+    params["patcher_name"] = patcher_name
+    if task_name is not None:
+        params["task_name"] = task_name
     if patcher_args is not None:
         params["patcher_args"] = json.dumps(patcher_args)
     if py_func_name is not None:
@@ -468,56 +481,48 @@ def create_eos_bgp_peer_group_task(
 def create_eos_bgp_prefix_list_task(
     hostname: str,
     prefix_list_name: str,
-    peer_group_name: str | t.List[str],
+    peer_group_name: str | t.List[str] | None = None,
     prefix: t.Optional[str] = None,
     direction: str = "in",
     prefix_length: t.Optional[int] = None,
     seq: t.Optional[int] = None,
     register: bool = True,
     is_ipv6: bool = True,
+    route_map_name: str | t.List[str] | None = None,
+    route_map_seq: t.Optional[int] = None,
 ) -> Task:
     """
-    Create a task to add or remove a prefix-list on one or more EOS BGP peer
-    groups.
+    Create a task to add or remove a prefix-list on EOS, attaching it to
+    route-map(s) or peer group(s).
 
-    This is the EOS ar-bgp equivalent of the FBOSS
-    add_bgp_policy_match_prefix_to_propagate_routes COOP patcher. It creates an
-    EOS prefix-list entry and attaches it to peer group(s) under the appropriate
-    address-family. Call once per prefix, similar to the FBOSS patcher pattern.
-
-    When peer_group_name is a list, the prefix-list is attached to / detached
-    from all peer groups in a single CLI transaction. On removal, the
-    prefix-list is detached from every peer group before the prefix-list itself
-    is deleted.
-
-    When register=False, the task removes the prefix-list from the peer group(s)
-    and deletes the prefix-list. Only hostname, prefix_list_name, peer_group_name,
-    direction, and is_ipv6 (or prefix) are needed for removal.
+    When route_map_name is provided, adds a permit entry to the specified
+    route-map(s) matching the prefix-list. When peer_group_name is provided
+    (legacy), attaches the prefix-list directly to peer group(s).
 
     Args:
         hostname: Hostname of the EOS device
-        prefix_list_name: Name of the prefix-list (e.g., "ALLOW_BAG_STSW_V6_PREFIXES")
-        peer_group_name: Peer group(s) to attach the prefix-list to. Accepts a
-            single name or a list of names.
-        prefix: IP prefix to permit (e.g., "5000::/16", "10.0.0.0/8").
-            Required when register=True.
+        prefix_list_name: Name of the prefix-list
+        peer_group_name: Peer group(s) for direct attachment (legacy mode)
+        prefix: IP prefix to permit (e.g., "5000::/16"). Required when register=True.
         direction: "in" or "out" for inbound/outbound filtering
-        prefix_length: Max prefix length for the "le" keyword. Defaults to 128
-            for IPv6, 32 for IPv4 (auto-detected from prefix).
-        seq: Optional sequence number for the prefix-list entry, useful when
-            adding multiple entries to the same prefix-list via separate tasks
-        register: If True (default), create prefix-list and attach. If False, remove.
-        is_ipv6: Whether this is an IPv6 prefix-list (only used when register=False
-            and prefix is not provided, to determine ip vs ipv6 command)
-
-    Returns:
-        Task object to add or remove the prefix-list
+        prefix_length: Max prefix length for the "le" keyword
+        seq: Sequence number for the prefix-list entry
+        register: If True, create and attach. If False, remove.
+        is_ipv6: IPv6 flag (only for removal when prefix not provided)
+        route_map_name: Route-map(s) to add a permit entry to
+        route_map_seq: Sequence number for the route-map permit entry
     """
     params: t.Dict[str, t.Any] = {
         "hostname": hostname,
         "prefix_list_name": prefix_list_name,
-        "peer_group_name": peer_group_name,
     }
+
+    if peer_group_name is not None:
+        params["peer_group_name"] = peer_group_name
+    if route_map_name is not None:
+        params["route_map_name"] = route_map_name
+    if route_map_seq is not None:
+        params["route_map_seq"] = route_map_seq
 
     if not register:
         params["register"] = False
@@ -550,19 +555,26 @@ def create_eos_bgp_prefix_list_task(
 def create_run_commands_on_shell_task(
     hostname: str,
     cmds: t.List[str],
+    set_outer_hostname: bool = False,
+    ixia_needed: bool = False,
 ) -> Task:
     """
     Create a task to run shell commands on a device.
 
     Args:
-        hostname: Hostname to run commands on
+        hostname: Hostname to run commands on (always serialized into params dict)
         cmds: List of shell commands to execute
+        set_outer_hostname: If True, also set Task.hostname (the outer Thrift field).
+            Some legacy call sites set this for runner-side scoping.
+        ixia_needed: If True, the task runs after IXIA setup with an Ixia instance available.
 
     Returns:
         Task object to run shell commands
     """
     return Task(
         task_name="run_commands_on_shell",
+        hostname=hostname if set_outer_hostname else None,
+        ixia_needed=ixia_needed,
         params=Params(
             json_params=json.dumps(
                 {
@@ -571,6 +583,50 @@ def create_run_commands_on_shell_task(
                 }
             )
         ),
+    )
+
+
+def create_full_reboot_task(
+    hostname: str,
+    reboot_cmd: t.Optional[str] = None,
+    ssh_user: t.Optional[str] = None,
+    ssh_password: t.Optional[str] = None,
+    down_max_s: t.Optional[int] = None,
+    up_max_s: t.Optional[int] = None,
+) -> Task:
+    """Create a task to perform a full host reboot via SSH.
+
+    Issues `sudo systemctl reboot` over SSH to `hostname`, waits for the host to
+    become SSH-unreachable (confirming the reboot took effect), then waits for
+    it to come back online. Built for Phase 4-1 TC5 ("U-server reboot" in the
+    bash harness, which is in fact a full reboot of the DUT switch as a Linux
+    host). Generic over any SSH-reachable host.
+
+    Args:
+        hostname: FQDN of the host to reboot.
+        reboot_cmd: Override the default `sudo systemctl reboot` if needed.
+        ssh_user: SSH username; falls back to the default identity.
+        ssh_password: SSH password if not using key auth.
+        down_max_s: Max seconds to wait for host to go down (default 120).
+        up_max_s: Max seconds to wait for host to come back (default 600).
+
+    Returns:
+        Task with `task_name="full_reboot"` carrying the params above.
+    """
+    payload: t.Dict[str, t.Any] = {"hostname": hostname}
+    if reboot_cmd is not None:
+        payload["reboot_cmd"] = reboot_cmd
+    if ssh_user is not None:
+        payload["ssh_user"] = ssh_user
+    if ssh_password is not None:
+        payload["ssh_password"] = ssh_password
+    if down_max_s is not None:
+        payload["down_max_s"] = down_max_s
+    if up_max_s is not None:
+        payload["up_max_s"] = up_max_s
+    return Task(
+        task_name="full_reboot",
+        params=Params(json_params=json.dumps(payload)),
     )
 
 
@@ -602,11 +658,30 @@ def create_invoke_ixia_api_task(
     )
 
 
+def create_periodic_task_shell(
+    task_name: str,
+    ixia_needed: bool = False,
+) -> Task:
+    """Create a Task shell (no params) for use inside `taac_types.PeriodicTask`.
+
+    A `PeriodicTask` supplies its own per-invocation params via the `params_list`
+    field, so the wrapped Task only needs `task_name` (and optionally
+    `ixia_needed`). This factory exists so that those Task() constructions can
+    be migrated out of test_config files without inventing a per-task_name
+    factory variant for every periodic call site.
+    """
+    return Task(task_name=task_name, ixia_needed=ixia_needed)
+
+
+_UNSET_PREFIX_END_INDEX: t.Any = object()
+
+
 def create_ixia_enable_disable_bgp_prefixes_task(
     enable: bool,
     prefix_pool_regex: str = ".*",
     prefix_start_index: int = 0,
-    prefix_end_index: int = 20,
+    prefix_end_index: t.Any = _UNSET_PREFIX_END_INDEX,
+    hostname: t.Optional[str] = None,
 ) -> Task:
     """
     Create a task to enable/disable BGP prefixes on Ixia.
@@ -615,24 +690,32 @@ def create_ixia_enable_disable_bgp_prefixes_task(
         enable: Whether to enable or disable prefixes
         prefix_pool_regex: Regex pattern to match prefix pools
         prefix_start_index: Starting index of prefixes
-        prefix_end_index: Ending index of prefixes
+        prefix_end_index: Ending index of prefixes. When unset (the sentinel
+            default), defaults to 20 for backward byte-equivalence with
+            historical callers. Pass None explicitly to OMIT the key from the
+            params dict (so the runtime task disables/enables the full range).
+        hostname: Optional hostname to scope the operation. When supplied, it is
+            included as the FIRST key in the params dict so byte-equivalence is
+            preserved for callers that pass hostname. Default is None which
+            preserves byte-equivalence for existing callers that omit hostname.
 
     Returns:
         Task object to toggle BGP prefixes
     """
+    params: t.Dict[str, t.Any] = {}
+    if hostname is not None:
+        params["hostname"] = hostname
+    params["enable"] = enable
+    params["prefix_pool_regex"] = prefix_pool_regex
+    params["prefix_start_index"] = prefix_start_index
+    if prefix_end_index is _UNSET_PREFIX_END_INDEX:
+        params["prefix_end_index"] = 20
+    elif prefix_end_index is not None:
+        params["prefix_end_index"] = prefix_end_index
     return Task(
         task_name="ixia_enable_disable_bgp_prefixes",
         ixia_needed=True,
-        params=Params(
-            json_params=json.dumps(
-                {
-                    "enable": enable,
-                    "prefix_pool_regex": prefix_pool_regex,
-                    "prefix_start_index": prefix_start_index,
-                    "prefix_end_index": prefix_end_index,
-                }
-            )
-        ),
+        params=Params(json_params=json.dumps(params)),
     )
 
 
@@ -801,6 +884,7 @@ def create_arista_daemon_control_task(
     hostname: str,
     daemon_name: str = "Bgp",
     action: str = "enable",
+    ixia_needed: bool = False,
 ) -> Task:
     """
     Create a task to control a daemon on Arista device.
@@ -809,72 +893,22 @@ def create_arista_daemon_control_task(
         hostname: Hostname of the Arista device
         daemon_name: Name of the daemon (default: "Bgp")
         action: Action to perform ("enable", "disable", "restart")
+        ixia_needed: If True, task runs after IXIA setup (default: False).
+            BGP++ conveyor configs set this to True so daemon enable runs
+            after IXIA peering is established.
 
     Returns:
         Task object to control daemon
     """
     return Task(
         task_name="arista_daemon_control",
+        ixia_needed=ixia_needed,
         params=Params(
             json_params=json.dumps(
                 {
                     "hostname": hostname,
                     "daemon_name": daemon_name,
                     "action": action,
-                }
-            )
-        ),
-    )
-
-
-def create_openr_route_action_task(
-    hostname: str,
-    action: str,
-    start_ipv4s: t.Optional[t.List[str]] = None,
-    start_ipv6s: t.Optional[t.List[str]] = None,
-    local_link: t.Optional[t.Dict[str, t.Any]] = None,
-    other_link: t.Optional[t.Dict[str, t.Any]] = None,
-    count: int = 63,
-    update_count: int = 50,
-) -> Task:
-    """
-    Create a task for OpenR route actions.
-
-    Args:
-        hostname: Hostname of the device
-        action: Action to perform ("inject", "update", "delete")
-        start_ipv4s: Starting IPv4 addresses for routes
-        start_ipv6s: Starting IPv6 addresses for routes
-        local_link: Local link information
-        other_link: Other link information
-        count: Number of routes
-        update_count: Number of routes to update
-
-    Returns:
-        Task object for OpenR route action
-    """
-    if start_ipv4s is None:
-        start_ipv4s = DEFAULT_OPENR_START_IPV4S
-    if start_ipv6s is None:
-        start_ipv6s = DEFAULT_OPENR_START_IPV6S
-    if local_link is None:
-        local_link = DEFAULT_LOCAL_LINK
-    if other_link is None:
-        other_link = DEFAULT_OTHER_LINK
-
-    return Task(
-        task_name="openr_route_action",
-        params=Params(
-            json_params=json.dumps(
-                {
-                    "hostname": hostname,
-                    "action": action,
-                    "start_ipv4s": start_ipv4s,
-                    "start_ipv6": start_ipv6s,
-                    "local_link": local_link,
-                    "other_link": other_link,
-                    "count": count,
-                    "update_count": update_count,
                 }
             )
         ),
@@ -1130,6 +1164,8 @@ def create_add_stress_static_routes_task(
 def create_replace_bgp_peers_task(
     hostname: str,
     peer_configs: t.List[t.Dict[str, t.Any]],
+    ssh_user: str = "admin",
+    ssh_password: str = "",
 ) -> Task:
     """
     Create a task to replace BGP peers.
@@ -1137,6 +1173,8 @@ def create_replace_bgp_peers_task(
     Args:
         hostname: Hostname of the device
         peer_configs: List of peer configurations
+        ssh_user: SSH username (default: admin)
+        ssh_password: SSH password (default: empty)
 
     Returns:
         Task object to replace BGP peers
@@ -1147,7 +1185,50 @@ def create_replace_bgp_peers_task(
             json_params=json.dumps(
                 {
                     "hostname": hostname,
-                    "peer_configs": peer_configs,
+                    "peer_groups": peer_configs,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                }
+            )
+        ),
+    )
+
+
+def create_replace_bgp_peers_with_groups_task(
+    hostname: str,
+    peer_groups: t.List[t.Dict[str, t.Any]],
+    ssh_user: str,
+    ssh_password: str,
+    preserve_peer_groups: t.List[str],
+) -> Task:
+    """
+    Create a task to replace BGP peers using the peer-group schema.
+
+    This is the peer-group variant of `create_replace_bgp_peers_task`. The
+    runtime `replace_bgp_peers` task accepts both the per-peer (`peer_configs`)
+    and per-group (`peer_groups` + ssh creds + `preserve_peer_groups`) schemas
+    via duck-typing; this factory targets the latter form.
+
+    Args:
+        hostname: Hostname of the device
+        peer_groups: List of peer-group configuration dictionaries
+        ssh_user: SSH username for device login
+        ssh_password: SSH password for device login
+        preserve_peer_groups: List of peer-group names to preserve
+
+    Returns:
+        Task object to replace BGP peers (peer-group schema)
+    """
+    return Task(
+        task_name="replace_bgp_peers",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "peer_groups": peer_groups,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                    "preserve_peer_groups": preserve_peer_groups,
                 }
             )
         ),
@@ -1156,19 +1237,31 @@ def create_replace_bgp_peers_task(
 
 def create_restore_bgp_peers_task(
     hostname: str,
+    ssh_user: str = "admin",
+    ssh_password: str = "",
 ) -> Task:
     """
     Create a task to restore original BGP peers.
 
     Args:
         hostname: Hostname of the device
+        ssh_user: SSH username (default: admin)
+        ssh_password: SSH password (default: empty)
 
     Returns:
         Task object to restore BGP peers
     """
     return Task(
         task_name="restore_bgp_peers",
-        params=Params(json_params=json.dumps({"hostname": hostname})),
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                }
+            )
+        ),
     )
 
 
@@ -1547,6 +1640,9 @@ def create_interface_ip_configuration_task(
     ipv4_start_offset: int = 10,
     ipv6_start_offset: int = 0x10,
     task_name: t.Optional[str] = None,
+    ixia_needed: bool = False,
+    hostname: t.Optional[str] = None,
+    all_secondary: t.Optional[bool] = None,
 ) -> Task:
     """
     Create a task to configure secondary IP addresses on an Arista interface.
@@ -1585,6 +1681,8 @@ def create_interface_ip_configuration_task(
         params["ipv4_base_network"] = ipv4_base_network
     if ipv6_base_network is not None:
         params["ipv6_base_network"] = ipv6_base_network
+    if all_secondary is not None:
+        params["all_secondary"] = all_secondary
 
     # Generate default task name from interface if not provided
     if task_name is None:
@@ -1594,6 +1692,8 @@ def create_interface_ip_configuration_task(
 
     return Task(
         task_name="interface_ip_configuration",
+        ixia_needed=ixia_needed,
+        hostname=hostname,
         params=Params(json_params=json.dumps(params)),
     )
 
@@ -1674,17 +1774,10 @@ def create_deploy_tls_certs_task(
         cert_dir=cert_dir,
         cert_names=cert_names,
     )
-    return Task(
-        task_name="run_commands_on_shell",
+    return create_run_commands_on_shell_task(
+        hostname=hostname,
+        cmds=cmds,
         ixia_needed=True,
-        params=Params(
-            json_params=json.dumps(
-                {
-                    "hostname": hostname,
-                    "cmds": cmds,
-                }
-            )
-        ),
     )
 
 
@@ -2251,7 +2344,20 @@ def create_cpu_stress_setup_tasks(
 
 
 def create_cpu_stress_teardown_task(hostname: str) -> Task:
-    """Create a task to stop the CPU stress script on a device."""
+    """Create a task to stop the CPU stress script on a device.
+
+    Pairs with `create_cpu_stress_setup_tasks` — kills any running
+    `/tmp/cpu_stress.py` process via `pkill` and removes the script file from
+    `/tmp/`. Safe to call even if the script is no longer running (uses
+    `|| true` to ignore pkill failure).
+
+    Args:
+        hostname: Device hostname where the stress script was deployed.
+
+    Returns:
+        A `Task` with `task_name="run_commands_on_shell"` that issues the
+        teardown shell commands.
+    """
     return Task(
         task_name="run_commands_on_shell",
         params=Params(
@@ -2425,6 +2531,28 @@ def create_set_port_channel_min_link_patcher_task(
     description: t.Optional[str] = "Register port channel min link percentage patcher",
     patcher_name: str = "configure_port_channel_min_link_percentage",
 ) -> Task:
+    """Create a task to register a port-channel min-link percentage patcher.
+
+    Wraps the `set_port_channel_min_link_patcher` runtime task to install a
+    COOP agent patcher that sets the min-link / min-link-up thresholds for a
+    LAG (port-channel). Used in EBB BGP++ test configs to tune LAG quorum
+    behavior under member-port flap scenarios.
+
+    Args:
+        hostname: Device hostname where the patcher is registered.
+        port_channel_name: Port-channel (LAG) name (e.g. `"Port-Channel100"`).
+        min_link_percentage: Minimum percentage of member links required for
+            the LAG to remain up (e.g. `50` for 50%).
+        min_link_up_percentage: Optional minimum percentage of member links
+            that must be in the UP state. If None, only `min_link_percentage`
+            governs LAG state.
+        description: Human-readable description recorded with the patcher
+            registration. Default describes it as a min-link patcher.
+        patcher_name: Unique patcher name on the device.
+
+    Returns:
+        A `Task` with `task_name="set_port_channel_min_link_patcher"`.
+    """
     params_dict: t.Dict[str, t.Any] = {
         "hostname": hostname,
         "port_channel_name": port_channel_name,
@@ -2436,4 +2564,526 @@ def create_set_port_channel_min_link_patcher_task(
     return Task(
         task_name="set_port_channel_min_link_patcher",
         params=Params(json_params=json.dumps(params_dict)),
+    )
+
+
+# =============================================================================
+# GENERIC TASK BUILDER (used by step factories that wrap a Task into a Step)
+# =============================================================================
+
+
+def create_run_task(
+    task_name: str,
+    params_dict: t.Optional[t.Dict[str, t.Any]] = None,
+    ixia_needed: bool = False,
+) -> Task:
+    """Build a Task struct from a task_name + JSON-serializable params dict.
+
+    Used by step factories (e.g. `create_run_task_step`) that wrap a Task
+    into a Step's RunTaskInput.
+    """
+    return Task(
+        task_name=task_name,
+        ixia_needed=ixia_needed,
+        params=Params(json_params=json.dumps(params_dict or {})),
+    )
+
+
+# =============================================================================
+# OPEN/R ROUTE ACTION TASK (migrated from steps/step_definitions.py — Phase 8-1)
+# =============================================================================
+
+
+def create_openr_route_action_task(
+    device_name: str,
+    start_ipv4s: t.List[str],
+    start_ipv6s: t.List[str],
+    local_link: t.Dict[str, t.Any],
+    other_link: t.Dict[str, t.Any],
+    action: str = OpenRRouteAction.INJECT.value,
+    count: int = 63,
+    step: int = 2,
+    mask: int = -1,
+    duration: t.Optional[int] = None,
+    frequency: t.Optional[int] = None,
+    description: t.Optional[str] = None,
+    ixia_needed: bool = False,
+    set_outer_hostname: bool = False,
+) -> Task:
+    """Configurable Open/R route action task (inject, delete, metric_oscillation).
+
+    Args:
+        ixia_needed: If True, sets outer ``Task.ixia_needed`` so the task runs
+            after IXIA setup. Defaults to False to preserve byte-equivalence
+            for existing callers.
+        set_outer_hostname: If True, also sets the outer ``Task.hostname``
+            field (some legacy/runner-side scoping requires this). Defaults to
+            False to preserve byte-equivalence for existing callers.
+    """
+    params = {
+        "hostname": device_name,
+        "start_ipv4s": start_ipv4s,
+        "start_ipv6s": start_ipv6s,
+        "count": count,
+        "step": step,
+        "local_link": local_link,
+        "other_link": other_link,
+        "mask": mask,
+        "action": action,
+    }
+    if action == OpenRRouteAction.METRIC_OSCILLATION.value:
+        if duration is not None:
+            params["duration"] = duration
+        if frequency is not None:
+            params["frequency"] = frequency
+    return Task(
+        task_name="openr_route_action",
+        hostname=device_name if set_outer_hostname else None,
+        ixia_needed=ixia_needed,
+        params=Params(json_params=json.dumps(params)),
+    )
+
+
+def create_ixia_diagnostics_collection_task(
+    components: t.Optional[t.List[str]] = None,
+    poll_timeout_s: int = 300,
+    download_timeout_s: int = 600,
+    manifold_bucket: t.Optional[str] = None,
+    run_id: t.Optional[str] = None,
+) -> Task:
+    """Factory for the Ixia diagnostics collection teardown task.
+
+    The runner invokes this task automatically when ``--collect-ixia-diagnostics``
+    is passed on the netcastle CLI, so most TestConfigs do NOT need to add it to
+    ``teardown_tasks`` explicitly. This factory exists so a TestConfig CAN add it
+    by hand for tighter control (e.g., custom component list per testbed).
+
+    Args:
+        components: Keysight DiagnosticService component display names to
+            collect. None uses the framework default (IxNetwork app + Port logs).
+            Enumerate available components with the
+            ``discover_ixia_diagnostics_components`` script.
+        poll_timeout_s: Max wall-clock to wait for the chassis to finish
+            building the archive. Default 5 min.
+        download_timeout_s: Max wall-clock for the binary download. Default
+            10 min — large archives can take a while.
+        manifold_bucket: Override the default bucket
+            (``taac_ixia_diagnostics``). Useful for sandbox/dev buckets.
+        run_id: Override the run id used in the Manifold key. None falls back
+            to ``test_config.name`` (runner-side default).
+    """
+    params: t.Dict[str, t.Any] = {
+        "poll_timeout_s": poll_timeout_s,
+        "download_timeout_s": download_timeout_s,
+    }
+    if components is not None:
+        params["components"] = components
+    if manifold_bucket is not None:
+        params["manifold_bucket"] = manifold_bucket
+    if run_id is not None:
+        params["run_id"] = run_id
+    return Task(
+        task_name="ixia_diagnostics_collection",
+        params=Params(json_params=json.dumps(params)),
+    )
+
+
+# =============================================================================
+# PERIODIC TASK FACTORIES
+# =============================================================================
+
+
+def create_arista_create_file_from_config_task(
+    hostname: str,
+    configerator_path: str,
+    file_path: str,
+    ixia_needed: bool = True,
+) -> Task:
+    """Copy a configerator file to a path on an Arista EOS device.
+
+    Reads a configerator-managed text blob on the test runner and writes it to
+    the target file path on the Arista device via base64-encoded `echo`
+    commands (mirroring the COOP create_file pattern). Used to seed BGP++
+    configs, route policies, etc. without needing a COOP patcher.
+
+    Args:
+        hostname: Arista EOS device hostname.
+        configerator_path: Configerator path of the source file
+            (e.g. `"taac/test_bgp_policies/foo.json"`).
+        file_path: Destination absolute path on the device
+            (e.g. `"/etc/bgpcpp/foo.json"`).
+        ixia_needed: If True (default), task runs after IXIA setup. Set False
+            for tasks that must run before IXIA peering.
+
+    Returns:
+        A `Task` with `task_name="arista_create_file_from_config"`.
+    """
+    return Task(
+        task_name="arista_create_file_from_config",
+        ixia_needed=ixia_needed,
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "configerator_path": configerator_path,
+                    "file_path": file_path,
+                }
+            )
+        ),
+    )
+
+
+def create_scp_file_template_task(
+    hostname: str,
+    remote_path: str,
+    file_template: str,
+    template_params: t.Dict[str, str],
+) -> Task:
+    """SCP a *templated* file to a remote host (used for systemd unit overrides).
+
+    This is distinct from `create_scp_file_task` (line 984), which transfers a
+    raw file by source/dest path. This variant renders a named template
+    (`file_template`) with `template_params` substitutions on the runner side
+    before transfer.
+    """
+    return Task(
+        task_name="scp_file",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "remote_path": remote_path,
+                    "file_template": file_template,
+                    "template_params": template_params,
+                }
+            )
+        ),
+    )
+
+
+def create_add_bgp_weight_policy_task(
+    hostname: str,
+    target_policy: str,
+    community_weight_map: t.Dict[str, int],
+    ssh_user: str,
+    ssh_password: str,
+    reload_bgp: bool = True,
+) -> Task:
+    """Add weight policy entries to a target BGP policy via SSH.
+
+    Logs in to the Arista device over SSH and edits the named route-map /
+    BGP policy in-place to set per-community `weight` values for inbound BGP
+    best-path selection. Used by the BGP weight feature test config.
+
+    Args:
+        hostname: Arista device hostname.
+        target_policy: Name of the existing BGP policy / route-map to amend.
+        community_weight_map: Mapping of community string (e.g. `"65000:100"`)
+            to the integer `weight` value to assign for matching routes.
+        ssh_user: SSH username for the device login.
+        ssh_password: SSH password for the device login.
+        reload_bgp: If True (default), restart BGP after applying so the new
+            weights take effect on existing sessions.
+
+    Returns:
+        A `Task` with `task_name="add_bgp_weight_policy"`.
+    """
+    return Task(
+        task_name="add_bgp_weight_policy",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "target_policy": target_policy,
+                    "community_weight_map": community_weight_map,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                    "reload_bgp": reload_bgp,
+                }
+            )
+        ),
+    )
+
+
+def create_disable_med_comparison_task(
+    hostname: str,
+    ssh_user: str,
+    ssh_password: str,
+    reload_bgp: bool = True,
+) -> Task:
+    """Disable BGP MED comparison on the device via SSH.
+
+    SSHes into the Arista device and clears the `bgp always-compare-med`
+    setting (and equivalents) so MED is no longer used as a tiebreaker in
+    best-path selection. Used by the BGP MED feature test config to baseline
+    the device before enabling the feature under test.
+
+    Args:
+        hostname: Arista device hostname.
+        ssh_user: SSH username for the device login.
+        ssh_password: SSH password for the device login.
+        reload_bgp: If True (default), restart BGP after disabling so the
+            change takes effect immediately on established sessions.
+
+    Returns:
+        A `Task` with `task_name="disable_med_comparison"`.
+    """
+    return Task(
+        task_name="disable_med_comparison",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                    "reload_bgp": reload_bgp,
+                }
+            )
+        ),
+    )
+
+
+def create_set_peer_group_enforce_first_as_task(
+    hostname: str,
+    peer_groups: t.List[str],
+    enforce_first_as: bool,
+    ssh_user: str,
+    ssh_password: str,
+    reload_bgp: bool = True,
+) -> Task:
+    """Toggle the BGP enforce-first-as setting on the given peer groups via SSH.
+
+    SSHes into the Arista device and applies (or removes) the
+    `enforce-first-as` requirement on each named peer group. When enforced,
+    inbound BGP UPDATEs whose first AS in the AS_PATH does not match the
+    peer's configured AS are dropped. Used by the BGP enforce-first-as
+    feature test config to verify both the enabled and disabled behavior.
+
+    Args:
+        hostname: Arista device hostname.
+        peer_groups: Names of the BGP peer groups to toggle (e.g.
+            `["PEERGROUP_RB_XSW_V4"]`).
+        enforce_first_as: True to enable enforcement, False to disable.
+        ssh_user: SSH username for the device login.
+        ssh_password: SSH password for the device login.
+        reload_bgp: If True (default), restart BGP after applying so the
+            change takes effect on established sessions.
+
+    Returns:
+        A `Task` with `task_name="set_peer_group_enforce_first_as"`.
+    """
+    return Task(
+        task_name="set_peer_group_enforce_first_as",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "peer_groups": peer_groups,
+                    "enforce_first_as": enforce_first_as,
+                    "ssh_user": ssh_user,
+                    "ssh_password": ssh_password,
+                    "reload_bgp": reload_bgp,
+                }
+            )
+        ),
+    )
+
+
+def create_set_bgp_setting_config_task(
+    hostname: str,
+    settings: t.Dict[str, t.Any],
+    reload_bgp: bool = False,
+) -> Task:
+    """Set BGP setting config on an Arista BGP++ device.
+
+    Applies a dict of arbitrary `BgpSettingConfig` field overrides on a
+    BGP++-enabled Arista device. Used to flip global BGP++ knobs (e.g.
+    add-path, best-path tuning) before exercising a feature.
+
+    Args:
+        hostname: Arista BGP++ device hostname. Also serialized as the outer
+            `Task.hostname` for runner-side scoping.
+        settings: Dict of `BgpSettingConfig` field name → value (e.g.
+            `{"enable_add_path": True}`). Values are passed through verbatim.
+        reload_bgp: If True, restart BGP++ after applying so the new settings
+            take effect immediately. Default False (caller controls reload
+            timing explicitly).
+
+    Returns:
+        A `Task` with `task_name="set_bgp_setting_config"`.
+    """
+    return Task(
+        task_name="set_bgp_setting_config",
+        hostname=hostname,
+        ixia_needed=False,
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "settings": settings,
+                    "reload_bgp": reload_bgp,
+                }
+            )
+        ),
+    )
+
+
+def create_vip_injectors_task(
+    hostname: str,
+    vip_injector_count: int,
+    num_vips_per_injector: int,
+    starting_vip_ip: str,
+    vip_prefix_len: int,
+    starting_nexthop: str,
+    vip_scope: str,
+    vip_preference: int,
+    vip_increment_ip: str = "0:0:1:0:0::0",
+    nexthop_increment_ip: str = "0:0:0:0::2",
+) -> Task:
+    """Configure VIP injectors on the DUT (used by FBOSS VIP hardening tests).
+
+    Programs N synthetic VIP "injectors" on the device, each advertising a
+    range of IPv6 VIPs with a configured next-hop. Used by FBOSS VIP
+    hardening test configs to drive realistic VIP-scale advertisement
+    patterns into the agent and verify churn / programming behavior.
+
+    Args:
+        hostname: Device hostname where injectors are programmed.
+        vip_injector_count: Number of injector instances to create.
+        num_vips_per_injector: How many VIP prefixes each injector advertises.
+        starting_vip_ip: First VIP IPv6 address in the range.
+        vip_prefix_len: VIP prefix length (e.g. `128` for host routes).
+        starting_nexthop: First next-hop IPv6 address.
+        vip_scope: VIP scope tag (FBOSS-defined string).
+        vip_preference: Preference value for advertised VIPs.
+        vip_increment_ip: Amount to increment the VIP address per VIP within
+            an injector. Default `"0:0:1:0:0::0"`.
+        nexthop_increment_ip: Amount to increment the next-hop per injector.
+            Default `"0:0:0:0::2"`.
+
+    Returns:
+        A `Task` with `task_name="create_vip_injectors"`.
+    """
+    return Task(
+        task_name="create_vip_injectors",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "hostname": hostname,
+                    "vip_injector_count": vip_injector_count,
+                    "num_vips_per_injector": num_vips_per_injector,
+                    "starting_vip_ip": starting_vip_ip,
+                    "vip_increment_ip": vip_increment_ip,
+                    "vip_prefix_len": vip_prefix_len,
+                    "starting_nexthop": starting_nexthop,
+                    "nexthop_increment_ip": nexthop_increment_ip,
+                    "vip_scope": vip_scope,
+                    "vip_preference": vip_preference,
+                }
+            )
+        ),
+    )
+
+
+def create_nexthop_group_poll_periodic_task(
+    device_name: str,
+    threshold: int = 50,
+    interval: int = 5,
+    enable_plotting: bool = True,
+) -> PeriodicTask:
+    """Periodic task to poll nexthop-group count against a threshold.
+
+    Wraps the `nexthop_group_poll` runtime task in a `PeriodicTask` that
+    samples the device's current nexthop-group (ECMP group) count every
+    `interval` seconds and records the value for later check / plotting.
+    Non-terminating: a threshold breach is recorded but does not abort the
+    test, by design (test author still has access to the recorded series).
+
+    Args:
+        device_name: Device hostname to poll.
+        threshold: Target / warning threshold for the nexthop-group count.
+            Default `50`.
+        interval: Polling interval in seconds. Default `5`.
+        enable_plotting: If True (default), recorded values are published for
+            plotting in the test artifact view.
+
+    Returns:
+        A `PeriodicTask` named `"nexthop_group_check"` wrapping
+        `task_name="nexthop_group_poll"`.
+    """
+    return PeriodicTask(
+        name="nexthop_group_check",
+        interval=interval,
+        task=Task(task_name="nexthop_group_poll"),
+        retryable=False,
+        terminate_on_error=False,
+        params_list=[
+            Params(
+                json_params=json.dumps(
+                    {
+                        "hostname": device_name,
+                        "threshold": threshold,
+                        "enable_plotting": enable_plotting,
+                    }
+                )
+            )
+        ],
+    )
+
+
+# =============================================================================
+# FPF Collector Tasks
+# =============================================================================
+
+
+def create_fpf_start_collectors_task(
+    gtsws: t.List[str],
+    hosts: t.List[str],
+    subnet_prefix: str = "5000:dd::/32",
+    poll_interval_sec: float = 5.0,
+    baseline_collection_sec: int = 120,
+) -> Task:
+    """Create a setup task that starts long-lived FPF collectors.
+
+    Starts 3 collectors (FSDB ribMap, HRT bulk, BGP RIB) and waits for
+    baseline data collection. Prefix injection is NOT done here — it is
+    a stage step in the playbook so test_case_start_time aligns with injection.
+    """
+    return Task(
+        task_name="fpf_start_collectors",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "gtsws": gtsws,
+                    "hosts": hosts,
+                    "subnet_prefix": subnet_prefix,
+                    "poll_interval_sec": poll_interval_sec,
+                    "baseline_collection_sec": baseline_collection_sec,
+                }
+            )
+        ),
+    )
+
+
+def create_fpf_stop_collectors_task(
+    trigger_stsws: t.List[str],
+    prefix_count: int = 70000,
+    prefix_base: str = "5000:dd::/64",
+    increment_step: str = "0:0:1::",
+    community_list: str = "stsw",
+) -> Task:
+    """Create a teardown task that stops FPF collectors and withdraws prefixes."""
+    return Task(
+        task_name="fpf_stop_collectors",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "trigger_stsws": trigger_stsws,
+                    "prefix_count": prefix_count,
+                    "prefix_base": prefix_base,
+                    "increment_step": increment_step,
+                    "community_list": community_list,
+                }
+            )
+        ),
     )

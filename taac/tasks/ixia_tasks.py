@@ -623,6 +623,7 @@ class ConfigureIxiaInterfaces(BaseTask):
                     self.ADD_BGP_PEER_PY_FUNC_NAME,
                     add_bgp_peer_kwargs,
                 )
+            # pyrefly: ignore [missing-attribute]
             await driver.async_register_python_patcher(
                 "agent",
                 f"configure_vlan_{interface}",
@@ -641,6 +642,7 @@ class ConfigureIxiaInterfaces(BaseTask):
                     "speed": speed_name,
                     "profile_id": profile_id,
                 }
+                # pyrefly: ignore [missing-attribute]
                 await driver.async_register_python_patcher(
                     "agent",
                     f"change_speed_{interface}_{speed_in_gbps}G_{profile_id}",
@@ -654,6 +656,7 @@ class ConfigureIxiaInterfaces(BaseTask):
         change_port_admin_state_kwargs = {
             port_config["interface"]: "enable" for port_config in port_configs
         }
+        # pyrefly: ignore [missing-attribute]
         await driver.async_register_python_patcher(
             "agent",
             "change_ixia_port_admin_state",

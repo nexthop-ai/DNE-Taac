@@ -21,6 +21,7 @@ class PortChannelStateHealthCheck(
         self,
     ) -> t.Dict[str, t.Dict[str, t.Any]]:
         """Return port-channel states from FBOSS via Thrift."""
+        # pyrefly: ignore [missing-attribute]
         agg_ports = await self.driver.async_get_all_aggregated_port_info()
         return {port.name: {"is_up": port.isUp} for port in agg_ports}
 
@@ -28,6 +29,7 @@ class PortChannelStateHealthCheck(
         self,
     ) -> t.Dict[str, t.Dict[str, t.Any]]:
         """Return port-channel states from EOS via the Arista driver."""
+        # pyrefly: ignore [missing-attribute]
         output = await self.driver.async_get_port_channel_detailed_info()
         port_channels = output.get("portChannels", {})
         result = {}

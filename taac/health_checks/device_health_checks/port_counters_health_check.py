@@ -26,6 +26,7 @@ class PortCountersHealthCheck(
                 interfaces = [
                     endpoint.split(":")[1] for endpoint in threshold.interfaces
                 ]
+                # pyrefly: ignore [missing-attribute]
                 port_counters = await self.driver.async_get_multiple_port_stats(
                     interfaces
                 )
@@ -62,6 +63,7 @@ class PortCountersHealthCheck(
                     )
                     if not await self._compare_port_counters(
                         threshold.comparison,
+                        # pyrefly: ignore [bad-argument-type]
                         observed_value,
                         threshold_value,
                     ):

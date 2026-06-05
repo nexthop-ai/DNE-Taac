@@ -36,6 +36,7 @@ class OpenrAdjacencyHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         explicit_count = check_params.get("expected_adjacency_count")
         allow_zero = check_params.get("allow_zero", False)
 
+        # pyrefly: ignore [missing-attribute]
         neighbors = await self.driver.async_get_openr_spark_neighbors()
         established_count = len([n for n in neighbors if str(n.state) == "ESTABLISHED"])
 

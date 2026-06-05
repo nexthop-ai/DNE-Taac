@@ -1,6 +1,7 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 # pyre-unsafe
+import asyncio
 import traceback
 import typing as t
 from abc import ABC, abstractmethod
@@ -44,6 +45,45 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
         # Override this method to add custom logic before running the health check
         return await self.run(obj, input, default_input, check_params)
 
+    def _extract_retry_params(
+        self, check_params: t.Dict[str, t.Any]
+    ) -> t.Tuple[int, float, float]:
+        """Extract per-check retry configuration from check_params.
+
+        Health checks are single-shot by default (retry_count=0).  When
+        retry_count > 0, the **full** data-fetch + validation cycle is
+        retried on FAIL with exponential backoff:
+
+            delay(n) = retry_delay_seconds * retry_delay_multiplier ** n
+
+        where n = 0, 1, 2, ... is the zero-based retry index (n=0 is
+        the first retry, not the initial attempt).
+
+        Example with defaults (retry_delay_seconds=5.0, multiplier=1.5):
+            attempt 1 → immediate  (initial)
+            attempt 2 → wait  5.0 s   (5.0 * 1.5^0, first retry)
+            attempt 3 → wait  7.5 s   (5.0 * 1.5^1)
+            attempt 4 → wait 11.25 s  (5.0 * 1.5^2)
+
+        Only FAIL is retried; PASS, SKIP, and ERROR break immediately.
+        Exceptions (ERROR) are never retried — they propagate to the
+        outer handler unchanged.
+
+        Input validation: retry_count is clamped to >= 0,
+        retry_delay_seconds to >= 0.0, retry_delay_multiplier to >= 1.0.
+
+        Returns:
+            (retry_count, retry_delay_seconds, retry_delay_multiplier)
+        """
+        retry_count = max(0, int(check_params.get("retry_count", 0)))
+        retry_delay_seconds = max(
+            0.0, float(check_params.get("retry_delay_seconds", 5.0))
+        )
+        retry_delay_multiplier = max(
+            1.0, float(check_params.get("retry_delay_multiplier", 1.5))
+        )
+        return retry_count, retry_delay_seconds, retry_delay_multiplier
+
     async def run(
         self,
         obj: Object,
@@ -66,9 +106,47 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
             self.logger.info(f"Running health check: {self.__class__.__name__}")
             self.logger.debug(f"Health check input: {input}")
             run_fn = custom_run_fn or self._run
-            check_result = await run_fn(obj, input, check_params)
+
+            retry_count, retry_delay, retry_multiplier = self._extract_retry_params(
+                check_params
+            )
+            current_delay = retry_delay
+            check_result = None
+
+            for attempt in range(1 + retry_count):
+                if attempt > 0:
+                    self.logger.info(
+                        f"Retry {attempt}/{retry_count} for "
+                        f"{self.__class__.__name__} after {current_delay:.1f}s delay"
+                    )
+                    await asyncio.sleep(current_delay)
+                    current_delay *= retry_multiplier
+
+                check_result = await run_fn(obj, input, check_params)
+
+                if check_result.status != hc_types.HealthCheckStatus.FAIL:
+                    break
+
+                if attempt < retry_count:
+                    self.logger.warning(
+                        f"Health check {self.__class__.__name__} FAIL on attempt "
+                        f"{attempt + 1}/{1 + retry_count}, will retry. "
+                        f"Message: {check_result.message}"
+                    )
+
+            assert check_result is not None
+
+            if (
+                check_result.status == hc_types.HealthCheckStatus.FAIL
+                and retry_count > 0
+            ):
+                annotated_msg = (
+                    f"[Failed after {retry_count} retries] {check_result.message}"
+                )
+                check_result = check_result(message=annotated_msg)
+
             check_result = check_result(
-                message=await async_get_everpaste_fburl_if_needed(check_result.message)
+                message=await self._safe_shorten(check_result.message)
             )
             log_health_check_info(
                 self.__class__.__name__,
@@ -84,8 +162,29 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
             return hc_types.HealthCheckResult(
                 name=self.__class__.CHECK_NAME,
                 status=hc_types.HealthCheckStatus.ERROR,
-                message=await async_get_everpaste_fburl_if_needed(err_msg),
+                message=await self._safe_shorten(err_msg),
             )
+
+    async def _safe_shorten(self, msg: t.Optional[str]) -> t.Optional[str]:
+        """Wrap async_get_everpaste_fburl_if_needed with a fallback.
+
+        If everpaste / fburl shortening fails (network error, service
+        degradation, rate-limit), return the raw message and log a WARNING.
+        A cosmetic URL-shortening failure must never convert a successful
+        health check into an ERROR, and must never cascade into additional
+        network calls in the error path.
+        """
+        if not msg:
+            return msg
+        try:
+            return await async_get_everpaste_fburl_if_needed(msg)
+        except Exception as e:
+            self.logger.warning(
+                f"[{self.__class__.__name__}] everpaste shortening failed; "
+                f"using raw message ({len(msg)} chars). Underlying: "
+                f"{type(e).__name__}: {e}"
+            )
+            return msg
 
     @abstractmethod
     async def _run(
@@ -142,8 +241,10 @@ class AbstractDeviceHealthCheck(
         default_input: HealthCheckIn,
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
+        # pyrefly: ignore [missing-attribute]
         os = obj.attributes.operating_system
         if os in self.__class__.OPERATING_SYSTEMS:
+            # pyrefly: ignore [bad-assignment, missing-attribute]
             self.driver = await async_get_device_driver(obj.name)
             fn_name = OPERATING_SYSTEM_TO_FN_NAME[os]
             is_fn_overridden = is_overridden(

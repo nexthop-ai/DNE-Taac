@@ -70,6 +70,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         self.logger.info(
             f"Checking service status for {len(services)} services: {services}"
         )
+        # pyrefly: ignore [missing-attribute]
         is_netos = await self.driver.async_is_netos()
         for service in services:
             try:
@@ -96,6 +97,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                     )
                     continue
 
+                # pyrefly: ignore [missing-attribute]
                 service_status = await self.driver.async_get_service_status(
                     service_enum
                 )
@@ -146,6 +148,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
 
         self.logger.info("Getting agent uptimes for restart detection")
         self.logger.info(f"Passing services list to get_agents_uptime: {services}")
+        # pyrefly: ignore [missing-attribute]
         is_netos = await self.driver.async_is_netos()
         try:
             if is_netos:
@@ -154,6 +157,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                     for service in services
                     if service not in SERVICES_TO_IGNORE_FOR_NETOS
                 ]
+            # pyrefly: ignore [missing-attribute]
             agent_uptimes = await self.driver.get_agents_uptime(services=services)
             self.logger.info(f"Retrieved agent uptimes: {agent_uptimes}")
 
@@ -318,6 +322,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         """
         agents = list(ARISTA_CRITICAL_SAND_AGENTS)
         try:
+            # pyrefly: ignore [missing-attribute]
             lc_agents = await self.driver.async_get_lc_agent_names()
             if lc_agents:
                 self.logger.info(f"Discovered linecard agents: {lc_agents}")
@@ -325,6 +330,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         except Exception as e:
             self.logger.warning(f"Failed to discover linecard agents: {e}")
         try:
+            # pyrefly: ignore [missing-attribute]
             fabric_agents = await self.driver.async_get_fabric_agent()
             if fabric_agents:
                 self.logger.info(f"Discovered fabric agents: {fabric_agents}")
@@ -372,6 +378,7 @@ class ServiceRestartHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
             f"Checking {len(agents)} EOS agents on {obj.name} via 'show agent <name> uptime'"
         )
 
+        # pyrefly: ignore [missing-attribute]
         agent_statuses = await self.driver.async_get_agent_statuses(agents)
 
         for agent, status in agent_statuses.items():

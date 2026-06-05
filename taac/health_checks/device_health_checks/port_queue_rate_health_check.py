@@ -65,6 +65,7 @@ class PortQueueRateHealthCheck(
             Dict[str, int]: Mapping from TC name to rate percentage.
         """
         cmd = f"show interfaces {interface} counters queue rates | json"
+        # pyrefly: ignore [missing-attribute]
         response = await self.driver.async_execute_show_json_on_shell(cmd)
         tc_enqueued_bits_rates = {}
         interface_data = response["egressQueueCounters"]["interfaces"][interface]

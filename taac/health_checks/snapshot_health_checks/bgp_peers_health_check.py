@@ -204,6 +204,7 @@ class BgpPeersHealthCheck(
         """
 
         # Get BGP sessions using Thrift API
+        # pyrefly: ignore [missing-attribute]
         bgp_sessions = await self.driver.async_get_bgp_sessions()
 
         self.logger.debug(f"Retrieved {len(bgp_sessions)} BGP sessions for {obj.name}")
@@ -302,11 +303,13 @@ class BgpPeersHealthCheck(
         try:
             # Get received networks using thrift API
             received_networks = (
+                # pyrefly: ignore [missing-attribute]
                 await self.driver.async_get_postfilter_received_networks(peer_ip)
             )
 
             # Get advertised networks using thrift API
             advertised_networks = (
+                # pyrefly: ignore [missing-attribute]
                 await self.driver.async_get_postfilter_advertised_networks(peer_ip)
             )
 
@@ -397,8 +400,10 @@ class BgpPeersHealthCheck(
                 return False
 
             # Check if the prefix is a subnet of the ignore pattern
+            # pyrefly: ignore [bad-argument-type]
             return prefix_network.subnet_of(ignore_network)
 
+        # pyrefly: ignore [unbound-name]
         except (ipaddress.AddressValueError, ValueError) as e:
             self.logger.warning(
                 f"Error parsing IP networks - prefix: {prefix}, ignore_pattern: {ignore_pattern}, error: {e}"

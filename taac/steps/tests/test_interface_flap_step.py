@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
 from taac.libs.parameter_evaluator import ParameterEvaluator
-from taac.steps.interface_flap_step import InterfaceFlapStep
+from taac.steps.step_definitions import InterfaceFlapStep
 from taac.test_as_a_config.thrift_types import (
     BaseInput,
     InterfaceFlapMethod,
@@ -15,7 +15,7 @@ from taac.test_as_a_config.thrift_types import (
     TestConfig,
 )
 
-BASE_PATH = "neteng.test_infra.dne.taac.steps.interface_flap_step"
+BASE_PATH = "neteng.test_infra.dne.taac.steps.step_definitions"
 
 
 def _make_test_interfaces(names: list[str]) -> str:

@@ -121,7 +121,7 @@ class TrafficGenerator:
         self.tear_down_session = tear_down_session
         self.cleanup_failed_setup = cleanup_failed_setup
         self.override_traffic_items = override_traffic_items
-        self.ixia: TaacIxia = ...
+        self.ixia: TaacIxia = None  # pyre-ignore[8]
         self.logger = logger or get_root_logger()
         self.session_name = session_name
         self.basic_traffic_item_configs = basic_traffic_item_configs or []
@@ -397,6 +397,7 @@ class TrafficGenerator:
                     "No traffic items created. Please specify the source and destination "
                     "endpoints of the traffic items in BasicTrafficItemConfigs"
                 )
+        # pyrefly: ignore [unsupported-operation]
         all_traffic_items = traffic_items + self.user_defined_traffic_items
         self._traffic_items = all_traffic_items
         return all_traffic_items
@@ -458,6 +459,7 @@ class TrafficGenerator:
                 )[interface]
             ixia_starting_ip = (
                 v6_addresses_config.starting_ip
+                # pyrefly: ignore [bad-argument-type]
                 or get_next_available_ipv6_address(prefix_v6, prefix_len)
             )
             ipv6_addresses = ixia_types.IPv6AddressInfo(
@@ -1145,6 +1147,7 @@ class TrafficGenerator:
                     ).gateway_starting_ip
                 case taac_types.ReferenceType.DST_LINK_LOCAL_IPV6_ADDRESS:
                     value = mac_to_ipv6_link_local(
+                        # pyrefly: ignore [bad-argument-type]
                         self.name_to_endpoint[dst_hostname].mac_address
                     )
             reference_values.append(value)

@@ -88,7 +88,9 @@ class IxiaTrafficRateHealthCheck(
             if tx_rate is None and rx_rate is None:
                 continue
             # Convert the tx_rate and rx_rate from Mbps to Gbps
+            # pyrefly: ignore [unsupported-operation]
             tx_rate_gbps = tx_rate / 1000.0
+            # pyrefly: ignore [unsupported-operation]
             rx_rate_gbps = rx_rate / 1000.0
 
             self.logger.info(

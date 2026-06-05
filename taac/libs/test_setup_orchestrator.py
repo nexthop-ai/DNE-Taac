@@ -78,7 +78,7 @@ class TestSetupOrchestrator:
         self.ixia: t.Optional[TaacIxia] = None
         self.traffic_generator: t.Optional[TrafficGenerator] = None
         self.test_bed_chunker: t.Any = None
-        self.test_topology: TestTopology = ...
+        self.test_topology: TestTopology = None  # pyre-ignore[8]
 
         self.devices_under_test: t.List[str] = [
             endpoint.name for endpoint in self.test_config.endpoints if endpoint.dut

@@ -125,6 +125,7 @@ class DlbResourceStickinessHealthCheck(
         expected_totals = check_params.get("expected_totals", {})
 
         # Get all routes from agent
+        # pyrefly: ignore [missing-attribute]
         async with self.driver.async_agent_client as client:
             routes = await client.getRouteTable()
 
@@ -174,6 +175,7 @@ class DlbResourceStickinessHealthCheck(
         nexthop_groups: t.Dict[tuple, NextHopGroup] = {}
 
         for route in routes:
+            # pyrefly: ignore [missing-attribute]
             ip_addr = self.driver.ip_ntop(route.dest.ip.addr)
             dest_prefix = f"{ip_addr}/{route.dest.prefixLength}"
 
@@ -181,6 +183,7 @@ class DlbResourceStickinessHealthCheck(
             next_hops_list = []
             if route.nextHops:
                 for nhop in route.nextHops:
+                    # pyrefly: ignore [missing-attribute]
                     nhop_ip = self.driver.ip_ntop(nhop.address.addr)
                     next_hops_list.append(nhop_ip)
 

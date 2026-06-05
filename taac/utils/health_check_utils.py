@@ -70,6 +70,7 @@ def is_parent_prefix(prefix: str, parent_prefix: str) -> bool:
     parent_prefix_network = ipaddress.ip_network(parent_prefix, strict=False)
     if prefix_network.version != parent_prefix_network.version:
         return False
+    # pyrefly: ignore [bad-argument-type]
     result = prefix_network.subnet_of(parent_prefix_network)
     return result
 

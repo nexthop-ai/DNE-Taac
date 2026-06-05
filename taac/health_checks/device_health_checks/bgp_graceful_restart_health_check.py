@@ -64,6 +64,7 @@ class BgpGracefulRestartHealthCheck(
             )
 
         try:
+            # pyrefly: ignore [missing-attribute]
             bgp_config_json = await self.driver.async_get_bgp_configuration()
 
             if not bgp_config_json:

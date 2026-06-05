@@ -480,8 +480,8 @@ class Ixia:
         if session_id and not self.primary_chassis_ip:
             raise InvalidInputError("chassis_ip is required when using session_id")
 
-        self.session: SessionAssistant = ...
-        self.ixnetwork: Ixnetwork = ...
+        self.session: SessionAssistant = None  # pyre-ignore[8]
+        self.ixnetwork: Ixnetwork = None  # pyre-ignore[8]
         # Applicable only for IXIA sessions with Linux API server that support
         # concurrent sessions unlike Windows API server with only session (ID=1)
         self.session_name = session_name
@@ -601,6 +601,7 @@ class Ixia:
             UhdSessionAssistant if self.is_uhd_chassis else IxnSessionAssistant
         )
         self.session = SessionAssistant(
+            # pyrefly: ignore [bad-argument-type]
             IpAddress=Ixia.get_formatted_ip_address(self.primary_chassis_ip),
             RestPort=None,
             UserName=self.username,
@@ -2585,10 +2586,12 @@ class Ixia:
             bgp_prefix_config.distributed_prefix_length_config.prefix_length_value_weight_map
         ):
             values_list = []
+            # pyrefly: ignore [not-iterable]
             for val in bgp_prefix_config.distributed_prefix_length_config.prefix_length_value_weight_map:
                 values_list.append(
                     (
                         val,
+                        # pyrefly: ignore [bad-index]
                         bgp_prefix_config.distributed_prefix_length_config.prefix_length_value_weight_map[
                             val
                         ],
@@ -4372,9 +4375,11 @@ class Ixia:
 
             # ── Step 2: Assign ports ─────────────────────────────
             _log(
+                # pyrefly: ignore [bad-argument-type]
                 f"{_CYAN}{_BOLD}[2/7] Assigning {len(port_configs)} port(s)...{_RESET}"
             )
             _step_start = time.time()
+            # pyrefly: ignore [bad-argument-type]
             self.assign_ports(port_configs)
             _log(
                 f"{_GREEN}[IXIA]{_RESET} Ports assigned in {time.time() - _step_start:.0f}s"
@@ -4382,10 +4387,12 @@ class Ixia:
 
             # ── Step 3: Topologies & device groups ───────────────
             _log(
+                # pyrefly: ignore [bad-argument-type]
                 f"{_CYAN}{_BOLD}[3/7] Creating topologies & device groups "
                 f"({len(port_configs)} port(s))...{_RESET}"
             )
             _step_start = time.time()
+            # pyrefly: ignore [not-iterable]
             for port in port_configs:
                 port_identifier: str = Ixia.get_port_identifier(port.port_name)
                 _log(f"{_MAGENTA}[IXIA]{_RESET} Port {_BOLD}{port_identifier}{_RESET}")
@@ -6592,6 +6599,7 @@ class Ixia:
                         "soo": "opaque",  # Site of Origin (enum 3)
                         "target": "administratoras2octet",  # Route Target (enum 0)
                     }
+                    # pyrefly: ignore [no-matching-overload]
                     ixia_type = type_mapping.get(ec_type, "administratoras2octet")
                     bgp_ext_community.Type.Single(ixia_type)
 

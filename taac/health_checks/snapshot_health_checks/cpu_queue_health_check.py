@@ -25,6 +25,7 @@ class CpuQueueHealthCheck(
         check_params: t.Dict[str, t.Any],
         timestamp: int,
     ) -> Snapshot:
+        # pyrefly: ignore [missing-attribute]
         cpu_port_stats = await self.driver.async_get_cpu_port_stats()
         return Snapshot(
             data=cpu_port_stats,
@@ -38,6 +39,7 @@ class CpuQueueHealthCheck(
         check_params: t.Dict[str, t.Any],
         timestamp: int,
     ) -> Snapshot:
+        # pyrefly: ignore [missing-attribute]
         cpu_port_stats = await self.driver.async_get_cpu_port_stats()
         return Snapshot(
             data=cpu_port_stats,

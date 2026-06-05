@@ -24,6 +24,7 @@ async def run_task(
             ixia=ixia,
             hostname=task.hostname,
             description=task.description,
+            # pyrefly: ignore [unexpected-keyword]
             shared_data=shared_data,
         )
     except TypeError:
@@ -52,7 +53,9 @@ def get_task_obj(
             ixia=ixia,
             hostname=task.hostname,
             description=task.description,
+            # pyrefly: ignore [unexpected-keyword]
             shared_data=shared_data,
+            # pyrefly: ignore [unexpected-keyword]
             shared_params=shared_params,
         )
     except TypeError:

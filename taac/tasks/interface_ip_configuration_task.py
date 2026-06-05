@@ -71,6 +71,7 @@ class InterfaceIpConfigurationTask(BaseTask):
         ```
     """
 
+    # pyrefly: ignore [bad-override-mutable-attribute]
     NAME: str = "interface_ip_configuration"
 
     def __init__(
@@ -272,6 +273,7 @@ class InterfaceIpCleanupTask(BaseTask):
         ```
     """
 
+    # pyrefly: ignore [bad-override-mutable-attribute]
     NAME: str = "interface_ip_cleanup"
 
     def __init__(

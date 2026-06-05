@@ -1,5 +1,5 @@
 # pyre-unsafe
-from taac.test_as_a_config.thrift_types import Endpoint, TrafficEndpoint
+from taac.test_as_a_config.types import Endpoint, TrafficEndpoint
 
 MULTI_NODE_PFC_NODES = ["rdsw001.u000.c083.snc1", "rdsw003.u000.c083.snc1"]
 RDSW_IXIA_PORTS = [

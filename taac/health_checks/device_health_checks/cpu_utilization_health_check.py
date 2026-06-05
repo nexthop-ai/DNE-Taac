@@ -269,15 +269,26 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         """
         Args:
             check_params:
-                - delta: Max allowed delta between cpu utilization checks (required)
+                - delta: Max allowed delta between cpu utilization checks. When
+                    not provided the check is skipped, since the Arista path is
+                    sampling-based and has no meaningful default.
                 - sleep_timer: Time to sleep before gettig counter again (defaults to 60 seconds)
                 - total_time: Total time to measure counters (defaults to 2 min)
         """
         # TODO(loo): Once we get ODS support use ODS instead
-        delta = check_params["delta"]
+        delta = check_params.get("delta")
+        if delta is None:
+            return hc_types.HealthCheckResult(
+                status=hc_types.HealthCheckStatus.SKIP,
+                message=(
+                    "CPU utilization check skipped on Arista device "
+                    f"{obj.name}: no 'delta' threshold configured."
+                ),
+            )
         sleep_timer = check_params.get("sleep_timer", 60)
         total_time = check_params.get("total_time", 120)
 
+        # pyrefly: ignore [missing-attribute]
         last_count = await self.driver.async_get_counter(CPU_UTILIZATION_KEY_DESC_EOS)
         self.logger.debug(f"Initial CPU utilization count: {last_count}")
         iterations = total_time // sleep_timer
@@ -287,6 +298,7 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 f"Sleeping for {sleep_timer} seconds (iteration {i + 1}/{iterations})"
             )
             await asyncio.sleep(sleep_timer)
+            # pyrefly: ignore [missing-attribute]
             current_count = await self.driver.async_get_counter(
                 CPU_UTILIZATION_KEY_DESC_EOS
             )

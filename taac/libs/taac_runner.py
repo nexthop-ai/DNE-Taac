@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from urllib.parse import quote  # noqa: F401
 
+from neteng.netcastle.exceptions import TestbedError
 from taac.constants import (
     DNE_LOG_DIR,
     FAILED_HC_STATUSES,
@@ -37,15 +38,19 @@ from taac.health_checks.all_health_checks import (
     NAME_TO_HEALTH_CHECK,
     SNAPSHOT_HEALTH_CHECKS,
 )
-from taac.internal.steps.validation_step import ValidationStep
 from taac.ixia.taac_ixia import TaacIxia
+from taac.libs.fpf.fpf_collector_registry import (
+    set_test_case_start_time,
+)
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.libs.periodic_task_executor import PeriodicTaskExecutor
 from taac.libs.test_setup_orchestrator import (
     TestSetupOrchestrator,
 )
+from taac.stages.stage_definitions import create_steps_stage
 from neteng.test_infra.dne.taac.steps.all_steps import NAME_TO_STEP, STEP_NAME_TO_INPUT
 from taac.steps.step import Step
+from taac.steps.step_definitions import ValidationStep
 from taac.tasks.utils import run_task
 from taac.test_configs import get_test_config
 from taac.utils.common import (
@@ -103,6 +108,9 @@ if not TAAC_OSS:
     from taac.internal.netwhoami_utils import (
         add_oss_mock_device_data,
     )
+    from taac.internal.tasks.ixia_diagnostics_collection_task import (
+        IxiaDiagnosticsCollectionTask,
+    )
 
 DEFAULT_PRE_SNAPSHOT_CHECKPOINT_ID: str = "test_case_start"
 DEFAULT_POST_SNAPSHOT_CHECKPOINT_ID: str = "test_case_end"
@@ -147,6 +155,15 @@ class TaacRunner:
         npi_status: str = "",
         # Trigger Confucius triage agent on failures
         call_triage_minion: bool = False,
+        # Continue executing playbook stages even if prechecks fail (dev only)
+        continue_on_precheck_failure: bool = False,
+        # Skip prechecks entirely — go straight to stages (dev only)
+        skip_prechecks: bool = False,
+        # Skip FBOSS rsyslog configuration setup/teardown
+        skip_fboss_rsyslog: bool = False,
+        # Opt-in: pull Keysight chassis diagnostics archive at Ixia teardown
+        # and upload to Manifold. Best-effort — failures never break teardown.
+        collect_ixia_diagnostics: bool = False,
     ) -> None:
         self.test_config = (
             get_test_config(test_config)
@@ -168,6 +185,7 @@ class TaacRunner:
         self.skip_periodic_tasks = skip_periodic_tasks
         # Skip PTP setup on IXIA
         if skip_ptp_setup:
+            # pyrefly: ignore [read-only]
             self.test_config.ptp_configs = []
         # EOS image ID for Arista device image deployment
         self.eos_image_id = eos_image_id or ""
@@ -183,6 +201,10 @@ class TaacRunner:
         self._npi_iteration_outcomes: t.List[t.Tuple[str, t.Optional[str]]] = []
         # Trigger Confucius triage agent on failures
         self.call_triage_minion = call_triage_minion
+        self.continue_on_precheck_failure = continue_on_precheck_failure
+        self.skip_prechecks = skip_prechecks
+        self.skip_fboss_rsyslog = skip_fboss_rsyslog
+        self.collect_ixia_diagnostics = collect_ixia_diagnostics
 
         # Netcastle runner specific variables
         self.is_autotester_run = is_autotester_run
@@ -211,7 +233,9 @@ class TaacRunner:
         self.test_case_uuid = ""
         self.custom_test_handlers = []
         self.started_capture: bool = False
+        # pyrefly: ignore [bad-assignment]
         self._current_playbook: taac_types.Playbook = ...
+        # pyrefly: ignore [bad-assignment]
         self._current_stage: taac_types.Stage = ...
         self._current_snapshot_checks: t.List[AbstractSnapshotHealthCheck] = []
 
@@ -258,8 +282,10 @@ class TaacRunner:
             if any(tag in handler.SUPPORTED_TAGS for tag in tags):
                 handlers.append(handler)
         self.logger.info(
+            # pyrefly: ignore [missing-attribute]
             f"Found {len(handlers)} custom test handlers: {[handler.__name__ for handler in handlers]}"
         )
+        # pyrefly: ignore [bad-return]
         return handlers
 
     @staticmethod
@@ -300,6 +326,7 @@ class TaacRunner:
             )
 
     def populate_jq_vars(self) -> None:
+        # pyrefly: ignore [missing-attribute]
         for device in self.topology.devices:
             self.jq_vars[device.name] = {
                 "interfaces": [
@@ -331,6 +358,7 @@ class TaacRunner:
             with suppress_console_logs(self.logger):
                 await self.test_setup_orchestrator.async_setUp()
                 self.ixia = self.test_setup_orchestrator.ixia
+                # pyrefly: ignore [bad-assignment]
                 self.topology = self.test_setup_orchestrator.test_topology
                 self.populate_jq_vars()
 
@@ -343,13 +371,16 @@ class TaacRunner:
                     else []
                 )
 
+        # pyrefly: ignore [bad-assignment]
         self.topology = self.test_setup_orchestrator.test_topology
         self.populate_jq_vars()
 
         with suppress_console_logs(self.logger):
             self.custom_test_handlers = [
+                # pyrefly: ignore [bad-argument-type]
                 handler(self.topology, logger=self.logger)
                 for handler in self.filter_custom_test_handlers_by_tags(
+                    # pyrefly: ignore [bad-argument-type]
                     self.test_config.tags or []
                 )
             ]
@@ -362,6 +393,7 @@ class TaacRunner:
             rsyslog_services_overrides = (
                 self.test_config.rsyslog_services_overrides or {}
             )
+            # pyrefly: ignore [missing-attribute]
             for device in self.topology.devices:
                 self.device_to_rsyslog_services[device.name] = (
                     rsyslog_services_overrides.get(device.name)
@@ -392,7 +424,9 @@ class TaacRunner:
 
         # Run startup checks on all DUTs
         for dut_name in self.duts:
+            # pyrefly: ignore [missing-attribute]
             test_device = self.topology.get_device_by_name(dut_name)
+            # pyrefly: ignore [bad-argument-type]
             await self.run_startup_checks_for_device(startup_checks, test_device)
 
     async def run_startup_checks_for_device(
@@ -429,6 +463,7 @@ class TaacRunner:
             test_case_start_time=int(time.time()),
             logger=self.logger,
             parameter_evaluator=self.parameter_evaluator,
+            # pyrefly: ignore [bad-argument-type]
             topology=self.topology,
             step=taac_types.Step(name=taac_types.StepName.VALIDATION_STEP),
         )
@@ -475,9 +510,21 @@ class TaacRunner:
             playbook.override_duplicate_checks,
         )
 
+        if prechecks and self.skip_prechecks:
+            self.logger.warning(
+                "[--skip-prechecks] Skipping %d precheck(s) — "
+                "going straight to stage execution",
+                len(prechecks),
+            )
+            prechecks = []
+
         if prechecks:
-            precheck_stage = taac_types.Stage(
-                id="prechecks",
+            # Phase 5 v2 C1: runtime-dynamic Stage. Shape is static (single
+            # VALIDATION_STEP wrapped in a Stage) — only the inner
+            # point_in_time_checks list is runtime-derived. Use centralized
+            # create_steps_stage factory.
+            precheck_stage = create_steps_stage(
+                stage_id="prechecks",
                 description="Prechecks",
                 steps=[
                     taac_types.Step(
@@ -494,8 +541,10 @@ class TaacRunner:
             stages.insert(0, precheck_stage)
 
         if postchecks:
-            postcheck_stage = taac_types.Stage(
-                id="postchecks",
+            # Phase 5 v2 C1: see precheck_stage note above. Same static-shape /
+            # runtime-content pattern.
+            postcheck_stage = create_steps_stage(
+                stage_id="postchecks",
                 description="Post-health Checks",
                 steps=[
                     taac_types.Step(
@@ -531,6 +580,7 @@ class TaacRunner:
             test_case_start_time=test_case_start_time,
             logger=self.logger,
             parameter_evaluator=self.parameter_evaluator,
+            # pyrefly: ignore [bad-argument-type]
             topology=self.topology,
             step=step,
         )
@@ -590,6 +640,7 @@ class TaacRunner:
             elif step.device_regexes:
                 test_devices = [
                     device
+                    # pyrefly: ignore [missing-attribute]
                     for device in self.topology.devices
                     if any(
                         re.match(regex, device.name) for regex in step.device_regexes
@@ -663,6 +714,7 @@ class TaacRunner:
                 with suppress_console_logs(self.logger):
                     await self.async_test_case_setUp(playbook, test_device)
                 test_case_start_time = int(time.time())
+                set_test_case_start_time(float(test_case_start_time))
                 log_playbook_header(
                     playbook_name=playbook.name,
                     device_name=test_device.name,
@@ -707,17 +759,17 @@ class TaacRunner:
                         self._current_stage = stage
                         if not stage.id:
                             stage = stage(id=uuid.uuid4().hex)
-                        with suppress_console_logs(self.logger):
-                            await self.async_run_snapshot_checks(
-                                snapshot_check_objs,
-                                f"stage.{stage.id}.start",
-                                int(time.time()),
-                                test_case_results,
-                                playbook.name,
-                            )
-                            if stage.attribute_filters:
-                                test_devices = (
-                                    self._get_devices_matching_attribute_filters(
+                        try:
+                            with suppress_console_logs(self.logger):
+                                await self.async_run_snapshot_checks(
+                                    snapshot_check_objs,
+                                    f"stage.{stage.id}.start",
+                                    int(time.time()),
+                                    test_case_results,
+                                    playbook.name,
+                                )
+                                if stage.attribute_filters:
+                                    test_devices = self._get_devices_matching_attribute_filters(
                                         # pyre-fixme[6]: For 2nd argument expected
                                         #  `Dict[str, List[str]]` but got `Mapping[str,
                                         #  Sequence[str]]`.
@@ -727,31 +779,40 @@ class TaacRunner:
                                         #  Sequence[str]]`.
                                         stage.attribute_filters,
                                     )
-                                )
-                            elif stage.device_regexes:
-                                test_devices = [
-                                    device
-                                    for device in self.topology.devices
-                                    if any(
-                                        re.match(regex, device.name)
-                                        for regex in stage.device_regexes
-                                    )
-                                ]
-                            else:
-                                test_devices = [test_device]
+                                elif stage.device_regexes:
+                                    test_devices = [
+                                        device
+                                        # pyrefly: ignore [missing-attribute]
+                                        for device in self.topology.devices
+                                        if any(
+                                            re.match(regex, device.name)
+                                            for regex in stage.device_regexes
+                                        )
+                                    ]
+                                else:
+                                    test_devices = [test_device]
 
-                        await asyncio.gather(
-                            *[
-                                self.async_run_stage(
-                                    stage,
-                                    test_device,
-                                    playbook.name,
-                                    test_case_start_time,
-                                    test_case_results,
+                            await asyncio.gather(
+                                *[
+                                    self.async_run_stage(
+                                        stage,
+                                        test_device,
+                                        playbook.name,
+                                        test_case_start_time,
+                                        test_case_results,
+                                    )
+                                    for test_device in test_devices
+                                ]
+                            )
+                        except TestbedError:
+                            if self.continue_on_precheck_failure:
+                                self.logger.warning(
+                                    f"[--continue-on-precheck-failure] "
+                                    f"Prechecks failed for stage '{stage.id}' "
+                                    f"but continuing playbook execution"
                                 )
-                                for test_device in test_devices
-                            ]
-                        )
+                            else:
+                                raise
                         with suppress_console_logs(self.logger):
                             await self.async_run_snapshot_checks(
                                 self._current_snapshot_checks,
@@ -779,12 +840,26 @@ class TaacRunner:
                                 f"Failed to run post-snapshot checks for {test_case_name}: {e}"
                             )
                         if playbook.cleanup_steps:
+                            log_subsection(
+                                f"Cleanup Steps — Playbook '{playbook.name}'",
+                                logger=self.logger,
+                            )
+                            log_phase_start(
+                                f"Cleanup Steps ({len(playbook.cleanup_steps)} step(s))",
+                                logger=self.logger,
+                            )
+                            _cleanup_start = time.time()
                             await self.initialize_and_run_steps(
                                 playbook.cleanup_steps,
                                 test_device=test_device,
                                 test_case_name=test_case_name,
                                 test_case_start_time=test_case_start_time,
                                 test_case_results=test_case_results,
+                            )
+                            log_phase_end(
+                                f"Cleanup Steps ({len(playbook.cleanup_steps)} step(s))",
+                                duration_secs=time.time() - _cleanup_start,
+                                logger=self.logger,
                             )
                         self.jq_vars["test_case_end_time"] = int(time.time())
 
@@ -935,7 +1010,9 @@ class TaacRunner:
             else:
                 raise
             checks.append(
+                # pyrefly: ignore [bad-argument-type]
                 check_impl(
+                    # pyrefly: ignore [bad-argument-type]
                     obj=obj,
                     input=check_input or default_input,
                     check_params=self.parameter_evaluator.evaluate(check.check_params),
@@ -947,6 +1024,7 @@ class TaacRunner:
                 )
             )
         await asyncio.gather(*[check.setup(obj) for check in checks])  # pyre-ignore
+        # pyrefly: ignore [bad-return]
         return checks
 
     async def async_run_snapshot_checks(
@@ -1356,21 +1434,27 @@ class TaacRunner:
         total_playbooks = len(enabled_playbooks)
         failed_playbooks: t.List[t.Tuple[str, str, Exception]] = []
         for dut in duts:
+            # pyrefly: ignore [missing-attribute]
             test_device = self.topology.get_device_by_name(dut)
             for pb_idx, playbook in enumerate(enabled_playbooks, 1):
                 self.logger.info("")
                 self.logger.info(f"\033[1m\033[36m{'=' * 70}\033[0m")
                 self.logger.info(
+                    # pyrefly: ignore [missing-attribute]
                     f"\033[1m\033[36m  [{pb_idx}/{total_playbooks}] "
                     f"{playbook.name} | {dut}\033[0m"
                 )
                 self.logger.info(f"\033[1m\033[36m{'=' * 70}\033[0m")
+                # pyrefly: ignore [bad-assignment]
                 self._current_playbook = playbook
                 try:
+                    # pyrefly: ignore [bad-argument-type]
                     await self.run_test_case(playbook, test_device)
                 except Exception as e:
+                    # pyrefly: ignore [missing-attribute]
                     failed_playbooks.append((playbook.name, dut, e))
                     self.logger.error(
+                        # pyrefly: ignore [missing-attribute]
                         f"\033[31m  Playbook '{playbook.name}' failed on "
                         f"{dut}: {e}\033[0m"
                     )
@@ -1499,7 +1583,8 @@ class TaacRunner:
                 self.ixia,
             )
             self.test_case_periodic_task_executor.create_periodic_tasks()
-        await self.async_create_fboss_ryslog_configuration()
+        if not self.skip_fboss_rsyslog:
+            await self.async_create_fboss_ryslog_configuration()
 
     def convert_unixtime_to_log_timestamp(self, unix_time: int) -> str:
         """
@@ -1522,6 +1607,7 @@ class TaacRunner:
         log_subsection("Collecting Device Logs", logger=self.logger)
         start_timestamp = self.convert_unixtime_to_log_timestamp(start_time)
         end_timestamp = self.convert_unixtime_to_log_timestamp(int(time.time()))
+        # pyrefly: ignore [missing-attribute]
         fboss_hosts = self.get_fboss_hosts(self.topology.devices)
         # Prepare coroutines for all hosts
         coros = [
@@ -1661,7 +1747,8 @@ class TaacRunner:
         # Run custom test case tear down logics
         for handler in self.custom_test_handlers:
             await handler._async_test_case_tearDown()
-        await self.async_delete_fboss_ryslog_configuration()
+        if not self.skip_fboss_rsyslog:
+            await self.async_delete_fboss_ryslog_configuration()
         await self.teardown_period_task_executor_if_exists(
             self.test_case_periodic_task_executor, skip_log_upload=True
         )
@@ -1727,6 +1814,7 @@ class TaacRunner:
             )
 
     async def async_create_fboss_ryslog_configuration(self) -> None:
+        # pyrefly: ignore [missing-attribute]
         fboss_hosts = self.get_fboss_hosts(self.topology.devices)
         coroutines = []
         for host in fboss_hosts:
@@ -1742,6 +1830,7 @@ class TaacRunner:
         await asyncio.gather(*coroutines)
 
     async def async_delete_fboss_ryslog_configuration(self) -> None:
+        # pyrefly: ignore [missing-attribute]
         fboss_hosts = self.get_fboss_hosts(self.topology.devices)
         coroutines = []
         for host in fboss_hosts:
@@ -1878,6 +1967,31 @@ class TaacRunner:
         except Exception as e:
             self.logger.warning(f"Failed to trigger triage minion (non-fatal): {e}")
 
+    async def _async_collect_ixia_diagnostics_if_enabled(self, ixia: TaacIxia) -> None:
+        """Run IxiaDiagnosticsCollectionTask when the CLI flag opts in.
+
+        Best-effort: any failure is logged and swallowed so diagnostics never
+        turn a green test red. Must run BEFORE
+        `test_setup_orchestrator.async_tearDown()` so the Ixia object still has
+        live chassis credentials. Skipped entirely in TAAC_OSS mode (no Manifold).
+        """
+        if not self.collect_ixia_diagnostics or TAAC_OSS:
+            return
+        try:
+            task = IxiaDiagnosticsCollectionTask(
+                hostname=ixia.primary_chassis_ip,
+                description="Ixia diagnostics teardown collection",
+                ixia=ixia,
+                logger=self.logger,
+                shared_data=self.shared_task_data,
+            )
+            await task.run({"run_id": self.test_config.name})
+        except Exception as exc:
+            self.logger.error(
+                f"ixia diagnostics: collection task raised "
+                f"(swallowed to protect teardown): {exc!r}"
+            )
+
     async def async_test_tearDown(self) -> None:
         log_section("TEST CONFIG TEARDOWN", logger=self.logger)
         teardown_start = time.time()
@@ -1891,10 +2005,12 @@ class TaacRunner:
                 ixia = self.ixia
                 if ixia:
                     ixia.capturing = False
+                    await self._async_collect_ixia_diagnostics_if_enabled(ixia)
                 await self.test_setup_orchestrator.async_tearDown()
                 for handler in self.custom_test_handlers:
                     await handler._async_test_tearDown()
                 await self.run_tasks(
+                    # pyrefly: ignore [bad-argument-type]
                     self.test_config.teardown_tasks or []
                     if not (self.skip_all_tasks or self.skip_teardown_tasks)
                     else []
@@ -2001,6 +2117,7 @@ class TaacRunner:
 
     def _add_host_driver_args_data(self) -> None:
         for host, driver_args in (self.test_config.host_driver_args or {}).items():
+            # pyrefly: ignore [bad-argument-type]
             add_host_to_driver_args_data(host, driver_args)
 
     async def async_run_periodic_task_checks(

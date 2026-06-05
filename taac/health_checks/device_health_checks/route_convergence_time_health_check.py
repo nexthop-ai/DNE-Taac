@@ -335,6 +335,7 @@ class RouteConvergenceTimeHealthCheck(
         try:
             # Run date command on device and save to file
             cmd = f"date '+%H:%M:%S.%6N' | tee {start_time_file}"
+            # pyrefly: ignore [missing-attribute]
             result = await self.driver.async_run_cmd_on_shell(cmd)
 
             if result and result.strip():
@@ -425,6 +426,7 @@ class RouteConvergenceTimeHealthCheck(
                 log_file, start_time_str, time_threshold
             )
 
+        # pyrefly: ignore [missing-attribute]
         result = await self.driver.async_run_cmd_on_shell(cmd)
 
         if not result or not result.strip():

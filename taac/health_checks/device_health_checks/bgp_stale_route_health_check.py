@@ -88,6 +88,7 @@ class BgpStaleRouteHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChec
 
         try:
             # Get BGP RIB entries for both IPv4 and IPv6
+            # pyrefly: ignore [missing-attribute]
             bgp_rib_entries = await self.driver.async_get_bgp_rib_entries()
 
             if not bgp_rib_entries:

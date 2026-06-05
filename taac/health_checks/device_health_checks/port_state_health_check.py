@@ -45,6 +45,7 @@ class PortStateHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]
             if interface.interface_name not in disabled_interface_names
         ]
         interfaces_oper_state = (
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_get_all_interfaces_operational_status()
         )
         failure_reasons = []
@@ -69,6 +70,7 @@ class PortStateHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]
             ]
             if additional_interface_names:
                 interfaces_admin_state = (
+                    # pyrefly: ignore [missing-attribute]
                     await self.driver.async_get_all_interfaces_admin_status()
                 )
                 for interface in additional_interface_names:

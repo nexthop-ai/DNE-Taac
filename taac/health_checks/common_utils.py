@@ -17,17 +17,35 @@ def evaluate_comparison(
     if comparison_type == hc_types.ComparisonType.BETWEEN:
         lower_bound = float(lower_bound_str) if lower_bound_str else 0
         upper_bound = float(upper_bound_str) if upper_bound_str else sys.maxsize
+        # pyrefly: ignore [bad-argument-count]
         return COMPARISON_OPERATORS[comparison_type](val1, lower_bound, upper_bound)
+    # pyrefly: ignore [missing-argument]
     return COMPARISON_OPERATORS[comparison_type](val1, float(val2))
 
 
 async def async_get_everpaste_fburl_if_needed(
-    str_val: t.Optional[str], min_chars: int = 100
+    str_val: t.Optional[str],
+    min_chars: int = 1000,
+    max_chars: int = 10_000,
 ) -> t.Optional[str]:
+    """Return ``str_val`` as-is when short; otherwise upload to everpaste and
+    return an ``fburl`` shortened link to the everpaste handle.
+
+    - ``min_chars``: messages at or below this are returned unchanged (no
+      network call). Bumped from 100 to 1000 to avoid hitting the everpaste
+      service for routine health-check messages that are already
+      human-readable inline.
+    - ``max_chars``: if the message is larger than this, truncate before
+      uploading. Prevents pathologically large messages (giant tracebacks,
+      multi-MB payloads) from punishing the upload service.
+    """
     if not str_val:
         return None
-    return (
-        await async_get_fburl(await async_everpaste_str(str_val))
-        if len(str_val) > min_chars
-        else str_val
+    if len(str_val) <= min_chars:
+        return str_val
+    truncated = (
+        str_val
+        if len(str_val) <= max_chars
+        else str_val[:max_chars] + " ...[truncated]"
     )
+    return await async_get_fburl(await async_everpaste_str(truncated))

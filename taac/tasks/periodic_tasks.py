@@ -331,6 +331,7 @@ class CounterThresholdTask(PeriodicTask):
         )
         if not self._data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No data collected during periodic task execution",
@@ -341,6 +342,7 @@ class CounterThresholdTask(PeriodicTask):
 
         if threshold is None:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.ERROR,
                 message="Threshold parameter not available for final check",
@@ -375,6 +377,7 @@ class CounterThresholdTask(PeriodicTask):
                     self.logger.warning(f"Failed to upload plot: {e}")
 
         return PeriodicCheckResult(
+            # pyrefly: ignore [bad-argument-type]
             name=self.NAME,
             status=status,
             message=message,
@@ -441,6 +444,7 @@ class NexthopGroupPoll(PeriodicTask):
 
         if not self._data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No data collected during periodic task execution",
@@ -450,6 +454,7 @@ class NexthopGroupPoll(PeriodicTask):
 
         if threshold is None:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.ERROR,
                 message="Threshold parameter not available for final check",
@@ -467,6 +472,7 @@ class NexthopGroupPoll(PeriodicTask):
 
         if not num_groups_configured_data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No valid NexthopGroupSummary data collected",
@@ -520,6 +526,7 @@ class NexthopGroupPoll(PeriodicTask):
                 self.logger.warning(f"Failed to upload plot: {e}")
 
         return PeriodicCheckResult(
+            # pyrefly: ignore [bad-argument-type]
             name=self.NAME,
             status=status,
             message=message,
@@ -785,6 +792,7 @@ class ProcessMonitorTask(PeriodicTask):
         )
         if not self._data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No data collected during periodic task execution",
@@ -810,6 +818,7 @@ class ProcessMonitorTask(PeriodicTask):
             message += plot_urls
 
         return PeriodicCheckResult(
+            # pyrefly: ignore [bad-argument-type]
             name=self.NAME,
             status=hc_types.HealthCheckStatus.PASS,
             message=message,
@@ -866,6 +875,7 @@ class CpuLoadAverageTask(PeriodicTask):
         )
         if not self._data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No data collected during periodic task execution",
@@ -876,6 +886,7 @@ class CpuLoadAverageTask(PeriodicTask):
 
         if threshold is None:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.ERROR,
                 message="Threshold parameter not available for final check",
@@ -912,6 +923,7 @@ class CpuLoadAverageTask(PeriodicTask):
                     self.logger.warning(f"Failed to upload plot: {e}")
 
         return PeriodicCheckResult(
+            # pyrefly: ignore [bad-argument-type]
             name=self.NAME,
             status=status,
             message=message,
@@ -981,6 +993,7 @@ class OpticsTemperatureTask(PeriodicTask):
                 f"Attempting to get optics temperature data from {hostname}"
             )
             driver = await async_get_device_driver(hostname)
+            # pyre-fixme[16]: `AbstractSwitch` has no attribute `_get_qsfp_info_map`.
             qsfp_info_map = await driver._get_qsfp_info_map()
             self.logger.info(
                 f"Successfully got transceiver info for "
@@ -1118,6 +1131,7 @@ class OpticsTemperatureTask(PeriodicTask):
         )
         if not self._data:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No data collected during periodic task execution",
@@ -1133,6 +1147,7 @@ class OpticsTemperatureTask(PeriodicTask):
 
         if overall_max_temp is None:
             return PeriodicCheckResult(
+                # pyrefly: ignore [bad-argument-type]
                 name=self.NAME,
                 status=hc_types.HealthCheckStatus.SKIP,
                 message="No valid temperature data collected",
@@ -1179,6 +1194,7 @@ class OpticsTemperatureTask(PeriodicTask):
                 self.logger.warning(f"Failed to upload plot: {e}")
 
         return PeriodicCheckResult(
+            # pyrefly: ignore [bad-argument-type]
             name=self.NAME,
             status=status,
             message=message,

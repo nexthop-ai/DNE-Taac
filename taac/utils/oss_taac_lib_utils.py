@@ -498,6 +498,7 @@ def get_ipv6_for_host(hostname: str) -> Optional[str]:
         )
         if addr_info:
             # Return the first IPv6 address found
+            # pyrefly: ignore [bad-return]
             return addr_info[0][4][0]
     except (socket.gaierror, socket.herror, OSError):
         pass
@@ -830,7 +831,9 @@ else:
         """
         global _root_logger
         if _root_logger is None:
+            # pyrefly: ignore [bad-assignment]
             _root_logger = ConsoleFileLogger(MAIN_LOGGER_NAME)
+        # pyrefly: ignore [bad-return]
         return _root_logger
 
 

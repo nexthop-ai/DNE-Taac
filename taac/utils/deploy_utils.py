@@ -33,6 +33,7 @@ async def async_delete_rsyslog_configuration(
     for service in services:
         service_name = taac_types.SERVICE_NAME_MAP[service]
         log_file_name: str = f"{DNE_LOG_DIR}/{service_name}.log"
+        # pyrefly: ignore [missing-attribute]
         tasks.append(asyncio.create_task(driver.async_delete_file(log_file_name)))
     await asyncio.gather(*(tasks), return_exceptions=True)
 

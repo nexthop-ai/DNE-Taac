@@ -32,6 +32,7 @@ class PortSpeedHealtchCheck(
         if not ports:
             raise ValueError(f"No ports provided for {obj.name}")
 
+        # pyrefly: ignore [missing-attribute]
         port_speeds = await self.driver.async_get_interfaces_speed_in_Gbps(ports)
         return Snapshot(data=port_speeds, timestamp=timestamp)
 
@@ -50,6 +51,7 @@ class PortSpeedHealtchCheck(
         if not ports:
             raise ValueError(f"No ports provided for {obj.name}")
 
+        # pyrefly: ignore [missing-attribute]
         port_speeds = await self.driver.async_get_interfaces_speed_in_Gbps(ports)
         return Snapshot(data=port_speeds, timestamp=timestamp)
 

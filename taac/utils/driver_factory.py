@@ -99,10 +99,18 @@ async def async_get_device_driver(
                     if netwhoami.operating_system
                     else None
                 )
-                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP[os_name]
+                # pyrefly: ignore [bad-argument-type]
+                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP.get(os_name)
+                if device_os_type is None:
+                    raise ValueError(
+                        f"Cannot determine device OS type for '{hostname}'. "
+                        f"netwhoami returned os_name={os_name!r}. "
+                        f"Use add_host_to_device_os_type_data() to pre-register."
+                    )
 
     LOGGER.debug(f"device os type for {hostname} is {device_os_type.name}")
     driver_class = DEVICE_OS_DRIVER_CLASS_MAP[device_os_type]
+    # pyrefly: ignore [bad-argument-type]
     driver_args_dict = json.loads(HOST_TO_DRIVER_ARGS_MAP.get(hostname, "{}"))
     device_driver_class = driver_class(
         hostname, logger=logger or LOGGER, **driver_args_dict

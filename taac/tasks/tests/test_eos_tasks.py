@@ -170,8 +170,8 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V6_PREFIXES",
             "prefix": "5000::/16",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V6",
-            "direction": "in",
+            "route_map_name": "RM_BAG_STSW_V6_IN",
+            "route_map_seq": 10,
             "prefix_length": 128,
         }
         await self.task.run(params)
@@ -179,10 +179,10 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
         mock_driver.async_add_bgp_prefix_list_to_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V6_PREFIXES",
             prefix="5000::/16",
-            peer_group_name="PEERGROUP_BAG_STSW_V6",
-            direction="in",
             prefix_length=128,
             seq=None,
+            route_map_names=["RM_BAG_STSW_V6_IN"],
+            route_map_seq=10,
         )
 
     @patch(ARISTA_SWITCH_PATH)
@@ -197,8 +197,8 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V6_PREFIXES",
             "prefix": "6000::/16",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V6",
-            "direction": "out",
+            "route_map_name": "RM_BAG_STSW_V6_OUT",
+            "route_map_seq": 10,
             "prefix_length": 64,
             "seq": 20,
         }
@@ -207,10 +207,10 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
         mock_driver.async_add_bgp_prefix_list_to_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V6_PREFIXES",
             prefix="6000::/16",
-            peer_group_name="PEERGROUP_BAG_STSW_V6",
-            direction="out",
             prefix_length=64,
             seq=20,
+            route_map_names=["RM_BAG_STSW_V6_OUT"],
+            route_map_seq=10,
         )
 
     @patch(ARISTA_SWITCH_PATH)
@@ -225,14 +225,14 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_PREFIXES",
             "prefix": "5000::/16",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V6",
+            "route_map_name": "RM_BAG_STSW_V6_IN",
         }
         await self.task.run(params)
 
         call_kwargs = mock_driver.async_add_bgp_prefix_list_to_peer_group.call_args[1]
-        self.assertEqual(call_kwargs["direction"], "in")
         self.assertIsNone(call_kwargs["prefix_length"])
         self.assertIsNone(call_kwargs["seq"])
+        self.assertIsNone(call_kwargs["route_map_seq"])
 
     @patch(ARISTA_SWITCH_PATH)
     async def test_remove_prefix_list_with_prefix(self, mock_switch_cls) -> None:
@@ -245,18 +245,18 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
         params = {
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V6_PREFIXES",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V6",
+            "route_map_name": "RM_BAG_STSW_V6_IN",
+            "route_map_seq": 10,
             "prefix": "5000::/16",
-            "direction": "in",
             "register": False,
         }
         await self.task.run(params)
 
         mock_driver.async_remove_bgp_prefix_list_from_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V6_PREFIXES",
-            peer_group_name="PEERGROUP_BAG_STSW_V6",
-            direction="in",
             is_ipv6=True,
+            route_map_names=["RM_BAG_STSW_V6_IN"],
+            route_map_seq=10,
         )
         mock_driver.async_add_bgp_prefix_list_to_peer_group.assert_not_called()
 
@@ -271,18 +271,18 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
         params = {
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V4_PREFIXES",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V4",
+            "route_map_name": "RM_BAG_STSW_V4_OUT",
+            "route_map_seq": 10,
             "prefix": "10.0.0.0/8",
-            "direction": "out",
             "register": False,
         }
         await self.task.run(params)
 
         mock_driver.async_remove_bgp_prefix_list_from_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V4_PREFIXES",
-            peer_group_name="PEERGROUP_BAG_STSW_V4",
-            direction="out",
             is_ipv6=False,
+            route_map_names=["RM_BAG_STSW_V4_OUT"],
+            route_map_seq=10,
         )
 
     @patch(ARISTA_SWITCH_PATH)
@@ -296,7 +296,8 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
         params = {
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V4_PREFIXES",
-            "peer_group_name": "PEERGROUP_BAG_STSW_V4",
+            "route_map_name": "RM_BAG_STSW_V4_IN",
+            "route_map_seq": 10,
             "is_ipv6": False,
             "register": False,
         }
@@ -304,62 +305,62 @@ class AddEosBgpPrefixListToPeerGroupTest(unittest.IsolatedAsyncioTestCase):
 
         mock_driver.async_remove_bgp_prefix_list_from_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V4_PREFIXES",
-            peer_group_name="PEERGROUP_BAG_STSW_V4",
-            direction="in",
             is_ipv6=False,
+            route_map_names=["RM_BAG_STSW_V4_IN"],
+            route_map_seq=10,
         )
 
     @patch(ARISTA_SWITCH_PATH)
-    async def test_add_to_multiple_peer_groups(self, mock_switch_cls) -> None:
+    async def test_add_to_multiple_route_maps(self, mock_switch_cls) -> None:
         mock_driver = MagicMock()
         mock_driver.async_add_bgp_prefix_list_to_peer_group = AsyncMock(
             return_value=True
         )
         mock_switch_cls.return_value = mock_driver
 
-        peer_groups = ["PEERGROUP_BAG_STSW_V6", "PEERGROUP_BAG_CBAG_V6"]
+        route_maps = ["RM_BAG_STSW_V6_IN", "RM_BAG_CBAG_V6_IN"]
         params = {
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V6_PREFIXES",
             "prefix": "5000::/16",
-            "peer_group_name": peer_groups,
-            "direction": "in",
+            "route_map_name": route_maps,
+            "route_map_seq": 10,
         }
         await self.task.run(params)
 
         mock_driver.async_add_bgp_prefix_list_to_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V6_PREFIXES",
             prefix="5000::/16",
-            peer_group_name=peer_groups,
-            direction="in",
             prefix_length=None,
             seq=None,
+            route_map_names=route_maps,
+            route_map_seq=10,
         )
 
     @patch(ARISTA_SWITCH_PATH)
-    async def test_remove_from_multiple_peer_groups(self, mock_switch_cls) -> None:
+    async def test_remove_from_multiple_route_maps(self, mock_switch_cls) -> None:
         mock_driver = MagicMock()
         mock_driver.async_remove_bgp_prefix_list_from_peer_group = AsyncMock(
             return_value=True
         )
         mock_switch_cls.return_value = mock_driver
 
-        peer_groups = ["PEERGROUP_BAG_STSW_V6", "PEERGROUP_BAG_CBAG_V6"]
+        route_maps = ["RM_BAG_STSW_V6_IN", "RM_BAG_CBAG_V6_IN"]
         params = {
             "hostname": "bag002.snc1",
             "prefix_list_name": "ALLOW_V6_PREFIXES",
-            "peer_group_name": peer_groups,
+            "route_map_name": route_maps,
+            "route_map_seq": 10,
             "prefix": "5000::/16",
-            "direction": "in",
             "register": False,
         }
         await self.task.run(params)
 
         mock_driver.async_remove_bgp_prefix_list_from_peer_group.assert_called_once_with(
             prefix_list_name="ALLOW_V6_PREFIXES",
-            peer_group_name=peer_groups,
-            direction="in",
             is_ipv6=True,
+            route_map_names=route_maps,
+            route_map_seq=10,
         )
         mock_driver.async_add_bgp_prefix_list_to_peer_group.assert_not_called()
 

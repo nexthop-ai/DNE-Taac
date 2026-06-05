@@ -1311,7 +1311,9 @@ class AbstractSwitch(ABC):
 
     @abstractmethod
     async def async_get_static_routes(
-        self, address_family: str = "both"
+        self,
+        address_family: str = "both",
+        # pyrefly: ignore [bad-return]
     ) -> Dict[str, Dict]:
         """
         Get static routes from the device.

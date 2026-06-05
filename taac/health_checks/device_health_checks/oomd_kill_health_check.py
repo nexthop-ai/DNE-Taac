@@ -35,6 +35,7 @@ class OomdKillHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn])
         ]
         regex = r"\(" + r"\|".join(formatted_times) + r"\)"
         cmd = f'cat {FB_OOMD_LOG_PATH} | grep -ia "{regex}"'
+        # pyrefly: ignore [missing-attribute]
         fb_oomd_log_content = await self.driver.async_run_cmd_on_shell(cmd)
         pattern = r"Trying to kill (?P<cgroup_path>/sys/fs/cgroup/[^ ]+)"
         observed_oom_kills = defaultdict(list)

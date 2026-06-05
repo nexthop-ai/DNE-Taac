@@ -3858,3 +3858,93 @@ ICMP_V6_TIME_EXCEEDED_GLOBAL_DSCP48_TRAFFIC_PACKET_HEADERS: t.List[
         ],
     ),
 ]
+
+
+def _create_unh_ipv6_packet_headers(
+    destination_ipv6: str,
+) -> t.List[taac_types.PacketHeader]:
+    # Used by the test_fboss_cpu_*_unh playbooks. `destination_ipv6` must fall
+    # within the prefix that `register_cpu_queue_static_route_patcher`
+    # installs (currently derived from the IXIA downlink network group
+    # `9000:1::`). The destination MAC resolves to the switch's gateway MAC
+    # so the packet is L3-routed; when the egress interface is later
+    # disabled the static route's next hop becomes unreachable, which is the
+    # condition the playbook's CPU_QUEUE_CHECK is verifying.
+    return [
+        taac_types.PacketHeader(
+            query=ixia_types.Query(
+                regex="^ethernet$", query_type=ixia_types.QueryType.STACK_TYPE_ID
+            ),
+            fields=[
+                taac_types.Field(
+                    query=ixia_types.Query(regex="Destination MAC Address"),
+                    attrs_json=json.dumps(
+                        {
+                            "ValueType": "increment",
+                            "StepValue": "00:00:00:00:00:00",
+                            "CountValue": 1,
+                        }
+                    ),
+                    references={
+                        "StartValue": taac_types.Reference(
+                            type=taac_types.ReferenceType.DST_MAC_ADDRESS
+                        ),
+                    },
+                ),
+                taac_types.Field(
+                    query=ixia_types.Query(regex="Source MAC Address"),
+                    attrs_json=json.dumps(
+                        {
+                            "ValueType": "increment",
+                            "StartValue": DEFAULT_SRC_MAC_ADDRESS,
+                            "StepValue": "00:00:00:00:00:00",
+                            "CountValue": 1,
+                        }
+                    ),
+                ),
+            ],
+        ),
+        taac_types.PacketHeader(
+            query=ixia_types.Query(
+                regex="^ipv6$", query_type=ixia_types.QueryType.STACK_TYPE_ID
+            ),
+            append_to_query=ixia_types.Query(
+                regex="^ethernet$", query_type=ixia_types.QueryType.STACK_TYPE_ID
+            ),
+            fields=[
+                taac_types.Field(
+                    query=ixia_types.Query(regex="Source Address"),
+                    attrs_json=json.dumps(
+                        {
+                            "ValueType": "increment",
+                            "StepValue": "::1",
+                            "CountValue": 1,
+                        }
+                    ),
+                    references={
+                        "StartValue": taac_types.Reference(
+                            type=taac_types.ReferenceType.SRC_IPV6_ADDRESS
+                        ),
+                    },
+                ),
+                taac_types.Field(
+                    query=ixia_types.Query(regex="Destination Address"),
+                    attrs_json=json.dumps(
+                        {
+                            "ValueType": "singleValue",
+                            "SingleValue": destination_ipv6,
+                        }
+                    ),
+                ),
+            ],
+        ),
+    ]
+
+
+UNH_REMOTE_SUBNET_IPV6_TRAFFIC_PACKET_HEADERS: t.List[taac_types.PacketHeader] = (
+    _create_unh_ipv6_packet_headers("9000:1::1")
+)
+
+UNH_REMOTE_SUBNET_128_IPV6_TRAFFIC_PACKET_HEADERS: t.List[taac_types.PacketHeader] = (
+    _create_unh_ipv6_packet_headers("9000:1::")
+)

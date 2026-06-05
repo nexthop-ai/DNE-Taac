@@ -26,6 +26,7 @@ class DrainStateHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
 
         try:
             # Use the _async_is_onbox_drained_helper API to get the actual drain state
+            # pyrefly: ignore [missing-attribute]
             actual_drain_state = await self.driver._async_is_onbox_drained_helper()
             self.logger.info(f"Drain state for {hostname}: {actual_drain_state.name}")
 

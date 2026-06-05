@@ -42,6 +42,7 @@ class PortFlapHealthCheck(
             Dict mapping port names to their total flap counts
         """
         # Get all port information to know which ports exist
+        # pyrefly: ignore [missing-attribute]
         all_port_info = await self.driver.async_get_all_port_info()
 
         # Build counter keys for all ports
@@ -62,6 +63,7 @@ class PortFlapHealthCheck(
         # Get the flap counters for all ports
         # Note: Some counters may not exist if the port has never flapped
         try:
+            # pyrefly: ignore [missing-attribute]
             flap_counters = await self.driver.async_get_selected_counters(counter_keys)
         except Exception as e:
             # If some counters don't exist, that's okay - just log and return empty dict

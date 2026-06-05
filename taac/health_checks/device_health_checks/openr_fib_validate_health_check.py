@@ -33,6 +33,7 @@ class OpenrFibValidateHealthCheck(
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
         allow_empty = check_params.get("allow_empty", False)
+        # pyrefly: ignore [missing-attribute]
         result = await self.driver.async_validate_openr_fib()
 
         missing = result.get("missing_in_fib", set())

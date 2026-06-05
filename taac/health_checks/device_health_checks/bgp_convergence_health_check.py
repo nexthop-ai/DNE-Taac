@@ -39,6 +39,7 @@ class BgpConvergenceHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         start_event_enum = BgpInitializationEvent(int(start_event))
         end_event_enum = BgpInitializationEvent(int(end_event))
         bgp_initialization_events = (
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_get_bgp_initialization_events()
         )
         if (
@@ -67,6 +68,7 @@ class BgpConvergenceHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 if converged:
                     break
             bgp_initialization_events = (
+                # pyrefly: ignore [missing-attribute]
                 await self.driver.async_get_bgp_initialization_events()
             )
 

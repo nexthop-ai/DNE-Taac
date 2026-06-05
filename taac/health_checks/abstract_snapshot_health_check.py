@@ -46,7 +46,9 @@ class AbstractSnapshotHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
         self._post_snapshot_checkpoint_id = post_snapshot_checkpoint_id
         self.logger = logger
 
+        # pyrefly: ignore [bad-assignment]
         self._pre_snapshot: Snapshot = ...
+        # pyrefly: ignore [bad-assignment]
         self._post_snapshot: Snapshot = ...
         self._should_skip = False
 
@@ -156,7 +158,9 @@ class AbstractDeviceSnapshotHealthCheck(
         self.driver = ...
 
     async def setup(self, obj: Object) -> None:
+        # pyrefly: ignore [missing-attribute]
         if obj.attributes.operating_system in self.__class__.OPERATING_SYSTEMS:
+            # pyrefly: ignore [bad-assignment, missing-attribute]
             self.driver = await async_get_device_driver(obj.name)
         else:
             self._should_skip = True

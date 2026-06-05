@@ -52,6 +52,7 @@ class SystemctlActiveStateHealthCheck(
         self, hostname: str, service: str
     ) -> bool:
         cmd = f"systemctl show {service} --no-page"
+        # pyrefly: ignore [missing-attribute]
         output = await self.driver.async_run_cmd_on_shell(cmd)
         systemctl_unit_data = {}
         for line in output.split("\n"):

@@ -53,6 +53,7 @@ class BgpTcpdumpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
         # Check if capture file exists
         try:
             check_cmd = f'bash ls -la "{capture_file_path}"'
+            # pyrefly: ignore [missing-attribute]
             file_check = await self.driver.async_execute_show_or_configure_cmd_on_shell(
                 check_cmd
             )
@@ -122,10 +123,12 @@ class BgpTcpdumpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
         try:
             # Create failure directory if it doesn't exist
             mkdir_cmd = f'bash mkdir -p "{failure_dir}"'
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_execute_show_or_configure_cmd_on_shell(mkdir_cmd)
 
             # Move the capture file
             move_cmd = f'bash sudo mv "{capture_file_path}" "{failure_file_path}"'
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_execute_show_or_configure_cmd_on_shell(move_cmd)
             self.logger.info(f"Moved capture file to {failure_file_path} for debugging")
         except Exception as e:
@@ -135,6 +138,7 @@ class BgpTcpdumpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
         """Clean up the capture file after analysis to save disk space."""
         try:
             cleanup_cmd = f'bash sudo rm -f "{capture_file_path}"'
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_execute_show_or_configure_cmd_on_shell(cleanup_cmd)
             self.logger.info(
                 f"Successfully cleaned up capture file: {capture_file_path}"

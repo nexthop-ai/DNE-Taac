@@ -121,10 +121,12 @@ class BgpMultipathNextHopCountHealthCheck(
 
         try:
             # Get BGP++ RIB entries
+            # pyrefly: ignore [missing-attribute]
             bgp_rib_entries = await self.driver.async_get_bgp_rib_entries()
             self.logger.debug(f"Retrieved {len(bgp_rib_entries)} BGP++ RIB entries")
 
             # Get self-originated prefixes to exclude
+            # pyrefly: ignore [missing-attribute]
             bgp_originated_routes = await self.driver.async_get_bgp_originated_routes()
             bgp_originated_prefixes = {
                 f"{ip_ntop(originated_route.prefix.prefix_bin)}/{originated_route.prefix.num_bits}"
@@ -268,10 +270,12 @@ class BgpMultipathNextHopCountHealthCheck(
 
         try:
             # Get BGP++ RIB entries
+            # pyrefly: ignore [missing-attribute]
             bgp_rib_entries = await self.driver.async_get_bgp_rib_entries()
             self.logger.debug(f"Retrieved {len(bgp_rib_entries)} BGP++ RIB entries")
 
             # Get self-originated prefixes to exclude
+            # pyrefly: ignore [missing-attribute]
             bgp_originated_routes = await self.driver.async_get_bgp_originated_routes()
             bgp_originated_prefixes = {
                 f"{ip_ntop(originated_route.prefix.prefix_bin)}/{originated_route.prefix.num_bits}"

@@ -28,6 +28,7 @@ class OpenrInitializedHealthCheck(
         input: hc_types.BaseHealthCheckIn,
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
+        # pyrefly: ignore [missing-attribute]
         openr_data = await self.driver.async_validate_openr()
         init_events = openr_data.get("initialization_events", {})
 

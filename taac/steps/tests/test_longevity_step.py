@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
 from taac.libs.parameter_evaluator import ParameterEvaluator
-from taac.steps.longevity_step import LongevityStep
+from taac.steps.step_definitions import LongevityStep
 from taac.test_as_a_config import types as taac_types
 
 
@@ -59,7 +59,7 @@ class TestLongevityStep(unittest.IsolatedAsyncioTestCase):
         params = {"duration": 0}
 
         # Monkeypatch asyncio.sleep and time.time on the imported module
-        import neteng.test_infra.dne.taac.steps.longevity_step as longevity_mod
+        import neteng.test_infra.dne.taac.steps.step_definitions as longevity_mod
 
         original_sleep = asyncio.sleep
         original_time = time.time
@@ -89,7 +89,7 @@ class TestLongevityStep(unittest.IsolatedAsyncioTestCase):
         input_data = taac_types.BaseInput()
         params = {"duration": 120}
 
-        import neteng.test_infra.dne.taac.steps.longevity_step as longevity_mod
+        import neteng.test_infra.dne.taac.steps.step_definitions as longevity_mod
 
         original_sleep = asyncio.sleep
         original_time = time.time
@@ -121,7 +121,7 @@ class TestLongevityStep(unittest.IsolatedAsyncioTestCase):
         input_data = taac_types.BaseInput()
         params = {"duration": 30}
 
-        import neteng.test_infra.dne.taac.steps.longevity_step as longevity_mod
+        import neteng.test_infra.dne.taac.steps.step_definitions as longevity_mod
 
         original_sleep = asyncio.sleep
         original_time = time.time

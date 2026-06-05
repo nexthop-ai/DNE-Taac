@@ -389,10 +389,15 @@ class CoopUnregisterPatchersTask(BaseTask):
             for patcher in patchers_to_unregister:
                 # pyre-fixme[28]: Unexpected keyword argument `auto_remediate_failure`.
                 await driver.async_coop_unregister_patchers(
-                    patcher, config_name, auto_remediate_failure=True
+                    # pyrefly: ignore [unexpected-keyword]
+                    patcher,
+                    config_name,
+                    # pyrefly: ignore [unexpected-keyword]
+                    auto_remediate_failure=True,
                 )
             registered_patchers = [
                 patcher.name
+                # pyrefly: ignore [missing-attribute]
                 for patcher in await driver.async_coop_list_patchers(config_name)
             ]
             if any(
@@ -995,7 +1000,9 @@ class InjectBgpPolicyStatements(BaseTask):
     NAME = "inject_bgp_policy_statements"
 
     async def fetch_policy_from_configerator(
-        self, config_path: str
+        self,
+        config_path: str,
+        # pyrefly: ignore [bad-return]
     ) -> t.Dict[str, t.Any]:
         """
         Fetch BGP policy from configerator.

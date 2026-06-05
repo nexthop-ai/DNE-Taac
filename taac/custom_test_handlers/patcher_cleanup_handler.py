@@ -88,11 +88,15 @@ class PatcherCleanupHandler(BaseCustomTestHandler):
         self.test_case_patcher_cleanup_helper = ...
 
     async def async_test_case_setUp(self) -> None:
+        # pyrefly: ignore [bad-assignment]
         self.test_case_patcher_cleanup_helper = PatcherCleanupHelper(
             self.fboss_devices, self.logger
         )
+        # pyrefly: ignore [missing-attribute]
         await self.test_case_patcher_cleanup_helper.set_initial_registered_patchers()
 
     async def async_test_case_tearDown(self) -> None:
+        # pyrefly: ignore [missing-attribute]
         await self.test_case_patcher_cleanup_helper.set_current_registered_patchers()
+        # pyrefly: ignore [missing-attribute]
         await self.test_case_patcher_cleanup_helper.initiate_cleanup()

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
 from taac.driver.driver_constants import FbossSystemctlServiceName
 from taac.libs.parameter_evaluator import ParameterEvaluator
-from taac.steps.register_port_channel_min_link_percentage_patchers import (
+from taac.steps.step_definitions import (
     AGENT_CONFIG,
     PATCHER_DESCRIPTION,
     PATCHER_NAME,
@@ -14,7 +14,7 @@ from taac.steps.register_port_channel_min_link_percentage_patchers import (
 )
 from taac.test_as_a_config.thrift_types import BaseInput, Step, StepName
 
-BASE_PATH = "neteng.test_infra.dne.taac.steps.register_port_channel_min_link_percentage_patchers"
+BASE_PATH = "neteng.test_infra.dne.taac.steps.step_definitions"
 
 
 class RegisterPortChannelMinLinkPercentagePatchersTest(

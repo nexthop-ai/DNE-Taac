@@ -2,22 +2,6 @@
 import os
 import typing as t
 
-from taac.ai_bb.dsf.dsf_drain_state_health_check import (
-    DsfDrainStateHealthCheck,
-)
-from taac.ai_bb.dsf.dsf_fabric_reachability_health_check import (
-    DsfFabricReachabilityHealthCheck,
-)
-from taac.ai_bb.dsf.dsf_fsdb_session_health_check import (
-    DsfFsdbSessionHealthCheck,
-)
-from taac.ai_bb.dsf.dsf_fsdb_subscriber_timestamp_health_check import (
-    DsfFsdbSubscriberTimestampHealthCheck,
-)
-from taac.ai_bb.dsf.dsf_pfc_health_check import DsfPfcHealthCheck
-from taac.ai_bb.dsf.dsf_traffic_rebalance_health_check import (
-    DsfTrafficRebalanceHealthCheck,
-)
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
     AbstractIxiaHealthCheck,
@@ -147,6 +131,9 @@ from taac.health_checks.device_health_checks.system_cpu_load_average_health_chec
 from taac.health_checks.device_health_checks.systemctl_active_state_health_check import (
     SystemctlActiveStateHealthCheck,
 )
+from taac.health_checks.device_health_checks.tm_reconciliation_firing_health_check import (
+    TmReconciliationFiringHealthCheck,
+)
 from taac.health_checks.device_health_checks.ucmp_traffic_distribution_health_check import (
     UcmpTrafficDistributionHealthCheck,
 )
@@ -155,6 +142,24 @@ from taac.health_checks.device_health_checks.unclean_exit_health_check import (
 )
 from taac.health_checks.device_health_checks.wedge_agent_configured_health_check import (
     WedgeAgentConfiguredHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_drain_state_health_check import (
+    DsfDrainStateHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_fabric_reachability_health_check import (
+    DsfFabricReachabilityHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_fsdb_session_health_check import (
+    DsfFsdbSessionHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_fsdb_subscriber_timestamp_health_check import (
+    DsfFsdbSubscriberTimestampHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_pfc_health_check import (
+    DsfPfcHealthCheck,
+)
+from taac.health_checks.dsf_health_checks.dsf_traffic_rebalance_health_check import (
+    DsfTrafficRebalanceHealthCheck,
 )
 from taac.health_checks.ixia_health_checks.ixia_packet_loss_health_check import (
     IxiaPacketLossHealthCheck,
@@ -191,6 +196,9 @@ from taac.health_checks.snapshot_health_checks.port_speed_health_check import (
 )
 from taac.health_checks.snapshot_health_checks.qos_dscp_tx_queue_health_check import (
     QoSDscpTxQueueHealthCheck,
+)
+from taac.health_checks.snapshot_health_checks.tm_kernel_state_snapshot_health_check import (
+    TmKernelStateSnapshotHealthCheck,
 )
 from taac.health_checks.topology_health_checks.ndp_health_check import (
     NdpHealthCheck,
@@ -273,6 +281,8 @@ OSS_HEALTH_CHECKS: t.List[HealthCheck] = [
     OpenrKvstoreConsistencyHealthCheck,
     AristaFbossNextHopValidityHealthCheck,
     PortChannelExpectedStateHealthCheck,
+    TmReconciliationFiringHealthCheck,
+    TmKernelStateSnapshotHealthCheck,
 ]
 
 if not TAAC_OSS:

@@ -166,6 +166,7 @@ class PfcWdHealthCheck(AbstractDeviceHealthCheck[hc_types.PfcWdHealthCheckIn]):
 
     async def _get_eos_pfc_wd_counters(self, interface: str) -> t.Dict[str, int]:
         cmd = "show priority-flow-control counters watchdog | json"
+        # pyrefly: ignore [missing-attribute]
         response = await self.driver.async_execute_show_json_on_shell(cmd)
         # Arista returns {"interfaces": {}} when no WD event has fired on any
         # interface, and omits an interface key entirely until that interface

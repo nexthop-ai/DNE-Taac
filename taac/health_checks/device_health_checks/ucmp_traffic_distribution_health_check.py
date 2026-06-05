@@ -359,6 +359,7 @@ class UcmpTrafficDistributionHealthCheck(
         # Step 1: Get FIB route for target prefix
         self.logger.debug(f"Fetching FIB route details for {target_prefix}")
         try:
+            # pyrefly: ignore [missing-attribute]
             fib_routes = await self.driver.async_get_route_table_details()
         except Exception as e:
             return hc_types.HealthCheckResult(

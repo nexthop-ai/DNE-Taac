@@ -23,6 +23,7 @@ class WedgeAgentConfiguredHealthCheck(
         input: hc_types.BaseHealthCheckIn,
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
+        # pyrefly: ignore [missing-attribute]
         agent_state = await self.driver.async_get_switch_run_state()
         if agent_state != SwitchRunState.CONFIGURED:
             return hc_types.HealthCheckResult(

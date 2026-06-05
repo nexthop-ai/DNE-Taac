@@ -29,7 +29,21 @@ class ClearCountersHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChec
             self.logger.info("Stopping traffic to clear counters")
             ixia.stop_traffic()
             await asyncio.sleep(3)
-            cmd = "clear counters\nclear priority-flow-control counters watchdog"
+            cmd = "\n".join(
+                [
+                    "clear counter",
+                    "clear plat fap counter",
+                    "clear hardware counter drop",
+                    "clear mac access-list counter",
+                    "clear ip access-list counter",
+                    "clear ipv6 access-list counter",
+                    "clear priority-flow-control buffer counters",
+                    "clear sflow counter",
+                    "clear priority-flow-control counter history",
+                    "clear priority-flow-control counter watchdog",
+                ]
+            )
+            # pyrefly: ignore [missing-attribute]
             await self.driver.async_execute_show_or_configure_cmd_on_shell(cmd=cmd)
             self.logger.info("Starting traffic")
             ixia.start_traffic()

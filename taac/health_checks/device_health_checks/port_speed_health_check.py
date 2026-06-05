@@ -51,6 +51,7 @@ class PortSpeedHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]
             else:
                 interface_name_to_expected_speed[interface_name] = expected_speed
 
+        # pyrefly: ignore [missing-attribute]
         interface_port_speed = await self.driver.async_get_interfaces_speed_in_Gbps(
             interface_names=list(interface_name_to_expected_speed.keys())
         )

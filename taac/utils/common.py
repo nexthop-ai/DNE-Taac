@@ -175,6 +175,7 @@ async def async_write_test_result(
     if message:
         if not TAAC_OSS:
             from taac.utils.common import (
+                # pyrefly: ignore [missing-module-attribute]
                 async_everpaste_if_needed as _everpaste_if_needed,
             )
 

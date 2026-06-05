@@ -235,13 +235,18 @@ class TaacTestSummary:
         lines.append("=" * 100)
         lines.append("")
         for s in failed_sections:
+            # pyrefly: ignore [bad-argument-type]
             lines.append(f"  ✗ {s.name}")
+            # pyrefly: ignore [bad-argument-type]
             lines.append(f"    Duration: {format_duration(s.duration_secs)}")
+            # pyrefly: ignore [bad-argument-type]
             lines.append(f"    Logs: {s.everpaste_url or 'N/A'}")
             if s.error_message:
                 err = self._truncate_message(s.error_message, 500)
+                # pyrefly: ignore [bad-argument-type]
                 lines.append(f"    Error: {err}")
             lines.append("")
+        # pyrefly: ignore [bad-return]
         return lines
 
     async def async_generate_summary(self) -> str:
@@ -266,15 +271,18 @@ class TaacTestSummary:
         for section in self.sections:
             if section.status == SectionStatus.FAIL:
                 all_pass = False
+            # pyrefly: ignore [bad-argument-type]
             lines.extend(self._format_section_row(section))
 
         lines.append("  " + "-" * 95)
         overall = "ALL SECTIONS PASSED" if all_pass else "SOME SECTIONS FAILED"
+        # pyrefly: ignore [bad-argument-type]
         lines.append(f"  Overall: {overall}")
         lines.append("")
 
         failed = [s for s in self.sections if s.status == SectionStatus.FAIL]
         if failed:
+            # pyrefly: ignore [bad-argument-type]
             lines.extend(self._format_failure_details(failed))
 
         return "\n".join(lines)

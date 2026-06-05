@@ -97,6 +97,7 @@ class LldpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]):
         enabled_interfaces: t.List[taac_types.TestInterface],
         disabled_interfaces: t.List[taac_types.TestInterface],
     ) -> None:
+        # pyrefly: ignore [missing-attribute]
         lldp_neighbors = await self.driver.async_get_lldp_neighbors()
 
         failure_reasons = []

@@ -263,6 +263,7 @@ class AristaFbossNextHopValidityHealthCheck(
         Returns:
             Dictionary mapping next-hop sets to prefixes
         """
+        # pyrefly: ignore [missing-attribute]
         bgp_entries = await self.driver.async_get_bgp_rib_entries()
         return await self.build_bgp_result_dict(bgp_entries)
 
@@ -272,7 +273,9 @@ class AristaFbossNextHopValidityHealthCheck(
         Returns:
             Dictionary mapping next-hop groups to prefixes
         """
+        # pyrefly: ignore [missing-attribute]
         static_routes = await self.driver.async_get_static_routes()
+        # pyrefly: ignore [missing-attribute]
         return await self.driver.create_group_to_ips_dict(static_routes)
 
     async def process_next_hop_group_data_for_ngh_to_nexthop_map(self) -> dict:
@@ -281,7 +284,9 @@ class AristaFbossNextHopValidityHealthCheck(
         Returns:
             Dictionary mapping next-hop groups to next-hops
         """
+        # pyrefly: ignore [missing-attribute]
         next_hop_group_data = await self.driver.get_nexthop_group_data()
+        # pyrefly: ignore [missing-attribute]
         return await self.driver.parse_nexthop_groups(next_hop_group_data)
 
     async def find_duplicate_values(self, data: dict) -> dict:

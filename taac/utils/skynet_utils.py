@@ -149,6 +149,7 @@ async def async_get_device_name(fabric_alias: str) -> t.Optional[str]:
     )
 
     async with get_skynet_thrift_client() as client:
+        # pyrefly: ignore [bad-argument-type]
         result = await client.getDesiredNetworkSwitch(query, fields=fields)
         if result:
             return result[0].name
@@ -178,6 +179,7 @@ async def async_get_fabric_aliases(
     )
 
     async with get_skynet_thrift_client() as client:
+        # pyrefly: ignore [bad-argument-type]
         result = await client.getDesiredNetworkSwitch(query, fields=fields)
         for res in result:
             # {standard_hostname : fabric_alias}
@@ -225,6 +227,7 @@ async def get_skynet_device_role(entity: str) -> t.Optional[str]:
         )
         async with get_skynet_thrift_client() as client:
             try:
+                # pyrefly: ignore [bad-argument-type]
                 resp = await client.getDesiredNetworkDevice(query, fields)
             except Exception:
                 return None
@@ -264,6 +267,7 @@ async def async_get_skynet_primary_ipv6(hostname: str) -> t.Optional[str]:
         ]
     )
     async with get_skynet_thrift_client() as client:
+        # pyrefly: ignore [bad-argument-type]
         result = await client.getDesiredNetworkSwitch(query, fields=fields)
         if result:
             return result[0].primary_ipv6

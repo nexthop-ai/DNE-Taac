@@ -147,7 +147,11 @@ class AddEosBgpPrefixListToPeerGroup(BaseTask):
 
         hostname = params["hostname"]
         prefix_list_name = params["prefix_list_name"]
-        peer_group_name = params["peer_group_name"]
+        route_map_name = params.get("route_map_name")
+        route_map_names = (
+            [route_map_name] if isinstance(route_map_name, str) else route_map_name
+        )
+        route_map_seq = params.get("route_map_seq")
         register = params.get("register", True)
 
         driver = AristaSwitch(hostname, logger=self.logger)
@@ -157,44 +161,44 @@ class AddEosBgpPrefixListToPeerGroup(BaseTask):
             if "prefix" in params:
                 network = ipaddress_mod.ip_network(params["prefix"], strict=False)
                 is_ipv6 = network.version == 6
-            direction = params.get("direction", "in")
 
             self.logger.info(
-                f"Removing prefix-list '{prefix_list_name}' from peer group(s) "
-                f"'{peer_group_name}' on {hostname}"
+                f"Removing prefix-list '{prefix_list_name}' from "
+                f"{route_map_names} on {hostname}"
             )
             await driver.async_remove_bgp_prefix_list_from_peer_group(
                 prefix_list_name=prefix_list_name,
-                peer_group_name=peer_group_name,
-                direction=direction,
                 is_ipv6=is_ipv6,
+                # pyrefly: ignore [bad-argument-type]
+                route_map_names=route_map_names,
+                route_map_seq=route_map_seq,
             )
             self.logger.info(
                 f"Successfully removed prefix-list '{prefix_list_name}' from "
-                f"peer group(s) '{peer_group_name}' on {hostname}"
+                f"{route_map_names} on {hostname}"
             )
             return
 
         prefix = params["prefix"]
-        direction = params.get("direction", "in")
         prefix_length = params.get("prefix_length")
         seq = params.get("seq")
 
         self.logger.info(
             f"Adding prefix-list '{prefix_list_name}' with prefix '{prefix}' "
-            f"to peer group(s) '{peer_group_name}' ({direction}) on {hostname}"
+            f"to {route_map_names} on {hostname}"
         )
         await driver.async_add_bgp_prefix_list_to_peer_group(
             prefix_list_name=prefix_list_name,
             prefix=prefix,
-            peer_group_name=peer_group_name,
-            direction=direction,
             prefix_length=prefix_length,
             seq=seq,
+            # pyrefly: ignore [bad-argument-type]
+            route_map_names=route_map_names,
+            route_map_seq=route_map_seq,
         )
         self.logger.info(
-            f"Successfully added prefix-list '{prefix_list_name}' to peer group(s) "
-            f"'{peer_group_name}' ({direction}) on {hostname}"
+            f"Successfully added prefix-list '{prefix_list_name}' to "
+            f"{route_map_names} on {hostname}"
         )
 
 

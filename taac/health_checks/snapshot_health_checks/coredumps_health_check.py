@@ -76,6 +76,7 @@ class CoreDumpsHealthCheck(
             Dictionary mapping core dump filenames to their actual timestamps
         """
         cmd = f"bash ls -ltr {EOS_CORE_DUMP_PATH}"
+        # pyrefly: ignore [missing-attribute]
         output = await self.driver.async_execute_show_or_configure_cmd_on_shell(cmd)
 
         core_dumps = {}

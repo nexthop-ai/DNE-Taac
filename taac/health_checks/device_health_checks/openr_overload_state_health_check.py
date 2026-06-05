@@ -33,6 +33,7 @@ class OpenrOverloadStateHealthCheck(
     ) -> hc_types.HealthCheckResult:
         expected_overloaded = check_params.get("expected_overloaded", False)
 
+        # pyrefly: ignore [missing-attribute]
         lm_links = await self.driver.async_get_openr_lm_links()
         is_overloaded = bool(lm_links.isOverloaded)
 

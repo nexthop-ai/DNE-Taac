@@ -147,6 +147,7 @@ class IxiaPacketLossHealthCheck(
                         )
                     )
 
+        # pyrefly: ignore [bad-return]
         return violations
 
     def _default_input(self, obj: Ixia) -> hc_types.IxiaPacketLossHealthCheckIn:
