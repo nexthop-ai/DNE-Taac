@@ -24,6 +24,7 @@ against a Keysight IxNetwork Web Edition chassis (2026-06-03):
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import time
 from dataclasses import dataclass
@@ -90,6 +91,24 @@ class IxiaDiagnosticsCollectionError(Exception):
     """Raised when the chassis reports a terminal failure state for a collection."""
 
 
+def _url_safe_host(host: str) -> str:
+    """RFC 3986: an IPv6 literal in an authority MUST be wrapped in `[...]`.
+
+    Many TAAC EBB testbeds register chassis as bare IPv6 literals (e.g.
+    `2401:db00:2066:303b::3001`). Without bracketing, `https://{host}/...`
+    fails URL parsing because the colons are interpreted as port separators
+    (aiohttp raises `InvalidUrlClientError`). DNS names and IPv4 addresses
+    pass through unchanged. Already-bracketed hosts are also passed through.
+    """
+    if host.startswith("["):
+        return host
+    try:
+        ipaddress.IPv6Address(host)
+    except (ValueError, ipaddress.AddressValueError):
+        return host
+    return f"[{host}]"
+
+
 class IxiaDiagnosticsClient:
     """Stateless async client for Keysight DiagnosticService.
 
@@ -103,7 +122,10 @@ class IxiaDiagnosticsClient:
         username: str,
         password: str,
     ) -> None:
-        self._chassis = chassis_hostname
+        # Bracket-wrap IPv6 literals so f"https://{host}/..." parses correctly.
+        # Production conveyor failures (e.g. bag010 @ 2401:db00:2066:303b::3001)
+        # silently failed with `InvalidUrlClientError` before this fix.
+        self._chassis = _url_safe_host(chassis_hostname)
         self._username = username
         self._password = password
 

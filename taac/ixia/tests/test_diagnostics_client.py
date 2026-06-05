@@ -7,9 +7,60 @@ from unittest.mock import AsyncMock, patch
 
 from taac.ixia.diagnostics_client import (
     _flatten_components,
+    _url_safe_host,
     IxiaDiagnosticsClient,
     IxiaDiagnosticsCollectionError,
 )
+
+
+class UrlSafeHostTest(IsolatedAsyncioTestCase):
+    """RFC 3986: IPv6 literals must be bracket-wrapped in URLs.
+
+    Regression coverage for the conveyor-discovered bug where bare IPv6
+    chassis hosts (e.g. `2401:db00:2066:303b::3001`) caused aiohttp to raise
+    `InvalidUrlClientError` on `https://{host}/...`.
+    """
+
+    def test_ipv6_literal_gets_bracketed(self):
+        self.assertEqual(
+            _url_safe_host("2401:db00:2066:303b::3001"),
+            "[2401:db00:2066:303b::3001]",
+        )
+
+    def test_ipv6_compressed_form_gets_bracketed(self):
+        self.assertEqual(_url_safe_host("::1"), "[::1]")
+
+    def test_already_bracketed_passes_through(self):
+        self.assertEqual(
+            _url_safe_host("[2401:db00:2066:303b::3001]"),
+            "[2401:db00:2066:303b::3001]",
+        )
+
+    def test_ipv4_passes_through_unchanged(self):
+        self.assertEqual(_url_safe_host("10.0.0.1"), "10.0.0.1")
+
+    def test_dns_name_passes_through_unchanged(self):
+        self.assertEqual(
+            _url_safe_host("ixia11.netcastle.ash6.example.com"),
+            "ixia11.netcastle.ash6.example.com",
+        )
+
+    def test_client_constructor_normalizes_ipv6_chassis(self):
+        """IxiaDiagnosticsClient stores the bracketed form on the instance."""
+        client = IxiaDiagnosticsClient(
+            chassis_hostname="2401:db00:2066:303b::3001",
+            username="u",
+            password="p",
+        )
+        self.assertEqual(client._chassis, "[2401:db00:2066:303b::3001]")
+
+    def test_client_constructor_leaves_dns_unchanged(self):
+        client = IxiaDiagnosticsClient(
+            chassis_hostname="ixia.example.com",
+            username="u",
+            password="p",
+        )
+        self.assertEqual(client._chassis, "ixia.example.com")
 
 
 class FlattenComponentsTest(IsolatedAsyncioTestCase):
