@@ -379,10 +379,8 @@ class TestSetupOrchestrator:
         )
         _log(f"\033[36m[IXIA]\033[0m {session_info} | {chassis_info}")
 
-        # Check if test config has ixia_config_cache_path attribute
-        ixia_config_cache_path = getattr(
-            self.test_config, "ixia_config_cache_path", None
-        )
+        # Optional opt-in topology cache (see IxiaConfigCache Thrift docstring)
+        ixia_config_cache = getattr(self.test_config, "ixia_config_cache", None)
         self.traffic_generator = TrafficGenerator(
             endpoints,
             basset_pool=self.test_config.basset_pool,
@@ -403,7 +401,7 @@ class TestSetupOrchestrator:
             skip_advertised_prefixes_check=self.test_config.skip_advertised_prefixes_check,
             skip_ixia_protocol_verification=self.test_config.skip_ixia_protocol_verification,
             ixia_protocol_verification_timeout=self.test_config.ixia_protocol_verification_timeout,
-            ixia_config_cache_path=ixia_config_cache_path,
+            ixia_config_cache=ixia_config_cache,
         )
 
         _log(

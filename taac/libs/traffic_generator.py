@@ -21,6 +21,9 @@ from taac.constants import (
 )
 from taac.driver.driver_constants import InterfaceEventState
 from taac.ixia.taac_ixia import TaacIxia
+from taac.libs.ixia_config_cache_manager import (
+    IxiaConfigCacheManager,
+)
 from taac.utils.common import get_session_info
 from taac.utils.driver_factory import async_get_device_driver
 from taac.utils.ixia_utils import (
@@ -108,7 +111,7 @@ class TrafficGenerator:
         skip_advertised_prefixes_check: t.Optional[bool] = None,
         skip_ixia_protocol_verification: bool = False,
         ixia_protocol_verification_timeout: int = 90,
-        ixia_config_cache_path: t.Optional[str] = None,
+        ixia_config_cache: t.Optional[taac_types.IxiaConfigCache] = None,
         *args,
         **kwargs,
     ) -> None:
@@ -139,8 +142,8 @@ class TrafficGenerator:
         self.skip_advertised_prefixes_check = skip_advertised_prefixes_check
         self.skip_ixia_protocol_verification = skip_ixia_protocol_verification
         self.ixia_protocol_verification_timeout = ixia_protocol_verification_timeout
-        # IXIA config caching - path on chassis to store/load .ixncfg file
-        self.ixia_config_cache_path = ixia_config_cache_path
+        # Opt-in IXIA topology cache — see IxiaConfigCache Thrift docstring
+        self.ixia_config_cache = ixia_config_cache
         # snake testing
         self.snake_configs = snake_configs or []
         self.is_standalone = bool(self.snake_configs)
@@ -211,12 +214,14 @@ class TrafficGenerator:
 
     async def async_create_ixia_setup(self) -> None:
         try:
+            # Build the IxiaConfig once — used both for the TaacIxia constructor
+            # AND for computing the cache key (if cache is enabled).
+            built_ixia_config: t.Optional[ixia_types.IxiaConfig] = None
+            if not self.session_id or self.override_traffic_items:
+                built_ixia_config = await self.async_create_ixia_config()
+
             self.ixia = TaacIxia(
-                ixia_config=(
-                    await self.async_create_ixia_config()
-                    if not self.session_id or self.override_traffic_items
-                    else None
-                ),
+                ixia_config=built_ixia_config,
                 logger=self.logger,
                 session_name=self.get_session_name(),
                 cleanup_config=False if self.session_id else self.cleanup_config,
@@ -240,44 +245,68 @@ class TrafficGenerator:
                 ixia_protocol_verification_timeout=self.ixia_protocol_verification_timeout,
             )
 
-            # Try to load cached IXIA config if cache path is provided
-            config_loaded_from_cache = False
-            if self.ixia_config_cache_path:
-                cache_path: str = self.ixia_config_cache_path
-                self.logger.info(
-                    f"\033[36m[IXIA]\033[0m Config cache enabled: "
-                    f"\033[33m{cache_path}\033[0m"
-                )
-                config_loaded_from_cache = self.ixia.load_config_from_chassis(
-                    cache_path
-                )
-                if config_loaded_from_cache:
-                    self.logger.info(
-                        "\033[32m\033[1m[IXIA]\033[0m Loaded config from cache "
-                        "— skipping full setup (~10-15 min saved)"
+            # Topology cache — only when (a) cache is enabled in TestConfig AND
+            # (b) we have an IxiaConfig to hash. Without an IxiaConfig (session
+            # reuse path) there's nothing to key on.
+            cache_mgr = None
+            cache_key = None
+            cache_hit = False
+            if (
+                self.ixia_config_cache
+                and self.ixia_config_cache.enabled
+                and built_ixia_config is not None
+            ):
+                # Best-effort: catch any unexpected exception during cache
+                # lookup so cache bugs degrade to cold setup, never fail the
+                # whole test. The manager's own methods already swallow
+                # expected misses; this is belt-and-braces for the rest.
+                try:
+                    cache_mgr = IxiaConfigCacheManager(
+                        ixia=self.ixia,
+                        cache_config=self.ixia_config_cache,
+                        logger=self.logger,
                     )
+                    # session_name is Optional but always set by
+                    # TestSetupOrchestrator (test_config.name); none_throws fails
+                    # fast if the contract breaks.
+                    cache_key = cache_mgr.compute_key(
+                        none_throws(self.session_name), built_ixia_config
+                    )
+                    self.logger.info(
+                        f"\033[36m[IXIA]\033[0m cache enabled — key: "
+                        f"\033[33m{cache_key}\033[0m"
+                    )
+                    cache_hit = cache_mgr.try_load_from_chassis(cache_key)
+                    if cache_hit:
+                        self.logger.info(
+                            "\033[32m\033[1m[IXIA]\033[0m cache HIT — "
+                            "skipping create_basic_setup (~226s+ saved)"
+                        )
+                except Exception as cache_exc:
+                    self.logger.error(
+                        f"\033[33m[IXIA]\033[0m cache lookup raised "
+                        f"unexpectedly ({type(cache_exc).__name__}: "
+                        f"{cache_exc!r}). Falling through to cold setup."
+                    )
+                    cache_mgr = None
+                    cache_key = None
+                    cache_hit = False
 
-            if not config_loaded_from_cache:
+            if not cache_hit:
                 self.logger.info(
-                    "\033[36m\033[1m[IXIA]\033[0m Starting full IXIA setup..."
+                    "\033[36m\033[1m[IXIA]\033[0m starting full create_basic_setup..."
                 )
                 self.ixia.create_basic_setup()
-                self.logger.info(
-                    "\033[32m\033[1m[IXIA]\033[0m IXIA setup complete — "
-                    "trial traffic done"
-                )
-
-                # Save config to cache for next run if cache path is provided
-                if self.ixia_config_cache_path:
-                    cache_path_to_save: str = self.ixia_config_cache_path
-                    self.logger.info(
-                        f"\033[36m[IXIA]\033[0m Saving config to cache: "
-                        f"\033[33m{cache_path_to_save}\033[0m"
-                    )
-                    if self.ixia.save_config_to_chassis(cache_path_to_save):
-                        self.logger.info(
-                            "\033[32m[IXIA]\033[0m Config cached — "
-                            "next run will load from cache"
+                self.logger.info("\033[32m\033[1m[IXIA]\033[0m IXIA setup complete")
+                # Warm cache for next run — also defensive in case save raises.
+                if cache_mgr is not None and cache_key is not None:
+                    try:
+                        cache_mgr.save_to_chassis(cache_key)
+                    except Exception as save_exc:
+                        self.logger.error(
+                            f"\033[33m[IXIA]\033[0m cache warm-up raised "
+                            f"unexpectedly ({type(save_exc).__name__}: "
+                            f"{save_exc!r}). Next run will pay cold cost again."
                         )
 
         except Exception as ex:
