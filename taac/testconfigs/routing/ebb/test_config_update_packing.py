@@ -44,6 +44,7 @@ from taac.test_as_a_config.types import (
     DeviceGroupConfig,
     Endpoint,
     IpAddressesConfig,
+    IxiaConfigCache,
     RouteScale,
     RouteScaleSpec,
     TestConfig,
@@ -91,6 +92,7 @@ def test_config_bgp_update_packing_validation(
     host_driver_args=None,
     setup_tasks: List | None = None,
     teardown_tasks: List | None = None,
+    ixia_config_cache: IxiaConfigCache | None = None,
 ):
     """
     Create test config for BGP UPDATE message packing validation.
@@ -464,4 +466,5 @@ def test_config_bgp_update_packing_validation(
                 restart_bgp_for_complete_view=restart_bgp_for_complete_view,
             ),
         ],
+        ixia_config_cache=ixia_config_cache,
     )

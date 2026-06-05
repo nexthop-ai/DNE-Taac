@@ -55,7 +55,7 @@ from taac.testconfigs.routing.ebb.test_config_update_packing import (
     test_config_bgp_update_packing_validation,
 )
 from taac.test_as_a_config import types as taac_types
-from taac.test_as_a_config.types import DirectIxiaConnection
+from taac.test_as_a_config.types import DirectIxiaConnection, IxiaConfigCache
 
 
 # =============================================================================
@@ -161,6 +161,11 @@ def create_bag012_ash6_conveyor_test_config(
             ),
         ],
         log_collection_timeout=600,
+        # Canary: Tier 1 IXIA topology cache. Mirrors the bag011 canary
+        # (D107609585). First run pays the cold create_basic_setup cost and
+        # warms the chassis-local ixncfg; subsequent runs LoadConfig in ~10-20s
+        # instead of 226s+. See IxiaConfigCache Thrift docstring + D107586472.
+        ixia_config_cache=IxiaConfigCache(enabled=True),
     )
 
 
