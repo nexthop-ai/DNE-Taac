@@ -276,6 +276,12 @@ class TrafficGenerator:
                         f"\033[36m[IXIA]\033[0m cache enabled — key: "
                         f"\033[33m{cache_key}\033[0m"
                     )
+                    # LoadConfig requires a live IxNetwork session, but the
+                    # SessionAssistant isn't created until create_basic_setup
+                    # Step 1. Connect first so `self.session` is populated; the
+                    # cold-path create_basic_setup re-uses the same session via
+                    # its own connect() (SessionAssistant reuses by SessionId).
+                    self.ixia.connect()
                     cache_hit = cache_mgr.try_load_from_chassis(cache_key)
                     if cache_hit:
                         self.logger.info(
