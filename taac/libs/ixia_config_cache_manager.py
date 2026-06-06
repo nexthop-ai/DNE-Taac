@@ -18,18 +18,33 @@ Cache key shape: `{test_config_name}__{chassis_id}__{config_hash}.ixncfg`
     when Python setup logic (`create_basic_setup`, etc.) changes in a way that
     affects the resulting topology even if the IxiaConfig struct is unchanged.
 
-Tier 1 (chassis-local) is implemented. Tier 2 (Manifold) is reserved for a
-follow-up — the `manifold_bucket` field on `IxiaConfigCache` is wired through
-but not yet consumed here.
+Tier 1 (chassis-local) is implemented but de facto broken — IxNetwork's
+SaveConfig does not durably write to arbitrary server paths and the default
+storage location is wiped between sessions (bag012 e2e 2026-06-05 spent 9
+runs proving the limits). Tier 2 (Manifold) was implemented next and is the
+effective cache: on Tier 1 miss we try Manifold, on miss-of-miss fall through
+to cold `create_basic_setup`. The Tier 2 save path uses `session.Session.\
+DownloadFile` (canonical, used by TAAC pcap path) to pull the just-saved
+ixncfg from the server back to the netcastle worker for upload to Manifold;
+the Tier 2 load path uses `UploadFile` to stage the downloaded blob server-
+side, then `LoadConfig`. Tier 2 sidesteps the chassis-persistence problem
+because Manifold is the durable store and the chassis-side file only needs
+to live for one `LoadConfig` call.
 """
 
 from __future__ import annotations
 
 import re
+import tempfile
 import time
-from typing import Any
+from pathlib import Path
 
 from ixia.ixia import types as ixia_types
+from ixnetwork_restpy.files import Files
+from taac.internal.utils.manifold_utils import (
+    async_download_file_from_manifold,
+    async_upload_file_to_manifold,
+)
 from taac.ixia.taac_ixia import TaacIxia
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
@@ -169,10 +184,108 @@ class IxiaConfigCacheManager:
                 "ixia cache: Tier 1 warm-up FAILED. Next run pays cold cost again."
             )
 
-    def _placeholder_manifold(self) -> Any:
-        """Reserved for Tier 2 — see `manifold_bucket` field on IxiaConfigCache.
+    def manifold_key(self, key: str) -> str:
+        """Manifold object key for the same cache key used by Tier 1.
 
-        Not implemented in this diff. Follow-up will add ManifoldClient.get/put
-        plus a Files(local_file=True) hop to push downloaded ixncfg to API server.
+        Stored under `flat/` namespace (no enumeration, fast access).
         """
-        raise NotImplementedError("Tier 2 (Manifold) deferred to follow-up diff")
+        return f"flat/{key}"
+
+    async def try_load_from_manifold(self, key: str) -> bool:
+        """Tier 2: download blob from Manifold → UploadFile to chassis → LoadConfig.
+
+        Sidesteps the Tier 1 chassis-persistence problem: we always push fresh
+        from Manifold, so the chassis-side file only needs to live for the
+        duration of one `LoadConfig` call. `Manifold` is the durable backing
+        store; the chassis file is a transient staging area.
+
+        Returns True on full success (config loaded + protocols verified),
+        False on miss/failure (caller falls through to Tier 3 cold setup).
+        Best-effort: never raises.
+        """
+        bucket = self._cfg.manifold_bucket
+        if not bucket:
+            return False
+        mf_key = self.manifold_key(key)
+        self._logger.info(f"ixia cache: Tier 2 lookup — Manifold {bucket}/{mf_key}")
+        t0 = time.monotonic()
+        # Use a tmp file path under the netcastle worker's /tmp. We delete the
+        # pre-created NamedTemporaryFile and let async_download create it
+        # fresh — avoids a "destination exists" race.
+        with tempfile.NamedTemporaryFile(suffix=".ixncfg", delete=False) as f:
+            local_path = Path(f.name)
+        local_path.unlink(missing_ok=True)
+        try:
+            found = await async_download_file_from_manifold(bucket, mf_key, local_path)
+            if not found:
+                self._logger.info(
+                    f"ixia cache: Tier 2 miss after {time.monotonic() - t0:.1f}s"
+                )
+                return False
+            size = local_path.stat().st_size
+            self._logger.info(
+                f"ixia cache: Tier 2 downloaded {size} bytes; uploading to chassis"
+            )
+            # Stage on chassis under a stable basename (the cache key itself).
+            # Each upload overwrites — fine, IxNetwork can re-import on top.
+            self._ixia.session.Session.UploadFile(str(local_path), remote_filename=key)
+            # LoadConfig against the just-uploaded basename. IxNetwork resolves
+            # the basename in its default storage location server-side.
+            self._ixia.session.Ixnetwork.LoadConfig(Files(key, local_file=False))
+            self._ixia.start_and_verify_protocols()
+            elapsed = time.monotonic() - t0
+            self._logger.info(
+                f"ixia cache: Tier 2 HIT — loaded from Manifold in {elapsed:.1f}s "
+                f"(would have been ~226s+ via create_basic_setup)"
+            )
+            return True
+        except Exception as e:
+            elapsed = time.monotonic() - t0
+            self._logger.info(
+                f"ixia cache: Tier 2 load attempt failed after {elapsed:.1f}s "
+                f"({type(e).__name__}: {e!r}). Falling through to Tier 3."
+            )
+            return False
+        finally:
+            local_path.unlink(missing_ok=True)
+
+    async def save_to_manifold(self, key: str) -> None:
+        """Tier 2 warm: SaveConfig server-side → DownloadFile → upload to Manifold.
+
+        Best-effort: any failure is logged and swallowed so cache warm-up never
+        breaks a passing test. The next cold run will re-attempt.
+        """
+        bucket = self._cfg.manifold_bucket
+        if not bucket:
+            return
+        mf_key = self.manifold_key(key)
+        self._logger.info(f"ixia cache: warming Tier 2 — Manifold {bucket}/{mf_key}")
+        with tempfile.NamedTemporaryFile(suffix=".ixncfg", delete=False) as f:
+            local_path = Path(f.name)
+        local_path.unlink(missing_ok=True)
+        try:
+            # Save server-side with the cache key as the basename. Pairs with
+            # the LoadConfig(Files(key, local_file=False)) in try_load above.
+            self._ixia.session.Ixnetwork.SaveConfig(Files(key, local_file=False))
+            # Pull the just-saved file back to the client. `DownloadFile` is
+            # the canonical session-level API (TAAC pcap path uses it
+            # successfully — see `ixia.py:7507`).
+            self._ixia.session.Session.DownloadFile(
+                remote_filename=key, local_filename=str(local_path)
+            )
+            if not local_path.exists() or local_path.stat().st_size == 0:
+                self._logger.error(
+                    "ixia cache: Tier 2 warm-up FAILED — DownloadFile produced "
+                    f"empty/missing local file at {local_path}"
+                )
+                return
+            size = local_path.stat().st_size
+            url = await async_upload_file_to_manifold(bucket, mf_key, local_path)
+            self._logger.info(f"ixia cache: Tier 2 warmed — {size} bytes -> {url}")
+        except Exception as e:
+            self._logger.error(
+                f"ixia cache: Tier 2 warm-up FAILED ({type(e).__name__}: {e!r}). "
+                "Next run pays cold cost again."
+            )
+        finally:
+            local_path.unlink(missing_ok=True)

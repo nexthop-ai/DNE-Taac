@@ -289,6 +289,11 @@ def _build_test_config(
         ixia_config_cache=IxiaConfigCache(
             enabled=True,
             chassis_local_dir="/root/.local/share/Ixia/sdmStreamManager/common/taac_ixia_configs",
+            # Tier 2 Manifold bucket — durable cross-testbed cache. Provisioned
+            # via AMP D107702717 (read) + D107702995 (write) with ACL for
+            # oncall_dne_pit, oncall_routing_protocol, and sandcastle tag
+            # `dne_regression_netcastle`.
+            manifold_bucket="taac_ixia_topology_cache",
         ),
         # Deprecated - define at playbook level
         # prechecks=[],

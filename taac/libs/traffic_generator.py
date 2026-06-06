@@ -285,9 +285,20 @@ class TrafficGenerator:
                     cache_hit = cache_mgr.try_load_from_chassis(cache_key)
                     if cache_hit:
                         self.logger.info(
-                            "\033[32m\033[1m[IXIA]\033[0m cache HIT — "
+                            "\033[32m\033[1m[IXIA]\033[0m Tier 1 HIT — "
                             "skipping create_basic_setup (~226s+ saved)"
                         )
+                    elif self.ixia_config_cache.manifold_bucket:
+                        # Tier 2 — durable cross-testbed Manifold cache. Sidesteps
+                        # the Tier 1 chassis persistence problem because the
+                        # ixncfg is always downloaded fresh from Manifold and
+                        # staged to chassis just-in-time for LoadConfig.
+                        cache_hit = await cache_mgr.try_load_from_manifold(cache_key)
+                        if cache_hit:
+                            self.logger.info(
+                                "\033[32m\033[1m[IXIA]\033[0m Tier 2 HIT — "
+                                "skipping create_basic_setup (~226s+ saved)"
+                            )
                 except Exception as cache_exc:
                     self.logger.error(
                         f"\033[33m[IXIA]\033[0m cache lookup raised "
@@ -304,16 +315,29 @@ class TrafficGenerator:
                 )
                 self.ixia.create_basic_setup()
                 self.logger.info("\033[32m\033[1m[IXIA]\033[0m IXIA setup complete")
-                # Warm cache for next run — also defensive in case save raises.
+                # Warm BOTH cache tiers for next run. Both are best-effort:
+                # any failure is logged and swallowed so the test stays green.
                 if cache_mgr is not None and cache_key is not None:
                     try:
                         cache_mgr.save_to_chassis(cache_key)
                     except Exception as save_exc:
                         self.logger.error(
-                            f"\033[33m[IXIA]\033[0m cache warm-up raised "
+                            f"\033[33m[IXIA]\033[0m Tier 1 warm-up raised "
                             f"unexpectedly ({type(save_exc).__name__}: "
                             f"{save_exc!r}). Next run will pay cold cost again."
                         )
+                    if (
+                        self.ixia_config_cache
+                        and self.ixia_config_cache.manifold_bucket
+                    ):
+                        try:
+                            await cache_mgr.save_to_manifold(cache_key)
+                        except Exception as save_exc:
+                            self.logger.error(
+                                f"\033[33m[IXIA]\033[0m Tier 2 warm-up raised "
+                                f"unexpectedly ({type(save_exc).__name__}: "
+                                f"{save_exc!r}). Next run will pay cold cost again."
+                            )
 
         except Exception as ex:
             raise IxiaTestSetupError(
