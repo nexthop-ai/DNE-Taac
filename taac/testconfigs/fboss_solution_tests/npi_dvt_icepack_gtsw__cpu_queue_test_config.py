@@ -90,12 +90,18 @@ NPI_DVT_ICEPACK_GTSW__CPU_QUEUE_TEST_CONFIG = create_dctypef_npi_cpu_queue_test_
     ixia_downlink_prefix_count_v4=500,
     ixia_uplink_prefix_count_v4=500,
     ixia_rogue_prefix_count_v4=500,
-    # `65446:30` is the `LIVE` community required by `PROPAGATE_GTSW_STSW_IN`.
-    # Both uplink and downlink IXIA-mimic peers attach to PEERGROUP_GTSW_STSW_V6
-    # (downlink is bound to the same real peer-group for v6), so both must tag
-    # advertised routes with LIVE or the ingress filter rejects them.
-    ixia_downlink_communities=["65446:30"],
-    ixia_uplink_communities=["65446:30"],
+    # `PROPAGATE_GTSW_STSW_IN` is a path-vector BGP-compiler policy that DENYs
+    # by default. Routes need three communities to be accepted + installed in
+    # FIB (otherwise `BGP_PREFIX_TRAFFIC` sees 100% loss):
+    #   - `65446:30`  LIVE — sets LP=100, marks alive (rule 1)
+    #   - `65441:323` PATH_COMMUNITY_GTSW_E_HOP3 — required (rule 4 DENY if missing)
+    #   - `65456:323` LP=90 marker — one of `654[51-63]:323` is required (rule 17 DENY if none match)
+    # 65456:323 specifically matches what real STSW peers carry (their accepted
+    # routes show LP=90 in `fboss2 show bgp table`).
+    # Both uplink and downlink IXIA-mimic peers attach to PEERGROUP_GTSW_STSW_V6,
+    # so both must carry the same community set.
+    ixia_downlink_communities=["65446:30", "65441:323", "65456:323"],
+    ixia_uplink_communities=["65446:30", "65441:323", "65456:323"],
     downlink_peer_tag="HOST",
     uplink_peer_tag="STSW",
     bgpd_restart_no_of_interations=5,
