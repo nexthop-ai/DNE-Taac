@@ -41,16 +41,21 @@ from pathlib import Path
 
 from ixia.ixia import types as ixia_types
 from ixnetwork_restpy.files import Files
-from taac.internal.utils.manifold_utils import (
-    async_download_file_from_manifold,
-    async_upload_file_to_manifold,
-)
 from taac.ixia.taac_ixia import TaacIxia
+from taac.utils.oss_taac_constants import TAAC_OSS
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
     none_throws,
 )
 from taac.test_as_a_config import types as taac_types
+
+# NOTE: `manifold_utils` is imported lazily inside `try_load_from_manifold` /
+# `save_to_manifold` to keep this OSS-safe `libs/` module free of any
+# top-level `internal/` dependency. Per `taac_oss_privacy_rules`, OSS-safe
+# files MUST NOT import from `internal/` at module level — otherwise the
+# OSS build's Buck dep resolution fails even when callers never invoke the
+# Manifold tier. See the lazy-import pattern in `test_setup_orchestrator.py`
+# and the `if TAAC_OSS: return` guards in both Tier 2 methods below.
 
 
 # Chars allowed in sanitized key fragments. Dots are NOT allowed — they get
@@ -201,11 +206,20 @@ class IxiaConfigCacheManager:
 
         Returns True on full success (config loaded + protocols verified),
         False on miss/failure (caller falls through to Tier 3 cold setup).
-        Best-effort: never raises.
+        Best-effort: never raises. In OSS mode Manifold is unavailable;
+        callers fall through to cold setup.
         """
+        if TAAC_OSS:
+            return False
         bucket = self._cfg.manifold_bucket
         if not bucket:
             return False
+        # Lazy import — keeps the OSS build free of an `internal/` Buck dep
+        # at module-load time. See top-of-file note.
+        from taac.internal.utils.manifold_utils import (
+            async_download_file_from_manifold,
+        )
+
         mf_key = self.manifold_key(key)
         self._logger.info(f"ixia cache: Tier 2 lookup — Manifold {bucket}/{mf_key}")
         t0 = time.monotonic()
@@ -260,11 +274,19 @@ class IxiaConfigCacheManager:
         """Tier 2 warm: SaveConfig server-side → DownloadFile → upload to Manifold.
 
         Best-effort: any failure is logged and swallowed so cache warm-up never
-        breaks a passing test. The next cold run will re-attempt.
+        breaks a passing test. The next cold run will re-attempt. No-op in OSS.
         """
+        if TAAC_OSS:
+            return
         bucket = self._cfg.manifold_bucket
         if not bucket:
             return
+        # Lazy import — keeps the OSS build free of an `internal/` Buck dep
+        # at module-load time. See top-of-file note.
+        from taac.internal.utils.manifold_utils import (
+            async_upload_file_to_manifold,
+        )
+
         mf_key = self.manifold_key(key)
         self._logger.info(f"ixia cache: warming Tier 2 — Manifold {bucket}/{mf_key}")
         with tempfile.NamedTemporaryFile(suffix=".ixncfg", delete=False) as f:
