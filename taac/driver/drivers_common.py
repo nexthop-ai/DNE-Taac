@@ -313,6 +313,7 @@ def is_dne_test_device(func: Callable) -> Callable:
         #   - stsw001.s00[1-8].l202.mwg2    (MWG2 nano-FPF spine layer)
         PREPROD_HOSTNAME_SUBSTRINGS = (
             "c087.mwg2",  # MWG2 nano-FPF lab cluster (preprod)
+            "c085.ash6",  # ASH6 IcePack NPI lab cluster (preprod) — gtsw001/stsw001 in c085
             ".qzk1",  # BBE-IP RBB lab devices in QZK1 (SNC)
             ".qzd1",  # BBE-IP RBB lab devices in QZD1 (SNC)
         )
