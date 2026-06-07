@@ -199,6 +199,13 @@ def gen_snake_test_config(
             common_postchecks=common_hcs,
             manual_test_interfaces=manual_test_interfaces,
         ),
+        # Opt out of the two-tier IXIA topology cache (default-on per D107780401).
+        # Snake tests do single-DUT loopback bring-up that exercises
+        # `create_basic_setup` itself (per-loop SnakeConfig + PTP unicast
+        # endpoints) — caching the post-setup ixncfg would obscure regressions
+        # in that very code path. Every snake run pays the cold cost on
+        # purpose so any drift in topology assembly surfaces immediately.
+        ixia_config_cache=taac_types.IxiaConfigCache(enabled=False),
     )
 
 
