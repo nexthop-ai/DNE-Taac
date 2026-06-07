@@ -70,13 +70,10 @@ class AristaCreateFileFromConfigTest(unittest.IsolatedAsyncioTestCase):
 
         return driver
 
-    def test_default_chunk_size_is_120k(self) -> None:
-        # Documents the chosen size: stays under MAX_ARG_STRLEN (131072).
-        self.assertEqual(120000, AristaCreateFileFromConfig.DEFAULT_CHUNK_SIZE)
+    def test_default_chunk_size_is_30k(self) -> None:
+        self.assertEqual(30000, AristaCreateFileFromConfig.DEFAULT_CHUNK_SIZE)
 
-    async def test_uses_large_default_chunk_size(self) -> None:
-        # ~250KB content -> ~333KB base64 -> 3 chunks at the 120K default,
-        # vs 12 chunks at the old 30K default. Proves the default is applied.
+    async def test_uses_default_chunk_size(self) -> None:
         content = "x" * 250000
         encoded_len = len(base64.b64encode(content.encode("utf-8")).decode("utf-8"))
         expected_chunks = math.ceil(
@@ -89,7 +86,7 @@ class AristaCreateFileFromConfigTest(unittest.IsolatedAsyncioTestCase):
             driver.async_execute_show_or_configure_cmd_on_shell.call_args_list
         )
         self.assertEqual(expected_chunks, actual_chunks)
-        self.assertEqual(3, expected_chunks)
+        self.assertEqual(12, expected_chunks)
 
     async def test_custom_chunk_size_override(self) -> None:
         # An explicit chunk_size param overrides the default.
