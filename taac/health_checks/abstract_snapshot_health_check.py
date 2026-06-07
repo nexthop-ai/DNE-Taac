@@ -127,7 +127,7 @@ class AbstractSnapshotHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                 obj, input, check_params, pre_snapshot, post_snapshot
             )
             check_result = check_result(
-                message=await async_get_everpaste_fburl_if_needed(check_result.message),
+                message=await self._safe_shorten(check_result.message),
                 name=self.__class__.CHECK_NAME,
             )
             return check_result
@@ -136,6 +136,29 @@ class AbstractSnapshotHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                 f"Error occured while comparing pre and post snapshots for {self.__class__.CHECK_NAME}: {e}"
             )
             raise e
+
+    async def _safe_shorten(self, msg: t.Optional[str]) -> t.Optional[str]:
+        """Shorten ``msg`` via everpaste/fburl, falling back to the raw message.
+
+        If everpaste/fburl shortening fails (network error, service
+        degradation, ``fburl`` tier throttling), return the raw message and log
+        a WARNING. A cosmetic URL-shortening failure must never convert a
+        passing snapshot check into an ERROR. Critically, this also prevents a
+        shortening failure from propagating out of ``_compare_snapshots`` where
+        the ``@async_retryable(retries=3)`` decorator would amplify a single
+        ``fburl`` throttle into multiple hits against the already-throttled tier.
+        """
+        if not msg:
+            return msg
+        try:
+            return await async_get_everpaste_fburl_if_needed(msg)
+        except Exception as e:
+            self.logger.warning(
+                f"[{self.__class__.__name__}] everpaste shortening failed; "
+                f"using raw message ({len(msg)} chars). Underlying: "
+                f"{type(e).__name__}: {e}"
+            )
+            return msg
 
     async def compare_snapshots(
         self,

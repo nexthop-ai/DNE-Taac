@@ -31,12 +31,20 @@ TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 
 def get_fburl(url: str) -> str:
-    """Get a shortened FB URL. In OSS mode, returns the original URL."""
-    if not TAAC_OSS:
-        from libfb.py.fburl import get_fburl as _get_fburl
+    """Get a shortened FB URL. In OSS mode, returns the original URL.
 
-        return _get_fburl(url)
-    return url
+    On any fburl service failure (notably ``fburl`` tier throttling), this
+    falls back to returning the original ``url`` instead of raising. A cosmetic
+    URL-shortening failure must never fail a test, so we route through libfb's
+    ``get_fburl_with_fallback`` which catches ``FBUrlError``/``TooLongException``
+    (and unexpected exceptions), logs a warning, and returns the original URL.
+    """
+    if TAAC_OSS:
+        return url
+
+    from libfb.py.fburl import get_fburl_with_fallback as _get_fburl_with_fallback
+
+    return _get_fburl_with_fallback(url)
 
 
 async def async_get_fburl(url: str) -> str:
