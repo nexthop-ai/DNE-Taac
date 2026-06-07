@@ -30,6 +30,20 @@ if not TAAC_OSS:
     from taac.internal.test_bed_chunker import TestBedChunker
 
 
+# IIE-2 260605 two-tier IXIA topology cache: default-on for every TestConfig
+# that does not opt out via an explicit `ixia_config_cache=IxiaConfigCache(...)`
+# override (e.g. `enabled=False`). bag011 BGP_RESTART + bag013 EBB full scale
+# both measured ~4x setup time reduction on warm runs (15m cold → 4m warm).
+# Tier 1 path is the IxNetwork API server's documented persistent storage dir
+# (survives session teardown — confirmed on bag011/012/013 chassis). Tier 2 is
+# omitted in OSS builds because the Manifold helper is internal-only.
+_DEFAULT_IXIA_CONFIG_CACHE: taac_types.IxiaConfigCache = taac_types.IxiaConfigCache(
+    enabled=True,
+    chassis_local_dir="/root/.local/share/Ixia/sdmStreamManager/common/taac_ixia_configs",
+    manifold_bucket=None if TAAC_OSS else "taac_ixia_topology_cache",
+)
+
+
 class TestSetupOrchestrator:
     def __init__(
         self,
@@ -379,8 +393,18 @@ class TestSetupOrchestrator:
         )
         _log(f"\033[36m[IXIA]\033[0m {session_info} | {chassis_info}")
 
-        # Optional opt-in topology cache (see IxiaConfigCache Thrift docstring)
-        ixia_config_cache = getattr(self.test_config, "ixia_config_cache", None)
+        # IIE-2 260605: two-tier IXIA topology cache. Default-on for every
+        # TestConfig that has no explicit `ixia_config_cache` (see
+        # `_DEFAULT_IXIA_CONFIG_CACHE` above). TestConfigs that intentionally
+        # need cold setup (snake tests, anything probing `create_basic_setup`
+        # itself) must opt out by setting `ixia_config_cache=IxiaConfigCache(
+        # enabled=False)`. Cache misses fall through to cold setup; cache
+        # exceptions are swallowed in `TrafficGenerator.async_create_ixia_setup`
+        # so a broken cache never reds a green test.
+        ixia_config_cache = (
+            getattr(self.test_config, "ixia_config_cache", None)
+            or _DEFAULT_IXIA_CONFIG_CACHE
+        )
         self.traffic_generator = TrafficGenerator(
             endpoints,
             basset_pool=self.test_config.basset_pool,
