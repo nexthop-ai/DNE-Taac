@@ -7,7 +7,7 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.json_thrift_utils import (
     try_json_loads,
     try_json_to_thrift,
@@ -86,8 +86,9 @@ class PortStateHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]
                         )
 
         if failure_reasons:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str("\n".join(failure_reasons))
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=f"Found {len(failure_reasons)} interface operational state mismatch(es) on {obj.name}: "
@@ -97,7 +98,7 @@ class PortStateHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]
                     if len(failure_reasons) > 5
                     else ""
                 )
-                + f". Full details: {everpaste_fburl}",
+                + f". Full details: {everpaste_url}",
             )
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.PASS,

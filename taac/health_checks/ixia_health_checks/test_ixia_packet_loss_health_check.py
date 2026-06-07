@@ -178,17 +178,11 @@ class TestIxiaPacketLossRun(unittest.IsolatedAsyncioTestCase):
 
     @patch(
         "neteng.test_infra.dne.taac.health_checks.ixia_health_checks"
-        ".ixia_packet_loss_health_check.async_get_fburl",
-        new_callable=AsyncMock,
-        return_value="https://fburl.com/test",
-    )
-    @patch(
-        "neteng.test_infra.dne.taac.health_checks.ixia_health_checks"
         ".ixia_packet_loss_health_check.async_everpaste_str",
         new_callable=AsyncMock,
         return_value="https://everpaste.test",
     )
-    async def test_all_pass_returns_pass(self, mock_everpaste, mock_fburl):
+    async def test_all_pass_returns_pass(self, mock_everpaste):
         """_run should return PASS when all traffic items are within threshold."""
         self.mock_ixia.has_traffic_items.return_value = True
         self.mock_ixia.traffic_items_start_time = 0

@@ -5,7 +5,7 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.health_check_utils import get_fb303_client
 from taac.health_check.health_check import types as hc_types
 
@@ -48,11 +48,12 @@ class DsfTrafficRebalanceHealthCheck(
         deviation = (max_out_mbps - min_out_mbps) * 100 / (max_out_mbps + min_out_mbps)
 
         if deviation > input.deviation_threshold_pct:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str(str(out_mbps_counters))
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
-                message=f"Traffic is unevenly distributed on {obj.name}. Observed deviation is {deviation} which is greater than {input.deviation_threshold_pct}: {everpaste_fburl}",
+                message=f"Traffic is unevenly distributed on {obj.name}. Observed deviation is {deviation} which is greater than {input.deviation_threshold_pct}: {everpaste_url}",
             )
 
         return hc_types.HealthCheckResult(

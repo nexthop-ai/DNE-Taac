@@ -6,7 +6,7 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.health_check_utils import get_fb303_client
 from taac.health_check.health_check import types as hc_types
 
@@ -213,14 +213,15 @@ class PfcWdHealthCheck(AbstractDeviceHealthCheck[hc_types.PfcWdHealthCheckIn]):
         recovery: int,
         failure_message: str,
     ) -> hc_types.HealthCheckResult:
+        # Use the Everpaste URL directly; it is already a clickable internalfb.com
+        # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
         everpaste_url = await async_everpaste_str(
             f"Deadlock: {deadlock}, Recovery: {recovery}"
         )
-        everpaste_fburl = await async_get_fburl(everpaste_url)
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.FAIL,
             message=f"{failure_message} on {device} {interface}. "
-            f"Observed Deadlock: {deadlock}, Recovery: {recovery}. Failure report: {everpaste_fburl}",
+            f"Observed Deadlock: {deadlock}, Recovery: {recovery}. Failure report: {everpaste_url}",
         )
 
     async def skip_check(self, obj: TestDevice) -> t.Tuple[bool, str | None]:

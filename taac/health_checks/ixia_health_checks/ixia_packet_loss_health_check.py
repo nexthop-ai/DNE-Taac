@@ -10,7 +10,7 @@ from taac.health_checks.abstract_health_check import (
 )
 from taac.health_checks.common_utils import evaluate_comparison
 from neteng.test_infra.dne.taac.ixia.taac_ixia import TaacIxia as Ixia
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.json_thrift_utils import try_thrift_to_dict
 from taac.health_check.health_check import types as hc_types
 from tabulate import tabulate
@@ -74,10 +74,11 @@ class IxiaPacketLossHealthCheck(
             )
         violations_dict = [try_thrift_to_dict(violation) for violation in violations]
         if violations:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str(
                 tabulate(violations_dict, headers="keys", tablefmt="simple_grid")
             )
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             inline_summary = [
                 f"{v.get('name', 'unknown')}: observed={v.get('str_value', '?')}"
                 for v in violations_dict[:5]
@@ -90,7 +91,7 @@ class IxiaPacketLossHealthCheck(
             result = hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=f"Packet loss violated the defined threshold(s): "
-                f"{inline_summary}{suffix}. Full details: {everpaste_fburl}",
+                f"{inline_summary}{suffix}. Full details: {everpaste_url}",
             )
         else:
             result = hc_types.HealthCheckResult(status=hc_types.HealthCheckStatus.PASS)

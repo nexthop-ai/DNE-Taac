@@ -7,7 +7,7 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.json_thrift_utils import (
     try_json_loads,
     try_json_to_thrift,
@@ -121,8 +121,9 @@ class LldpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]):
                     f"Interface {interface.interface_name} is expected to be UP, but no LLDP entry was found."
                 )
         if failure_reasons:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str("\n".join(failure_reasons))
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             inline_summary = failure_reasons[:5]
             suffix = (
                 f" (+{len(failure_reasons) - 5} more)"
@@ -131,5 +132,5 @@ class LldpHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]):
             )
             raise Exception(
                 f"LLDP validation failed with {len(failure_reasons)} issue(s): "
-                f"{inline_summary}{suffix}. Full details: {everpaste_fburl}"
+                f"{inline_summary}{suffix}. Full details: {everpaste_url}"
             )

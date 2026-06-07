@@ -137,7 +137,6 @@ class TestLldpHealthCheckHelpers(unittest.TestCase):
 
 
 EVERPASTE_PATCH = "neteng.test_infra.dne.taac.health_checks.device_health_checks.lldp_health_check.async_everpaste_str"
-FBURL_PATCH = "neteng.test_infra.dne.taac.health_checks.device_health_checks.lldp_health_check.async_get_fburl"
 
 
 class TestLldpHealthCheckRun(unittest.IsolatedAsyncioTestCase):
@@ -172,11 +171,10 @@ class TestLldpHealthCheckRun(unittest.IsolatedAsyncioTestCase):
         result = await self.health_check._run(self.device, self.input, {})
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_missing_lldp_neighbor(self, mock_everpaste, mock_fburl):
+    async def test_run_missing_lldp_neighbor(self, mock_everpaste):
         self.health_check.driver.async_get_lldp_neighbors.return_value = {
             "Ethernet3/1/1": SwitchLldpData(
                 remote_device_name="bag001.ash6",
@@ -189,11 +187,10 @@ class TestLldpHealthCheckRun(unittest.IsolatedAsyncioTestCase):
         self.assertIn("expected to be UP", str(ctx.exception))
         self.assertIn("Ethernet3/9/1", str(ctx.exception))
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_wrong_lldp_neighbor(self, mock_everpaste, mock_fburl):
+    async def test_run_wrong_lldp_neighbor(self, mock_everpaste):
         self.health_check.driver.async_get_lldp_neighbors.return_value = {
             "Ethernet3/1/1": SwitchLldpData(
                 remote_device_name="bag001.ash6",
@@ -210,11 +207,10 @@ class TestLldpHealthCheckRun(unittest.IsolatedAsyncioTestCase):
         self.assertIn("expects LLDP neighbor", str(ctx.exception))
         self.assertIn("eth1/2/1", str(ctx.exception))
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_disabled_interface_has_lldp(self, mock_everpaste, mock_fburl):
+    async def test_run_disabled_interface_has_lldp(self, mock_everpaste):
         disabled_intf = taac_types.TestInterface(
             interface_name="Ethernet3/1/1",
             switch_name="bag001.qza1",
@@ -257,11 +253,10 @@ class TestLldpHealthCheckRun(unittest.IsolatedAsyncioTestCase):
         result = await self.health_check._run(self.device, self.input, check_params)
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_multiple_failures_truncated(self, mock_everpaste, mock_fburl):
+    async def test_run_multiple_failures_truncated(self, mock_everpaste):
         interfaces = [
             _make_test_interface(
                 f"Ethernet3/{i}/1", "bag001.qza1", "bag001.ash6", f"Ethernet5/{i}/1"
@@ -310,11 +305,10 @@ class TestLldpHealthCheckRunArista(unittest.IsolatedAsyncioTestCase):
         result = await self.health_check._run_arista(self.device, self.input, {})
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_arista_missing_neighbor(self, mock_everpaste, mock_fburl):
+    async def test_run_arista_missing_neighbor(self, mock_everpaste):
         self.health_check.driver.async_get_lldp_neighbors.return_value = {
             "Ethernet3/1/1": SwitchLldpData(
                 remote_device_name="bag001.ash6",
@@ -327,11 +321,10 @@ class TestLldpHealthCheckRunArista(unittest.IsolatedAsyncioTestCase):
         self.assertIn("expected to be UP", str(ctx.exception))
         self.assertIn("Ethernet3/9/1", str(ctx.exception))
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_arista_wrong_neighbor(self, mock_everpaste, mock_fburl):
+    async def test_run_arista_wrong_neighbor(self, mock_everpaste):
         self.health_check.driver.async_get_lldp_neighbors.return_value = {
             "Ethernet3/1/1": SwitchLldpData(
                 remote_device_name="wrong_device",
@@ -347,13 +340,10 @@ class TestLldpHealthCheckRunArista(unittest.IsolatedAsyncioTestCase):
             await self.health_check._run_arista(self.device, self.input, {})
         self.assertIn("expects LLDP neighbor", str(ctx.exception))
 
-    @patch(FBURL_PATCH, new_callable=AsyncMock, return_value="https://fburl.com/test")
     @patch(
         EVERPASTE_PATCH, new_callable=AsyncMock, return_value="https://everpaste/test"
     )
-    async def test_run_arista_disabled_interface_has_lldp(
-        self, mock_everpaste, mock_fburl
-    ):
+    async def test_run_arista_disabled_interface_has_lldp(self, mock_everpaste):
         disabled_intf = taac_types.TestInterface(
             interface_name="Ethernet3/1/1",
             switch_name="bag001.qza1",

@@ -5,7 +5,7 @@ from taac.health_checks.abstract_health_check import (
     AbstractIxiaHealthCheck,
 )
 from neteng.test_infra.dne.taac.ixia.taac_ixia import TaacIxia as Ixia
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.health_check.health_check import types as hc_types
 from tabulate import tabulate
 
@@ -36,10 +36,11 @@ class IxiaTrafficRateHealthCheck(
             )
 
         if less_than_thresholds:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str(
                 tabulate(less_than_thresholds, headers="keys", tablefmt="simple_grid")
             )
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             inline_summary = [
                 f"{t['identifier']}: Tx={t['Tx Rate (Gbps)']}Gbps, Rx={t['Rx Rate (Gbps)']}Gbps"
                 for t in less_than_thresholds[:5]
@@ -52,7 +53,7 @@ class IxiaTrafficRateHealthCheck(
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=f"Traffic rate lower than the defined threshold(s): "
-                f"{inline_summary}{suffix}. Full details: {everpaste_fburl}",
+                f"{inline_summary}{suffix}. Full details: {everpaste_url}",
             )
         return hc_types.HealthCheckResult(status=hc_types.HealthCheckStatus.PASS)
 

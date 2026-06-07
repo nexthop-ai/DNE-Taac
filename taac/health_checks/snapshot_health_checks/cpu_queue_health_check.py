@@ -8,7 +8,7 @@ from taac.health_checks.abstract_snapshot_health_check import (
     AbstractDeviceSnapshotHealthCheck,
 )
 from taac.health_checks.constants import Snapshot
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.health_check.health_check import types as hc_types
 
 
@@ -172,8 +172,9 @@ class CpuQueueHealthCheck(
                 failure_reasons.append(f"No packet discards detected on queue {queue}")
 
         if failure_reasons:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str("\n".join(failure_reasons))
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             inline_summary = failure_reasons[:5]
             suffix = (
                 f" (+{len(failure_reasons) - 5} more)"
@@ -183,7 +184,7 @@ class CpuQueueHealthCheck(
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=f"CPU queue check failed with {len(failure_reasons)} issue(s): "
-                f"{inline_summary}{suffix}. Full details: {everpaste_fburl}",
+                f"{inline_summary}{suffix}. Full details: {everpaste_url}",
             )
 
         return hc_types.HealthCheckResult(status=hc_types.HealthCheckStatus.PASS)

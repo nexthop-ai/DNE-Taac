@@ -5,7 +5,7 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.health_check.health_check import types as hc_types
 
 
@@ -82,14 +82,15 @@ class PortCountersHealthCheck(
         observed_value,
         threshold_value,
     ):
+        # Use the Everpaste URL directly; it is already a clickable internalfb.com
+        # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
         everpaste_url = await async_everpaste_str(
             f"{port_counters_type}: {observed_value}"
         )
-        everpaste_fburl = await async_get_fburl(everpaste_url)
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.FAIL,
             message=f"Traffic on {interface} for {port_counters_type} did not meet the threshold of {threshold_value}. "
-            f"Observed {port_counters_type}: {observed_value}. Failure report: {everpaste_fburl}",
+            f"Observed {port_counters_type}: {observed_value}. Failure report: {everpaste_url}",
         )
 
     async def _compare_port_counters(

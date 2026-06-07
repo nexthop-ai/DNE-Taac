@@ -11,7 +11,7 @@ from taac.ixia.taac_ixia import (
     StatViewAssistant,
     TaacIxia as Ixia,
 )
-from neteng.test_infra.dne.taac.utils.common import async_everpaste_str, async_get_fburl
+from taac.utils.common import async_everpaste_str
 from taac.utils.oss_taac_lib_utils import retryable
 from taac.health_check.health_check import types as hc_types
 from tabulate import tabulate
@@ -35,10 +35,11 @@ class IxiaPortStatsHealthCheck(AbstractIxiaHealthCheck[hc_types.BaseHealthCheckI
         exceeded_thresholds = self.verify_port_stats_threshold(latest_stats)
 
         if exceeded_thresholds:
+            # Use the Everpaste URL directly; it is already a clickable internalfb.com
+            # link, so the throttled fburl tier (createFBUrl) is unnecessary here.
             everpaste_url = await async_everpaste_str(
                 tabulate(exceeded_thresholds, headers="keys", tablefmt="simple_grid")
             )
-            everpaste_fburl = await async_get_fburl(everpaste_url)
             inline_summary = [
                 f"{t['identifier']}: CRC={t['CRC Errors']}, LocalFaults={t['Local Faults']}, RemoteFaults={t['Remote Faults']}"
                 for t in exceeded_thresholds[:5]
@@ -51,7 +52,7 @@ class IxiaPortStatsHealthCheck(AbstractIxiaHealthCheck[hc_types.BaseHealthCheckI
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=f"Packet loss exceeded the defined threshold(s): "
-                f"{inline_summary}{suffix}. Full details: {everpaste_fburl}",
+                f"{inline_summary}{suffix}. Full details: {everpaste_url}",
             )
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.PASS,
