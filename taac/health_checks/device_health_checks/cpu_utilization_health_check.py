@@ -354,9 +354,23 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 obj.name, services, start_time, end_time
             )
         except Exception as e:
+            # ODS counter-side throttling is a transient infra issue, not a
+            # DUT-side problem. Treat as SKIP so the playbook doesn't
+            # false-fail (the next playbook retries naturally after backoff).
+            # See sibling fix in MemoryUtilizationHealthCheck.
+            err_msg = str(e)
+            if "throttling your requests" in err_msg.lower():
+                return hc_types.HealthCheckResult(
+                    status=hc_types.HealthCheckStatus.SKIP,
+                    message=(
+                        f"ODS counter throttled — skipping this iteration of "
+                        f"CpuUtilizationHealthCheck (will retry on next "
+                        f"playbook). Underlying error: {err_msg}"
+                    ),
+                )
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
-                message=str(e),
+                message=err_msg,
             )
         if not cpu_util_data:
             return hc_types.HealthCheckResult(

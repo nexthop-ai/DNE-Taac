@@ -380,9 +380,27 @@ class MemoryUtilizationHealthCheck(
                 obj.name, services, start_time, end_time
             )
         except Exception as e:
+            # ODS counter-side throttling is a transient infra issue, not a
+            # DUT-side problem. When the ODS API responds "The counter is
+            # actively throttling your requests" it means we've hit the
+            # per-counter rate limiter — typically after running a
+            # TestConfig with many playbooks that each query the same
+            # set of process-memory counters. Treat as SKIP so the
+            # individual playbook doesn't false-fail; the next playbook
+            # will retry naturally after backoff clears.
+            err_msg = str(e)
+            if "throttling your requests" in err_msg.lower():
+                return hc_types.HealthCheckResult(
+                    status=hc_types.HealthCheckStatus.SKIP,
+                    message=(
+                        f"ODS counter throttled — skipping this iteration of "
+                        f"MemoryUtilizationHealthCheck (will retry on next "
+                        f"playbook). Underlying error: {err_msg}"
+                    ),
+                )
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
-                message=str(e),
+                message=err_msg,
             )
         if not mem_util_data:
             return hc_types.HealthCheckResult(
