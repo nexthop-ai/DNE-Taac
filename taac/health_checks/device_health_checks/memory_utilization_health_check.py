@@ -158,10 +158,10 @@ class MemoryUtilizationHealthCheck(
                 start_time=int(start_time),
                 end_time=int(end_time),
             )
-            # Shorten the URL using fburl
-            ods_url = await async_get_fburl(ods_query_url)
-            msg = f"ODS query returned no data: {ods_url}"
-            self.logger.debug(msg)
+            # No fburl here: this URL only ever reaches a debug log before we
+            # return {}, so shortening it through the throttled fburl tier is
+            # pure waste.
+            self.logger.debug(f"ODS query returned no data: {ods_query_url}")
             return {}
 
         # Convert nested mappings to dicts to satisfy type checker
@@ -411,12 +411,15 @@ class MemoryUtilizationHealthCheck(
             start_time=int(start_time),
             end_time=int(end_time),
         )
-        ods_url = await async_get_fburl(ods_query_url)
 
-        # Display service data table with ODS URL
+        # Display service data table with the raw ODS URL. This pass-path table
+        # is a debug-info convenience, so we do NOT shorten through the throttled
+        # fburl tier here (it previously fired on every device on every run
+        # regardless of pass/fail). The FAIL path shortens its own
+        # failing-services-only link in _generate_failure_result.
         if service_data_list:
             table_output = self._format_memory_utilization_table(
-                service_data_list, ods_url
+                service_data_list, ods_query_url
             )
             self.logger.info(f"\n{table_output}")
 

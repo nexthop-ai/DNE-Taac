@@ -135,10 +135,10 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 start_time=int(start_time),
                 end_time=int(end_time),
             )
-            # Shorten the URL using fburl
-            ods_url = await async_get_fburl(ods_query_url)
-            msg = f"ODS query returned no data: {ods_url}"
-            self.logger.debug(msg)
+            # No fburl here: this URL only ever reaches a debug log before we
+            # return {}, so shortening it through the throttled fburl tier is
+            # pure waste.
+            self.logger.debug(f"ODS query returned no data: {ods_query_url}")
             return {}
 
         # Convert nested mappings to dicts to satisfy type checker

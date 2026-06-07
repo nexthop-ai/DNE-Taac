@@ -302,7 +302,7 @@ class UcmpTrafficDistributionHealthCheck(
 
         return actual_dist
 
-    async def _run(
+    async def _run(  # noqa: C901
         self,
         obj: TestDevice,
         input: hc_types.BaseHealthCheckIn,
@@ -537,25 +537,6 @@ class UcmpTrafficDistributionHealthCheck(
         # Step 5: Calculate actual distribution and compare
         actual_dist = self._calculate_actual_distribution(traffic_data)
 
-        # Generate ODS links for all interfaces
-        ods_links = []
-        for nh in nexthops:
-            physical_interface = nh["physical_interface"]
-            # Generate ODS query URL for this interface
-            # Use the same format as async_query_fbnet_interface_metric
-            entity_desc = f"{obj.name}:{physical_interface}.FBNet"
-            key_desc = "FBNet:interface.output_bps"
-            ods_query_url = await async_generate_ods_url(
-                entity_desc=entity_desc,
-                key_desc=key_desc,
-                start_time=start_time,
-                end_time=end_time,
-            )
-            ods_url = await async_get_fburl(ods_query_url)
-            ods_links.append(f"{vlan_to_physical[nh['interface']]}: {ods_url}")
-
-        ods_links_text = "\n".join(ods_links)
-
         # Verify distribution is within tolerance
         violations = []
         for interface in expected_dist:
@@ -572,6 +553,32 @@ class UcmpTrafficDistributionHealthCheck(
                         "deviation": deviation,
                     }
                 )
+
+        # Build ODS links for all interfaces. Only shorten through the globally
+        # throttled fburl tier on failure (where the shortest link aids triage);
+        # on the passing path keep the raw ODS URL (still clickable) so a healthy
+        # UCMP check — re-run per oscillation iteration across a wide nexthop
+        # fanout (8-64 nexthops) — makes zero fburl calls.
+        ods_links = []
+        for nh in nexthops:
+            physical_interface = nh["physical_interface"]
+            # Use the same format as async_query_fbnet_interface_metric
+            entity_desc = f"{obj.name}:{physical_interface}.FBNet"
+            key_desc = "FBNet:interface.output_bps"
+            ods_query_url = await async_generate_ods_url(
+                entity_desc=entity_desc,
+                key_desc=key_desc,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            if violations:
+                try:
+                    ods_query_url = await async_get_fburl(ods_query_url)
+                except Exception:
+                    pass
+            ods_links.append(f"{vlan_to_physical[nh['interface']]}: {ods_query_url}")
+
+        ods_links_text = "\n".join(ods_links)
 
         if violations:
             # Build detailed error message with physical interface names

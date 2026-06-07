@@ -82,10 +82,9 @@ class GenericOdsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
                 start_time=int(start_time),
                 end_time=int(end_time),
             )
-            try:
-                ods_query_url = await async_get_fburl(ods_query_url_raw)
-            except Exception:
-                ods_query_url = ods_query_url_raw
+            # A SKIP (no data) is not a failure and does not need a short link;
+            # keep the raw ODS URL inline and skip the throttled fburl tier.
+            ods_query_url = ods_query_url_raw
             msg = f"ODS query returned no data: {ods_query_url}"
             self.logger.debug(msg)
             return hc_types.HealthCheckResult(
@@ -153,11 +152,6 @@ class GenericOdsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
             start_time=int(start_time),
             end_time=int(end_time),
         )
-        try:
-            ods_url = await async_get_fburl(ods_url_raw)
-        except Exception:
-            ods_url = ods_url_raw
-
         self.logger.info(f"  [{counter_name}] Per-entity max values:")
         for entity, (max_val, max_ts) in sorted(entity_max_map.items()):
             threshold_status = (
@@ -168,7 +162,7 @@ class GenericOdsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
             self.logger.info(
                 f"    {entity}: max={max_val:.0f} at {max_ts} [{threshold_status}]"
             )
-        self.logger.info(f"  [{counter_name}] ODS: {ods_url}")
+        self.logger.info(f"  [{counter_name}] ODS: {ods_url_raw}")
 
         max_summary = ", ".join(
             f"{e}: {v:.0f}" for e, (v, _) in sorted(entity_max_map.items())
@@ -183,6 +177,14 @@ class GenericOdsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
             fail_summary = (
                 "; ".join(failed_entities) if failed_entities else max_summary
             )
+            # Only shorten through the throttled fburl tier on failure. This
+            # check is parameterized and reused many times per device per
+            # iteration, so shortening on the (dominant) passing path was
+            # avoidable fburl QPS.
+            try:
+                ods_url = await async_get_fburl(ods_url_raw)
+            except Exception:
+                ods_url = ods_url_raw
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.FAIL,
                 message=(
@@ -193,6 +195,6 @@ class GenericOdsHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.PASS,
             message=(
-                f"{counter_name} within threshold — {max_summary} | ODS: {ods_url}"
+                f"{counter_name} within threshold — {max_summary} | ODS: {ods_url_raw}"
             ),
         )
