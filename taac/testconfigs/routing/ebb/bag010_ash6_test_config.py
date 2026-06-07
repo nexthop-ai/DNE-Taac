@@ -54,6 +54,7 @@ from taac.playbooks.playbook_definitions import (
     create_bag010_ash6_bgp_instability_attribute_churn_playbook,
     create_bag010_ash6_bgp_instability_route_storm_playbook,
     create_bgp_fauu_drain_undrain_playbook,
+    create_bgp_igp_instability_pnh_metric_oscillation_playbook,
     create_bgp_longevity_playbook,
     create_bgp_multipath_group_oscillation_playbook,
     create_bgp_plane_drain_undrain_playbook,
@@ -433,6 +434,91 @@ def create_bag010_ash6_runtime_update_test_config(
 
 
 # =============================================================================
+# Stage-1 consolidated test config (for the dne_routing conveyor's staged layout)
+# =============================================================================
+def create_bag010_ash6_stage1_consolidated_test_config(
+    profile: BgpPlusPlusProfile = DEFAULT_PROFILE,
+    enable_update_group: bool = False,
+) -> TestConfig:
+    """
+    Stage-1 consolidated test config for bag010.ash6 — runs every non-longevity
+    bag010-side playbook (and the pnh_metric_oscillation playbook moved from
+    bag011 for cross-device balance) under ONE setup phase to cut per-testconfig
+    setup overhead. Longevity stays in its own dedicated config and runs in
+    Stage 2 after this one passes (longevity is the last thing on the conveyor).
+
+    Playbooks (5, in order):
+      1. bgp_instability_attribute_churn  (~2h)
+      2. bgp_instability_route_storm      (~2h 15m)
+      3. bgp_route_registry_prefix_list_runtime_update  (~17m)
+      4. bgp_multipath_group_oscillation  (~47m)
+      5. bgp_igp_instability_pnh_metric_oscillation  (~51m, moved from bag011)
+
+    Cross-device move rationale: bag010 and bag011 expose the same full-scale
+    EBGP+IBGP+BGP MON topology, so playbooks that only need full-scale topology
+    can run on either. Moving pnh_metric_oscillation from bag011 to bag010
+    balances Stage 1 wall-clock (bag010 5h 19m → 6h 10m; bag011 7h 33m → 6h 42m).
+
+    When ``enable_update_group`` is True, the BGP++ settings (including the
+    ``update_group_config`` struct, per D100093369) are dynamically toggled on
+    the device during BGP++ deployment (in-shell patch of
+    ``/mnt/flash/bgpcpp_config``) and the test config name is suffixed with
+    ``_UPDATE_GROUP``.
+    """
+    name = "BAG010_ASH6_BGP_STAGE1_CONVEYOR_TEST"
+    if enable_update_group:
+        name += "_UPDATE_GROUP"
+
+    expected_peer_identity = build_expected_peer_identity()
+    return _build_test_config(
+        name=name,
+        profile=profile,
+        enable_update_group=enable_update_group,
+        playbooks=[
+            create_bag010_ash6_bgp_instability_attribute_churn_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                total_session_count=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+            ),
+            create_bag010_ash6_bgp_instability_route_storm_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                total_session_count=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                ixia_interface_mimic_ibgp=IXIA_INTERFACE_MIMIC_IBGP,
+                profile=profile,
+            ),
+            create_bgp_route_registry_prefix_list_runtime_update_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+            ),
+            create_bgp_multipath_group_oscillation_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+            ),
+            create_bgp_igp_instability_pnh_metric_oscillation_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                local_link=OPENR_LOCAL_LINK,
+                other_link=OPENR_OTHER_LINK,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+        ],
+    )
+
+
+# =============================================================================
 # Test Config 3: Drain tests (FAUU drain/undrain + Plane drain/undrain)
 # =============================================================================
 def create_bag010_ash6_drain_test_config(
@@ -545,6 +631,14 @@ BAG010_ASH6_RUNTIME_UPDATE_CONVEYOR_TEST_UPDATE_GROUP_CONFIG = (
 BAG010_ASH6_DRAIN_CONVEYOR_TEST_CONFIG = create_bag010_ash6_drain_test_config()
 BAG010_ASH6_DRAIN_CONVEYOR_TEST_UPDATE_GROUP_CONFIG = (
     create_bag010_ash6_drain_test_config(
+        enable_update_group=True,
+    )
+)
+BAG010_ASH6_BGP_STAGE1_CONVEYOR_TEST_CONFIG = (
+    create_bag010_ash6_stage1_consolidated_test_config()
+)
+BAG010_ASH6_BGP_STAGE1_CONVEYOR_TEST_UPDATE_GROUP_CONFIG = (
+    create_bag010_ash6_stage1_consolidated_test_config(
         enable_update_group=True,
     )
 )

@@ -525,8 +525,130 @@ def create_bgp_stability_test_config(
     )
 
 
+# =============================================================================
+# Stage-1 consolidated test config (for the dne_routing conveyor's staged layout)
+# =============================================================================
+def create_bag011_ash6_stage1_consolidated_test_config(
+    profile: BgpPlusPlusProfile = DEFAULT_PROFILE,
+    enable_update_group: bool = False,
+) -> TestConfig:
+    """
+    Stage-1 consolidated test config for bag011.ash6 — runs every bag011-side
+    playbook under ONE setup phase, except
+    ``bgp_igp_instability_pnh_metric_oscillation`` which is moved to bag010 for
+    cross-device wall-clock balance (bag010 and bag011 share the same full-scale
+    topology, so the move is safe).
+
+    Playbooks (8, in order — restart first to preserve clean-device-state
+    precondition, then oscillations, then IGP-instability):
+      1. bgp_daemon_restart                       (~30m)
+      2. bgp_cold_start                           (~30m)
+      3. bgp_ebgp_session_oscillations            (~1h 14m)
+      4. bgp_ebgp_route_oscillations              (~1h)
+      5. bgp_ibgp_tornado_plane_oscillations      (~1h)
+      6. bgp_ibgp_route_oscillations              (~1h)
+      7. bgp_igp_instability_unresolvable_pnhs    (~40m)
+      8. nexthop_group_count_threshold            (~48m)
+
+    NOTE: ``bgp_igp_instability_pnh_metric_oscillation`` lives on bag010 in the
+    new layout — see ``bag010_ash6_test_config.create_bag010_ash6_stage1_consolidated_test_config``.
+
+    When ``enable_update_group`` is True, the BGP++ settings (including the
+    ``update_group_config`` struct, per D100093369) are dynamically toggled on
+    the device after common setup (via the ``set_bgp_setting_config`` task) and
+    the test config name is suffixed with ``_UPDATE_GROUP``.
+    """
+    name = "BAG011_ASH6_BGP_STAGE1_CONVEYOR_TEST"
+    if enable_update_group:
+        name += "_UPDATE_GROUP"
+
+    setup_tasks = _get_setup_tasks(profile)
+    expected_peer_identity = build_expected_peer_identity()
+    return _build_test_config(
+        name=name,
+        profile=profile,
+        enable_update_group=enable_update_group,
+        setup_tasks=setup_tasks,
+        playbooks=[
+            create_bgp_daemon_restart_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+            create_bgp_cold_start_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+            create_bgp_ebgp_session_oscillations_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                ipv4_session_count=EBGP_PEER_COUNT_V4,
+                ipv6_session_count=EBGP_PEER_COUNT_V6,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+            create_bgp_ebgp_route_oscillations_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+            ),
+            create_bgp_ibgp_tornado_plane_oscillations_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                ipv4_sessions_per_plane=IBGP_PEER_SCALE_PER_PLANE,
+                ipv6_sessions_per_plane=IBGP_PEER_SCALE_PER_PLANE,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+            create_bgp_ibgp_route_oscillations_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+            ),
+            create_bgp_igp_instability_unresolvable_pnhs_playbook(
+                device_name=DEVICE_NAME,
+                peergroup_ibgp_v6=PEERGROUP_IBGP_V6,
+                peergroup_ibgp_v4=PEERGROUP_IBGP_V4,
+                tcp_dump_capture_interface=interface_name_to_short_format(
+                    IXIA_INTERFACE_MIMIC_BGP_MON
+                ),
+                local_link=OPENR_LOCAL_LINK,
+                other_link=OPENR_OTHER_LINK,
+                expected_established_sessions=EXPECTED_ESTABLISHED_SESSION_COUNT,
+                profile=profile,
+                expected_peer_identity=expected_peer_identity,
+            ),
+            create_nexthop_group_count_threshold_playbook(
+                device_name=DEVICE_NAME,
+                nexthop_group_threshold=NEXTHOP_GROUP_THRESHOLD,
+            ),
+        ],
+    )
+
+
 # Export all test configs
 BAG011_ASH6_BGP_RESTART_CONVEYOR_TEST_CONFIG = create_bgp_restart_test_config()
+BAG011_ASH6_BGP_STAGE1_CONVEYOR_TEST_CONFIG = (
+    create_bag011_ash6_stage1_consolidated_test_config()
+)
+BAG011_ASH6_BGP_STAGE1_CONVEYOR_TEST_UPDATE_GROUP_CONFIG = (
+    create_bag011_ash6_stage1_consolidated_test_config(
+        enable_update_group=True,
+    )
+)
 BAG011_ASH6_BGP_RESTART_CONVEYOR_TEST_UPDATE_GROUP_CONFIG = (
     create_bgp_restart_test_config(
         enable_update_group=True,
