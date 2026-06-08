@@ -1738,8 +1738,23 @@ class TaacRunner:
                         and "POST_TEST" in str(result.check_stage)
                         for result in failed_results
                     )
+                    # Thread per-HC failure_detail into the exception so the
+                    # specific reason (e.g. "queue 9 7.11 pps below threshold
+                    # 10") flows through TestCaseFailure → AssertionError →
+                    # pyunit → Sandcastle/Conveyor instead of being collapsed
+                    # to "Please check the logs for more details". Without
+                    # this, every TAAC HC failure looks identical in the UI
+                    # and consumers have to dig into worker logs.
+                    hc_details = "\n".join(
+                        f"  - {result.check_name or '<unnamed>'} "
+                        f"({result.check_stage or '<unknown_stage>'}): "
+                        f"{result.message or '<no detail>'}"
+                        for result in failed_results
+                    )
                     raise TestCaseFailure(
-                        f"Health check failed for {test_case_name} on {test_device.name}. Please check the logs for more details",
+                        f"Health check failed for {test_case_name} on "
+                        f"{test_device.name} ({len(failed_results)} "
+                        f"failing check(s)):\n{hc_details}",
                         is_postcheck_failure=postcheck_only,
                     )
         except TestCaseFailure as e:
