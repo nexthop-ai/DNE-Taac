@@ -6,7 +6,7 @@ shipit_fbcode_builder = true
 
 [git]
 repo_url = https://github.com/facebook/fbthrift.git
-rev = 4f2b5d73c2812d9313e9362b8245fa0284c7c9c5
+rev = 439cb86d1c6938740ff9fc1882b1460c8029892e
 
 [cargo]
 cargo_config_file =  source/thrift/lib/rust/.cargo/config.toml
