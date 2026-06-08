@@ -5,9 +5,18 @@
 # docker/Dockerfile.taac to produce the final image.
 #
 # Usage:
-#   ./docker/build-taac-image.sh                    # default tag
-#   ./docker/build-taac-image.sh --tag my-taac:v1   # custom tag
-#   ./docker/build-taac-image.sh --no-cache         # skip Docker layer cache
+#   ./docker/build-taac-image.sh                       # default tag, default parallelism
+#   ./docker/build-taac-image.sh --tag my-taac:v1      # custom tag
+#   ./docker/build-taac-image.sh --no-cache            # skip Docker layer cache
+#   ./docker/build-taac-image.sh --num-jobs 4          # cap getdeps parallelism
+#
+# Parallelism note: the fbthrift / cc1plus compile phase is the main
+# memory hog (~5 GiB per worker). On memory-constrained hosts (<~6 GiB
+# per worker) the OOM killer will reap workers — and often sshd along
+# with them — long before disk or CPU saturates. Default leaves
+# getdeps' own default in place (= nproc); pass `--num-jobs N` to cap
+# when you've seen the OOM killer fire. Rule of thumb: N = min(nproc,
+# floor(RAM_GiB / 5)).
 #
 # Env overrides:
 #   FBOSS_IMAGE_SRC   Where to clone/find facebook/fboss for the base image
@@ -17,6 +26,7 @@ set -euo pipefail
 
 TAG="fboss-taac"
 NO_CACHE=0
+NUM_JOBS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag)
@@ -31,9 +41,21 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE=1
             shift
             ;;
+        --num-jobs)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --num-jobs requires a value" >&2
+                exit 1
+            fi
+            if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+                echo "Error: --num-jobs must be a positive integer, got: $2" >&2
+                exit 1
+            fi
+            NUM_JOBS="$2"
+            shift 2
+            ;;
         *)
             echo "Error: unknown argument: $1" >&2
-            echo "Usage: $0 [--tag <name>] [--no-cache]" >&2
+            echo "Usage: $0 [--tag <name>] [--no-cache] [--num-jobs <N>]" >&2
             exit 1
             ;;
     esac
@@ -66,6 +88,12 @@ fi
 DOCKER_BUILD_ARGS=()
 if [[ "$NO_CACHE" -eq 1 ]]; then
     DOCKER_BUILD_ARGS+=(--no-cache)
+fi
+# Empty NUM_JOBS arg lets Dockerfile.taac fall through to getdeps'
+# nproc default; only forward when the caller set --num-jobs N.
+if [[ -n "$NUM_JOBS" ]]; then
+    DOCKER_BUILD_ARGS+=(--build-arg "NUM_JOBS=$NUM_JOBS")
+    echo "Capping getdeps parallelism at $NUM_JOBS"
 fi
 
 echo "Building $TAG from docker/Dockerfile.taac ..."
