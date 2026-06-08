@@ -1237,6 +1237,16 @@ def create_npi_cpu_queue_test_config(
                 traffic_type=ixia_types.TrafficType.RAW,
                 bidirectional=False,
                 packet_headers=MTU_EXCEED_IPV6_TRAFFIC_PACKET_HEADERS,
+                # 1700 byte fixed frame size comfortably exceeds the DUT
+                # interface MTU of 1500 so the routed packet triggers an
+                # MTU-exceed exception and is punted to the LOW CPU queue
+                # (with the DUT emitting ICMPv6 "Packet Too Big" back).
+                # Default RAW frame size (~64B) is below MTU and the
+                # exception never fires — Run 4 (2026-06-06) confirmed.
+                frame_size_settings=ixia_types.FrameSize(
+                    type=ixia_types.FrameSizeType.FIXED,
+                    fixed_size=1700,
+                ),
             ),
             # CPU_046: martian SIP=switch's default gateway IPv4 address —
             # MUST NOT punt (negative test). Hardware silicon should drop the
