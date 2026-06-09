@@ -97,7 +97,15 @@ if [[ -n "$NUM_JOBS" ]]; then
 fi
 
 echo "Building $TAG from docker/Dockerfile.taac ..."
-docker build \
+# DOCKER_BUILDKIT=1 + --progress=plain: BuildKit clips each RUN step's
+# daemon-side scrollback to ~2 MiB, so cc1plus crashes or OOM kills can
+# scroll off before the step fails. --progress=plain streams the full
+# log to the client in real time, sidestepping the clip. Pinning the
+# env var also guards against a stale DOCKER_BUILDKIT=0 in the caller's
+# shell falling back to the legacy builder, whose single-threaded
+# image-commit phase on multi-GB layers can take an hour-plus.
+DOCKER_BUILDKIT=1 docker build \
+    --progress=plain \
     "${DOCKER_BUILD_ARGS[@]}" \
     -f "$REPO_ROOT/docker/Dockerfile.taac" \
     -t "$TAG" \
