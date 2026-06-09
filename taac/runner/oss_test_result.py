@@ -80,5 +80,7 @@ class OSSTestResult:
 
     def __str__(self) -> str:
         """String representation of the result."""
-        duration_str = f"{self.duration:.2f}s" if self.duration else "N/A"
+        duration_str = (
+            f"{self.duration:.2f}s" if self.duration is not None else "N/A"
+        )
         return f"[{self.status}] {self.test_config}/{self.playbook} on {self.dut} ({duration_str})"
