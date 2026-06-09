@@ -34,11 +34,6 @@ from typing import (
 )
 
 # =============================================================================
-# Third-party (PyPI / OSS-compatible)
-# =============================================================================
-import bunch
-
-# =============================================================================
 # FBOSS thrift types & clients (already OSS'd)
 # =============================================================================
 import neteng.fboss.bgp_thrift.types as fboss_bgp_thrift_types
@@ -2684,6 +2679,12 @@ class FbossSwitch(AbstractSwitch):
                 "OpenR KvStore sync validation requires Meta-internal OpenR infrastructure. "
                 "Not available in OSS mode."
             )
+        # Lazy-import: bunch is a Meta-internal-flavored dep used only
+        # here, behind the TAAC_OSS guard above. Keeping it out of the
+        # module scope means OSS imports of fboss_switch don't require
+        # the package to be installed.
+        import bunch
+
         # Set openr options to instantiate OpenrCtrlCmd
         self.logger.info(f"Validating the KV store sync for {area} for {nodes}")
         openr_options = bunch.Bunch()
