@@ -283,6 +283,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 skip_testbed_isolation=args.skip_testbed_isolation,
                 skip_setup_tasks=args.skip_setup_tasks,
                 skip_teardown_tasks=args.skip_teardown_tasks,
+                skip_post_setup_wait=args.skip_post_setup_wait,
             )
 
             # Create executor for this config
