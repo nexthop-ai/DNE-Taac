@@ -103,7 +103,14 @@ else:
             raise NotImplementedError(
                 "OpenRRouteManager requires Meta-internal taac.internal.utils.openr_route_utils."
             )
-from neteng.test_infra.dne.taac.steps.step import Step as StepBase
+if not TAAC_OSS:
+    from neteng.test_infra.dne.taac.steps.step import Step as StepBase
+else:
+    # OSS substitute - the locally-vendored taac.steps.step.Step has the
+    # same interface as the Meta-internal Step (same constructor signature,
+    # same self.logger / self.driver setup, same __init_subclass__ check).
+    # DummyStep, RunSSHCmdStep, etc. can subclass it directly.
+    from taac.steps.step import Step as StepBase
 from taac.tasks.utils import run_task
 from taac.utils.common import (
     async_write_test_result,
