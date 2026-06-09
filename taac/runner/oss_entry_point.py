@@ -42,7 +42,6 @@ from taac.runner.oss_exceptions import (
     OSSTestbedError,
 )
 from taac.runner.oss_return_code import OSSReturnCode
-from taac.runner.oss_test_executor import OSSTestExecutor
 from taac.runner.oss_test_result import OSSTestResult
 from taac.runner.oss_test_status import OSSTestStatus
 from taac.runner.result_formatter import OSSResultAggregator
@@ -145,54 +144,6 @@ def filter_playbooks(config, playbook_names: Optional[List[str]] = None):
     else:
         # Return all enabled playbooks
         return [pb for pb in playbooks if pb.enabled]
-
-
-# TODO: delete this free function. It's a placeholder — nothing calls
-# it in this PR (main() bails at the "Test execution is not implemented"
-# branch before reaching execution). The OSS test executor (landing in
-# a follow-up PR) replaces it with OSSTestExecutor.execute_playbook(),
-# and this free version becomes redundant. Remove together with the new
-# OSSTestExecutor wiring so the dead version never ships.
-async def execute_playbook(
-    taac_runner,
-    playbook,
-    dut: str,
-    test_config_name: str,
-    logger,
-) -> OSSTestResult:
-    """
-    Execute a single playbook against a single DUT.
-
-    Args:
-        taac_runner: TaacRunner instance
-        playbook: Playbook to execute
-        dut: Device under test
-        test_config_name: Name of the test configuration
-        logger: Logger instance
-
-    Returns:
-        Test result
-    """
-    result = OSSTestResult(
-        test_config=test_config_name,
-        playbook=playbook.name,
-        dut=dut,
-        status=OSSTestStatus.NOT_RUN,
-    )
-
-    logger.info(f"Executing playbook '{playbook.name}' on DUT '{dut}'")
-
-    # TODO: Implement actual playbook execution via TaacRunner
-    # This is a placeholder that will be replaced with actual implementation
-    try:
-        # await taac_runner.run_playbook(playbook, dut)
-        result.mark_complete(OSSTestStatus.PASSED, "Playbook executed successfully")
-    except Exception as e:
-        status = OSSTestExecutor.map_exception_to_status(e)
-        result.mark_complete(status, str(e))
-        result.exception = e
-
-    return result
 
 
 def main(argv: Optional[List[str]] = None) -> int:
