@@ -47,6 +47,7 @@ from taac.runner.oss_exceptions import (
     OSSTestbedError,
 )
 from taac.runner.oss_return_code import OSSReturnCode
+from taac.runner.oss_test_executor import OSSTestExecutor
 from taac.runner.oss_test_result import OSSTestResult
 from taac.runner.oss_test_status import OSSTestStatus
 from taac.runner.result_formatter import OSSResultAggregator
