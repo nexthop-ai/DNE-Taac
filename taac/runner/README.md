@@ -1,6 +1,4 @@
-# TAAC OSS Entry Point CLI (VP1)
-
-**Status**: ✅ 65/65 unit tests passing (run via `python3 -m unittest discover -s taac/runner/tests` inside the `fboss-taac` image).
+# TAAC OSS Entry Point CLI
 
 ## Table of Contents
 
@@ -11,7 +9,6 @@
 - [Usage Examples](#usage-examples)
 - [Architecture](#architecture)
 - [Test Coverage](#test-coverage)
-- [VP1 Compliance](#vp1-compliance)
 - [Troubleshooting](#troubleshooting)
 - [Related Documentation](#related-documentation)
 
@@ -19,10 +16,9 @@
 
 ## Overview
 
-Standalone CLI for running TAAC tests in OSS environments without Meta-internal Netcastle orchestration.
+Standalone CLI for running TAAC tests in OSS environments.
 
 **Key Features:**
-- Full VP1 specification compliance
 - Multiple test configs and DUTs
 - Retry logic for transient failures
 - Exception classification with proper exit codes
@@ -130,17 +126,16 @@ docker run --rm \
 
 ## Exit Codes
 
-Per VP1 specification (lines 963-975), exit codes follow POSIX convention:
+Exit codes follow POSIX convention:
 - **0**: Success - all tests passed
 - **1-127**: User errors (test failures, invalid input, configuration issues)
 - **128+**: Infrastructure errors (device connectivity, IXIA issues, transient failures)
 
 ### Exit codes returned today
 
-`OSSResultAggregator.get_exit_code()` is the single source of truth.
-It currently returns only the codes below — the rest of `OSSReturnCode`
-is declared but unreachable until the runner wires more aggregation
-paths to it (see `oss_return_code.py` for the full enum).
+`OSSResultAggregator.get_exit_code()` is the single source of truth
+for aggregated-result exit codes; the outer `try/except` in `main()`
+handles fail-fast exits before any result is captured.
 
 | Code | Name | Returned when |
 |------|------|---------------|
@@ -148,20 +143,24 @@ paths to it (see `oss_return_code.py` for the full enum).
 | 2   | `TEST_CASE_FAILURE`   | Any result is FAILED or ERROR (real test regressions dominate infra-class signals) — and also the trailing catch-all for any other `.failed` status (e.g. TEARDOWN_FAILED) when no more specific bucket fires |
 | 4   | `NO_TESTS_FOUND`      | The aggregator has zero results |
 | 5   | `CONFIG_ERROR`        | `load_test_config()` raised `OSSConfigError` (bad/missing/malformed config file) |
-| 128 | `INFRA_ERROR`         | Any result is SETUP_FAILED — and the outer `except Exception` in `main()` re-classifies unclassified exceptions to this bucket |
+| 128 | `INFRA_ERROR`         | Any result is SETUP_FAILED — and the outer `except OSSInfrastructureError` / `except Exception` in `main()` re-classifies unclassified or general-infra exceptions to this bucket |
+| 129 | `TESTBED_ERROR`       | `OSSTestbedError` escaped past the per-playbook executor and bubbled out of `main()` (caught by the dedicated `except OSSTestbedError` handler) |
 | 130 | `TRANSIENT_ERROR`     | Any result has `is_transient=True` and no real test failure (FAILED/ERROR) exists (cleared on a successful retry, so a fully-recovered run still exits 0) |
 | 131 | `TIMEOUT_ERROR`       | Any result is TIMEOUT and no real test failure exists (incl. firing of the `--timeout` `asyncio.wait_for` wrap in main()) |
+| 132 | `CONNECTION_ERROR`    | `OSSConnectionError` escaped past the per-playbook executor and bubbled out of `main()` (caught by the dedicated `except OSSConnectionError` handler) |
 
 **`ERROR` is overloaded.** The exception-mapping in the next section
-shows `OSSTestbedError` and `OSSConnectionError` (pure infra failures)
-landing on `ERROR`, alongside unexpected-test-error / unknown-exception
-fall-throughs. Both then exit `2` (TEST_CASE_FAILURE) — there is no
-infra-class code emitted for them. This is a deliberate
+shows `OSSTestbedError` and `OSSConnectionError` landing on `ERROR`
+when raised *during* a playbook — those exit `2` (TEST_CASE_FAILURE)
+alongside unexpected-test-errors. This is a deliberate
 "real-failures-dominate" tradeoff (a single infra blip shouldn't mask
-49 real regressions), but it does mean callers keying on
-"`2` == test regression, `128+` == environment" will see infra-class
-errors on `2`. If you need to disambiguate, parse the JUnit `<error>`
-elements or the JSON results — both carry the `exception_type` field.
+49 real regressions). When the same exceptions escape *past* the
+executor (e.g. raised before any playbook runs), `main()`'s dedicated
+handlers produce the dedicated `129` / `132` codes instead. So callers
+keying on "`2` == test regression, `128+` == environment" will see
+in-playbook infra failures on `2`. If you need to disambiguate, parse
+the JUnit `<error>` elements or the JSON results — both carry the
+`exception_type` field.
 
 ### Exception → exit code
 
@@ -381,18 +380,15 @@ The OSS Entry Point consists of 8 core modules:
 
 ## Test Coverage
 
-**Status:** 65/65 tests passing ✅ (run in ~2-3 seconds inside `fboss-taac`).
-
-| Test File | Tests | Focus |
-|-----------|-------|-------|
-| `test_oss_entry_point.py` | 10 | CLI parsing, output formats, mocked-executor main() incl. retry-loop + setup-crash coverage |
-| `test_entry_point_integration.py` | 7 | File-based main() invocations (--list-tests / --dry-run / --help) |
-| `test_oss_exceptions.py` | 15 | classify_exception mapping incl. TestCaseFailure → FAILED |
-| `test_oss_test_executor.py` | 7 | TaacRunner integration, async executor exception paths |
-| `test_oss_test_result.py` | 8 | Result dataclass fields + summary/detailed_message |
-| `test_oss_test_status.py` | 9 | Status enum semantics + ANSI colors + is_skipped/failed |
-| `test_retry_logic.py` | 4 | Executor-level retry pieces + retry data-model |
-| `test_vp1_compliance.py` | 5 | VP1 spec compliance |
+| Test File | Focus |
+|-----------|-------|
+| `test_oss_entry_point.py` | CLI parsing, output formats, mocked-executor main() incl. retry-loop + setup-crash coverage |
+| `test_entry_point_integration.py` | File-based main() invocations (--list-tests / --dry-run / --help) |
+| `test_oss_exceptions.py` | classify_exception mapping incl. TestCaseFailure → FAILED |
+| `test_oss_test_executor.py` | TaacRunner integration, async executor exception paths |
+| `test_oss_test_result.py` | Result dataclass fields + summary/detailed_message |
+| `test_oss_test_status.py` | Status enum semantics + ANSI colors + is_skipped/failed |
+| `test_retry_logic.py` | Executor-level retry pieces + retry data-model |
 
 ### Running Tests
 
@@ -400,7 +396,7 @@ Tests run inside the derived image and bind-mount the runner source so
 local edits are picked up without a rebuild:
 
 ```bash
-# Run all VP1 tests
+# Run all tests
 docker run --rm \
   -v "$PWD/taac/runner":/taac/taac/runner \
   fboss-taac \
@@ -424,23 +420,6 @@ docker run --rm \
 The tests need the full TAAC thrift bindings (`taac.test_as_a_config`,
 `taac.libs.taac_runner`, etc.), which ship inside the image — running them
 on the host without the image will fail at import time.
-
----
-
-## VP1 Compliance
-
-**TaacRunner Interface Contract:**
-```python
-TaacRunner.__init__(test_config, ixia_api_server, ...)  # oss_entry_point.py
-TaacRunner.async_test_setUp() → None                    # oss_entry_point.py
-TaacRunner.run_tests(playbooks, duts) → None            # oss_test_executor.py
-TaacRunner.async_test_tearDown() → None                 # oss_entry_point.py
-```
-
-**Components implemented:**
-- `OSSTestStatus` enum, `OSSReturnCode` enum, `OSSTestResult` dataclass
-- `OSSTestExecutor`, `OSSResultAggregator`, exception classification
-- CLI parser, main entry point, 65 unit tests (run inside `fboss-taac`)
 
 ---
 
