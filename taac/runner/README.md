@@ -139,44 +139,40 @@ handles fail-fast exits before any result is captured.
 
 | Code | Name | Returned when |
 |------|------|---------------|
-| 0   | `SUCCESS`             | Every result is PASSED or skipped (SKIPPED/OMITTED/NOT_RUN) |
-| 2   | `TEST_CASE_FAILURE`   | Any result is FAILED or ERROR (real test regressions dominate infra-class signals) — and also the trailing catch-all for any other `.failed` status (e.g. TEARDOWN_FAILED) when no more specific bucket fires |
+| 0   | `SUCCESS`             | Every result is PASSED or skipped (SKIPPED/OMITTED/NOT_RUN/RETRIED) |
+| 2   | `TEST_CASE_FAILURE`   | Any result is FAILED, or a non-transient ERROR. Real test regressions dominate infra-class signals — a run of 49 FAILED + 1 TIMEOUT exits `2`, not `131`. Transient-flagged ERRORs are excluded (they route to `130` below). Also the trailing catch-all for any other `.failed` status (e.g. TEARDOWN_FAILED) when no more specific bucket fires |
 | 4   | `NO_TESTS_FOUND`      | The aggregator has zero results |
 | 5   | `CONFIG_ERROR`        | `load_test_config()` raised `OSSConfigError` (bad/missing/malformed config file) |
 | 128 | `INFRA_ERROR`         | Any result is SETUP_FAILED — and the outer `except OSSInfrastructureError` / `except Exception` in `main()` re-classifies unclassified or general-infra exceptions to this bucket |
-| 129 | `TESTBED_ERROR`       | `OSSTestbedError` escaped past the per-playbook executor and bubbled out of `main()` (caught by the dedicated `except OSSTestbedError` handler) |
-| 130 | `TRANSIENT_ERROR`     | Any result has `is_transient=True` and no real test failure (FAILED/ERROR) exists (cleared on a successful retry, so a fully-recovered run still exits 0) |
+| 129 | `TESTBED_ERROR`       | Any result is `TESTBED_FAILED` (`OSSTestbedError` raised during execution and recorded by the playbook executor) — or `OSSTestbedError` escaped past the executor and was caught by `main()`'s dedicated `except OSSTestbedError` handler |
+| 130 | `TRANSIENT_ERROR`     | Any result has `is_transient=True` and no real test failure (FAILED / non-transient ERROR) exists (cleared on a successful retry, so a fully-recovered run still exits 0) |
 | 131 | `TIMEOUT_ERROR`       | Any result is TIMEOUT and no real test failure exists (incl. firing of the `--timeout` `asyncio.wait_for` wrap in main()) |
-| 132 | `CONNECTION_ERROR`    | `OSSConnectionError` escaped past the per-playbook executor and bubbled out of `main()` (caught by the dedicated `except OSSConnectionError` handler) |
+| 132 | `CONNECTION_ERROR`    | Any result is `CONNECTION_FAILED` (`OSSConnectionError` raised during execution) — or `OSSConnectionError` escaped past the executor and was caught by `main()`'s dedicated `except OSSConnectionError` handler |
 
-**`ERROR` is overloaded.** The exception-mapping in the next section
-shows `OSSTestbedError` and `OSSConnectionError` landing on `ERROR`
-when raised *during* a playbook — those exit `2` (TEST_CASE_FAILURE)
-alongside unexpected-test-errors. This is a deliberate
-"real-failures-dominate" tradeoff (a single infra blip shouldn't mask
-49 real regressions). When the same exceptions escape *past* the
-executor (e.g. raised before any playbook runs), `main()`'s dedicated
-handlers produce the dedicated `129` / `132` codes instead. So callers
-keying on "`2` == test regression, `128+` == environment" will see
-in-playbook infra failures on `2`. If you need to disambiguate, parse
-the JUnit `<error>` elements or the JSON results — both carry the
-`exception_type` field.
+**Two paths produce 129/132.** Infra exceptions raised during a
+playbook are caught by the executor, classified via `classify_exception`
+to dedicated `TESTBED_FAILED` / `CONNECTION_FAILED` statuses, and
+routed by `get_exit_code` to `129` / `132`. Infra exceptions raised
+*before* any playbook runs (e.g. during config load or runner
+construction) escape past the executor and are caught by `main()`'s
+dedicated handlers, which return the same codes directly. Either way
+the caller sees the right exit code.
 
 ### Exception → exit code
 
 ```python
 # At the per-playbook layer, classify_exception() in
 # oss_exception_classifier.py maps the raised exception → OSSTestStatus:
-TestCaseFailure        → FAILED         # TAAC playbooks raise this on health-check / postcheck regressions
-AssertionError         → FAILED
-unittest.SkipTest      → SKIPPED
-TimeoutError           → TIMEOUT
-OSSTestbedError        → ERROR
-OSSTransientError      → ERROR  (is_transient=True)
-OSSConnectionError     → ERROR
-OSSSetupError          → SETUP_FAILED
-OSSTeardownError       → TEARDOWN_FAILED
-<anything else>        → ERROR
+TestCaseFailure                          → FAILED              # TAAC raises this on health-check / postcheck regressions
+AssertionError                           → FAILED
+unittest.SkipTest                        → SKIPPED
+TimeoutError / asyncio.TimeoutError      → TIMEOUT             # both — distinct on Python <3.11
+OSSTestbedError                          → TESTBED_FAILED      # infra
+OSSConnectionError                       → CONNECTION_FAILED   # infra
+OSSTransientError                        → ERROR + is_transient=True
+OSSSetupError                            → SETUP_FAILED
+OSSTeardownError                         → TEARDOWN_FAILED
+<anything else>                          → ERROR
 
 # Then OSSResultAggregator.get_exit_code() folds the per-result statuses
 # into the codes in the table above. Two-step mapping — there is no
