@@ -36,7 +36,14 @@ else:
     class TestbedError(Exception):  # type: ignore
         """OSS stub - netcastle TestbedError isn't shipped."""
         pass
-from neteng.netcastle.utils.health_check_utils import async_get_fboss_versions
+if not TAAC_OSS:
+    from neteng.netcastle.utils.health_check_utils import async_get_fboss_versions
+else:
+    async def async_get_fboss_versions(hostname):  # type: ignore
+        """OSS stub - netcastle health-check helper isn't shipped."""
+        raise NotImplementedError(
+            "async_get_fboss_versions requires Meta-internal netcastle; not available in OSS mode."
+        )
 from neteng.netcastle.utils.reachability_utils import wait_for_ping_reachable
 from taac.constants import (
     FAILED_HC_STATUSES,
