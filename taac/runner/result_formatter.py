@@ -86,9 +86,27 @@ class OSSResultAggregator:
         return any(r.status.failed for r in self.results)
 
     @property
-    def has_infra_errors(self) -> bool:
-        """Check if any results have infrastructure errors (transient) (VP1 spec)."""
+    def has_transient_errors(self) -> bool:
+        """Check if any results are flagged transient (retry-able)."""
         return any(r.is_transient for r in self.results)
+
+    @property
+    def has_infra_errors(self) -> bool:
+        """Check if any results landed on an infra-class status.
+
+        Covers TESTBED_FAILED, CONNECTION_FAILED, SETUP_FAILED, plus
+        transient-flagged ERROR results. Distinguished from
+        has_transient_errors above — transient ⊂ infra, not equal.
+        """
+        return any(
+            r.status in (
+                OSSTestStatus.TESTBED_FAILED,
+                OSSTestStatus.CONNECTION_FAILED,
+                OSSTestStatus.SETUP_FAILED,
+            )
+            or r.is_transient
+            for r in self.results
+        )
 
     @property
     def all_passed(self) -> bool:
@@ -110,7 +128,10 @@ class OSSResultAggregator:
             "skipped": self.skipped_count,
             "setup_failed": sum(1 for r in self.results if r.status == OSSTestStatus.SETUP_FAILED),
             "teardown_failed": sum(1 for r in self.results if r.status == OSSTestStatus.TEARDOWN_FAILED),
+            "testbed_failed": sum(1 for r in self.results if r.status == OSSTestStatus.TESTBED_FAILED),
+            "connection_failed": sum(1 for r in self.results if r.status == OSSTestStatus.CONNECTION_FAILED),
             "timeout": sum(1 for r in self.results if r.status == OSSTestStatus.TIMEOUT),
+            "retried": sum(1 for r in self.results if r.status == OSSTestStatus.RETRIED),
         }
 
         return summary

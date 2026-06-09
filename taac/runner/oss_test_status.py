@@ -90,5 +90,16 @@ class OSSTestStatus(str, Enum):
         return self == OSSTestStatus.PASSED
 
     def is_skipped(self) -> bool:
-        """Check if this status represents a skipped test."""
-        return self in (OSSTestStatus.SKIPPED, OSSTestStatus.OMITTED, OSSTestStatus.NOT_RUN)
+        """Check if this status represents a skipped/non-final test.
+
+        Includes RETRIED so the original-attempt records produced by
+        the retry loop are accounted for in skipped_count and rendered
+        with `<skipped>` markup in JUnit output (rather than slipping
+        through `tests = passed + failed + errors + skipped`).
+        """
+        return self in (
+            OSSTestStatus.SKIPPED,
+            OSSTestStatus.OMITTED,
+            OSSTestStatus.NOT_RUN,
+            OSSTestStatus.RETRIED,
+        )
