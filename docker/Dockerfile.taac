@@ -22,13 +22,28 @@
 # =====================================================================
 FROM fboss-build-env:centos AS builder
 
-# Optional cap on getdeps parallelism. Empty = let getdeps default to
+# Optional cap on build parallelism. Empty = let each tool default to
 # nproc. Set via `docker build --build-arg NUM_JOBS=N` (or pass
 # `--num-jobs N` to build-taac-image.sh). Useful on memory-constrained
 # hosts where fbthrift / cc1plus parallel workers (~5 GiB peak each)
 # would otherwise trip the OOM killer.
+#
+# Three knobs are set together because each tool has its own:
+#   - NUM_JOBS              — read by our getdeps.py invocation below.
+#                             Caps getdeps' OWN concurrency (how many
+#                             top-level deps it builds in parallel).
+#   - CMAKE_BUILD_PARALLEL_LEVEL — read by `cmake --build`. Each dep's
+#                             CMake project runs its own downstream
+#                             ninja/make; without this cap those
+#                             spawn nproc-many cc1plus workers, blowing
+#                             past our --num-jobs intent.
+#   - MAKEFLAGS=-jN         — belt-and-suspenders for any direct
+#                             GNU make invocation that bypasses
+#                             cmake --build.
 ARG NUM_JOBS=
 ENV NUM_JOBS=${NUM_JOBS}
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${NUM_JOBS}
+ENV MAKEFLAGS=${NUM_JOBS:+-j${NUM_JOBS}}
 
 # Bootstrap getdeps tooling.
 COPY scripts/setup_getdeps.sh /taac/scripts/
