@@ -19,8 +19,9 @@ if not TAAC_OSS:
     from neteng.netcastle.exceptions import TestbedError
 else:
     # OSS stub — netcastle isn't shipped. The only use site is an
-    # `except TestbedError:` precheck-failure handler that only fires
-    # against Meta-internal testbeds; an uncatchable stub is the intent.
+    # `except TestbedError:` precheck-failure handler against Meta-internal
+    # testbeds; nothing under OSS raises this, so the handler simply never
+    # matches.
     class TestbedError(Exception):
         pass
 
