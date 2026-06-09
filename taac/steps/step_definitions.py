@@ -19,7 +19,14 @@ from dataclasses import dataclass
 
 TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
-from libfb.py.asyncio.await_utils import convert_to_async
+if not TAAC_OSS:
+    from libfb.py.asyncio.await_utils import convert_to_async
+else:
+    async def convert_to_async(fn, *args, **kwargs):  # type: ignore
+        """OSS stub - libfb's convert_to_async wraps a sync callable in a thread."""
+        raise NotImplementedError(
+            "convert_to_async requires Meta-internal libfb; not available in OSS mode."
+        )
 from neteng.fboss.ctrl.thrift_types import DsfSessionState
 from neteng.fboss.switch_config.thrift_mutable_types import PortSpeed
 from neteng.fboss.switch_config.thrift_types import SwitchDrainState
