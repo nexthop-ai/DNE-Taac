@@ -145,11 +145,12 @@ def filter_playbooks(config, playbook_names: Optional[List[str]] = None):
         return [pb for pb in playbooks if pb.enabled]
 
 
-# TODO: delete this free function. It's the active code path in this PR,
-# but the OSS test executor (landing in a follow-up PR) replaces it with
-# OSSTestExecutor.execute_playbook() and the free version becomes dead
-# code. Remove together with the new OSSTestExecutor wiring so the dead
-# version never ships.
+# TODO: delete this free function. It's a placeholder — nothing calls
+# it in this PR (main() bails at the "Test execution is not implemented"
+# branch before reaching execution). The OSS test executor (landing in
+# a follow-up PR) replaces it with OSSTestExecutor.execute_playbook(),
+# and this free version becomes redundant. Remove together with the new
+# OSSTestExecutor wiring so the dead version never ships.
 async def execute_playbook(
     taac_runner,
     playbook,
