@@ -5,7 +5,7 @@ OSS Return Code Enum
 
 Defines the exit codes for the OSS TAAC entry point.
 
-Convention (per VP1 spec):
+Convention (POSIX convention):
 - 0: Success
 - 1-127: User errors (test failures, invalid input)
 - 128+: Infrastructure errors
