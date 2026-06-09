@@ -124,7 +124,14 @@ async def async_get_device_driver(
                     if netwhoami.operating_system
                     else None
                 )
-                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP[os_name]
+                device_os_type = OS_TO_DEVICE_OS_TYPE_MAP.get(os_name)
+                if device_os_type is None:
+                    raise ValueError(
+                        f"Cannot determine device OS type for {hostname!r} "
+                        f"(got os_name={os_name!r}). Use "
+                        f"add_host_to_device_os_type_data() to pre-register, "
+                        f"or supply host_os_type_map at runner construction."
+                    )
 
     LOGGER.debug(f"device os type for {hostname} is {device_os_type.name}")
     driver_class = DEVICE_OS_DRIVER_CLASS_MAP[device_os_type]
