@@ -14,14 +14,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
     """
     Create CLI argument parser for OSS TAAC entry point.
 
-    Simplified version of Netcastle's argument parsing for external users.
-
     Returns:
         Configured argument parser
     """
     parser = argparse.ArgumentParser(
         prog="oss_taac",
-        description="OSS TAAC Test Runner - Run TAAC tests without Netcastle",
+        description="OSS TAAC Test Runner",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 

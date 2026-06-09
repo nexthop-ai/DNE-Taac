@@ -3,9 +3,9 @@
 """
 OSS Entry Point Package
 
-This package provides the standalone CLI entry point for running TAAC tests
-without Netcastle orchestration. It is designed for external users and vendors
-who need to run TAAC tests in non-Meta environments.
+This package provides the standalone OSS CLI entry point for running TAAC
+tests. It is designed for external users and vendors who need to run TAAC
+tests in non-Meta environments.
 
 Main Components:
 - oss_entry_point.py: Main CLI entry point

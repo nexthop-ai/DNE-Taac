@@ -4,8 +4,8 @@
 """
 OSS TAAC Entry Point
 
-This is the main entry point for running TAAC tests without Netcastle.
-It replaces the Netcastle test framework integration and calls TaacRunner directly.
+Main entry point for running TAAC tests under TAAC_OSS=1. Calls
+TaacRunner directly.
 
 Usage:
     python -m taac.runner.oss_entry_point \\
