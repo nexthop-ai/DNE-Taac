@@ -189,7 +189,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Parse arguments
     args = parse_args(argv)
 
-    # Setup logger (stdlib; VP2 OSSLogger integration is a follow-up)
+    # Setup logger (stdlib; structured-logger integration is a follow-up)
     log_level = logging.DEBUG if args.debug else getattr(logging, args.log_level)
     handlers: List[logging.Handler] = [logging.StreamHandler()]
     if args.log_file:
