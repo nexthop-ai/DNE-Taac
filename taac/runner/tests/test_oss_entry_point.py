@@ -134,6 +134,7 @@ class TestExitCodes(TestCase):
         self.assertEqual(OSSReturnCode.TEST_FAILURE, 1)
         self.assertEqual(OSSReturnCode.CONFIG_ERROR, 2)
         self.assertEqual(OSSReturnCode.INFRASTRUCTURE_ERROR, 3)
+        self.assertEqual(OSSReturnCode.NO_TESTS_FOUND, 4)
 
 
 class TestResultFormatter(TestCase):
