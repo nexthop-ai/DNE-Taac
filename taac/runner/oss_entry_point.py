@@ -126,10 +126,11 @@ def filter_playbooks(config, playbook_names: Optional[List[str]] = None):
         return [pb for pb in playbooks if pb.enabled]
 
 
-# TODO([VP1 3/5]): delete this free function. It's the active code path in
-# this PR, but [VP1 3/5] replaces it with OSSTestExecutor.execute_playbook()
-# and the free version becomes dead code. Remove together with the new
-# OSSTestExecutor wiring so the dead version never ships.
+# TODO: delete this free function. It's the active code path in this PR,
+# but the OSS test executor (landing in a follow-up PR) replaces it with
+# OSSTestExecutor.execute_playbook() and the free version becomes dead
+# code. Remove together with the new OSSTestExecutor wiring so the dead
+# version never ships.
 async def execute_playbook(
     taac_runner,
     playbook,
@@ -245,13 +246,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             return OSSReturnCode.SUCCESS
 
         # Test execution wiring (TaacRunner instantiation + per-playbook
-        # invocation) lands in [VP1 3/5]. This foundation PR only supports
+        # invocation) lands in a follow-up PR. This foundation only supports
         # --dry-run / --list-tests; bail out cleanly rather than silently
         # falling through to a stub that fabricates PASSED.
         logger.error(
             "Test execution is not implemented in this build. "
             "Pass --dry-run to validate the config or --list-tests to list "
-            "available tests. Real execution wiring lands in [VP1 3/5]."
+            "available tests."
         )
         return OSSReturnCode.CONFIG_ERROR
 
