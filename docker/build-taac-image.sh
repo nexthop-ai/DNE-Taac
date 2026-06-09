@@ -27,6 +27,7 @@ set -euo pipefail
 TAG="fboss-taac"
 NO_CACHE=0
 NUM_JOBS=""
+USE_CLASSIC_BUILDER=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag)
@@ -53,9 +54,13 @@ while [[ $# -gt 0 ]]; do
             NUM_JOBS="$2"
             shift 2
             ;;
+        --use-classic-builder)
+            USE_CLASSIC_BUILDER=1
+            shift
+            ;;
         *)
             echo "Error: unknown argument: $1" >&2
-            echo "Usage: $0 [--tag <name>] [--no-cache] [--num-jobs <N>]" >&2
+            echo "Usage: $0 [--tag <name>] [--no-cache] [--num-jobs <N>] [--use-classic-builder]" >&2
             exit 1
             ;;
     esac
@@ -97,18 +102,43 @@ if [[ -n "$NUM_JOBS" ]]; then
 fi
 
 echo "Building $TAG from docker/Dockerfile.taac ..."
-# DOCKER_BUILDKIT=1 + --progress=plain: BuildKit clips each RUN step's
-# daemon-side scrollback to ~2 MiB, so cc1plus crashes or OOM kills can
-# scroll off before the step fails. --progress=plain streams the full
-# log to the client in real time, sidestepping the clip. Pinning the
-# env var also guards against a stale DOCKER_BUILDKIT=0 in the caller's
-# shell falling back to the legacy builder, whose single-threaded
-# image-commit phase on multi-GB layers can take an hour-plus.
-DOCKER_BUILDKIT=1 docker build \
-    --progress=plain \
-    "${DOCKER_BUILD_ARGS[@]}" \
-    -f "$REPO_ROOT/docker/Dockerfile.taac" \
-    -t "$TAG" \
-    "$REPO_ROOT"
+if [[ "$USE_CLASSIC_BUILDER" -eq 1 ]]; then
+    # Escape hatch for unclipped diagnostics on a failing RUN step.
+    # BuildKit caps each step's daemon-side scrollback (default 1 MiB);
+    # `--progress=plain` controls render format, not buffer size. The
+    # classic builder streams the full output. The trade-off is its
+    # single-threaded `commitContainer` phase on multi-GB layers, which
+    # can take an hour-plus on the fbthrift install tree — only worth
+    # it when you need to read what cc1plus printed before it died.
+    echo "Using classic builder (DOCKER_BUILDKIT=0)"
+    DOCKER_BUILDKIT=0 docker build \
+        "${DOCKER_BUILD_ARGS[@]}" \
+        -f "$REPO_ROOT/docker/Dockerfile.taac" \
+        -t "$TAG" \
+        "$REPO_ROOT"
+else
+    # BUILDKIT_STEP_LOG_MAX_SIZE=-1 lifts the per-step log buffer cap.
+    # The dockerd-side env is what actually moves the needle — see
+    # scripts/setup-host-buildkit-config.sh for the systemd drop-in
+    # that puts this on the docker.service environment (the client-
+    # side env here is best-effort; some Docker versions propagate
+    # it to the embedded BuildKit, others read it only from dockerd).
+    #
+    # --cache-to/--cache-from with a local-FS backend persists the
+    # BuildKit layer cache to TAAC_BUILDKIT_CACHE_DIR (default
+    # ~/.taac-buildkit-cache) so daemon restarts and `docker system
+    # prune` don't drop the ~20 min fbthrift+fboss-thrift-defs compile.
+    CACHE_DIR="${TAAC_BUILDKIT_CACHE_DIR:-$HOME/.taac-buildkit-cache}"
+    mkdir -p "$CACHE_DIR"
+    echo "Using BuildKit; local-FS cache at $CACHE_DIR"
+    BUILDKIT_STEP_LOG_MAX_SIZE=-1 docker build \
+        --progress=plain \
+        --cache-to "type=local,dest=$CACHE_DIR,mode=max" \
+        --cache-from "type=local,src=$CACHE_DIR" \
+        "${DOCKER_BUILD_ARGS[@]}" \
+        -f "$REPO_ROOT/docker/Dockerfile.taac" \
+        -t "$TAG" \
+        "$REPO_ROOT"
+fi
 
 echo "Done: $TAG"
