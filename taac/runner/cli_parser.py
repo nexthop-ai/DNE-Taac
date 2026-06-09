@@ -50,9 +50,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     # IXIA configuration
-    # Note: VP1 spec lists this as required, but we make it optional to support
-    # non-traffic test modes (--list-tests, --dry-run, validation-only tests).
-    # Runtime validation will check if IXIA is needed based on the test config.
+    # Note: the design spec lists this as required, but we make it optional
+    # to support non-traffic test modes (--list-tests, --dry-run,
+    # validation-only tests). Runtime validation will check if IXIA is
+    # needed based on the test config.
     parser.add_argument(
         "--ixia-api-server",
         help="IP address of IXIA chassis (required for tests using IXIA traffic generation)",
