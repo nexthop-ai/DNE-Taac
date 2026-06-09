@@ -58,7 +58,9 @@ if not TAAC_OSS:
 else:
     # OSS stub - taac.libs.fpf.* pulls in neteng.netcastle / taac.internal
     # via fpf_stress_checks and friends. FPF collector is for Meta-internal
-    # performance flows; under OSS the call site becomes a no-op.
+    # performance flows; the recorded start time is read only by FPF
+    # collectors, which aren't registered under OSS, so a no-op stub is
+    # safe and the call site simply has no observable effect.
     def set_test_case_start_time(*args, **kwargs):  # type: ignore
         """OSS stub - FPF collector isn't shipped."""
         pass
