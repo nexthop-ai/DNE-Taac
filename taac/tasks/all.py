@@ -831,6 +831,12 @@ class CreateVipInjectors(BaseTask):
         vips: t.List[TVipRoute],
         port: int = 3333,
     ) -> int:
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "CreateVipInjectors requires the Meta-internal "
+                "libfb.py.asyncio.thrift.get_direct_client and cannot run "
+                "under TAAC_OSS=1."
+            )
         async with get_direct_client(
             VipService, host=str(vipserver_ip), port=port
         ) as vsclient:
@@ -846,6 +852,12 @@ class CreateVipInjectors(BaseTask):
         vipserver_ip: IPAddress,
         port: int = 3333,
     ) -> t.Sequence[str]:
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "CreateVipInjectors requires the Meta-internal "
+                "libfb.py.asyncio.thrift.get_direct_client and cannot run "
+                "under TAAC_OSS=1."
+            )
         async with get_direct_client(
             VipService, host=str(vipserver_ip), port=port
         ) as vsclient:
@@ -869,6 +881,11 @@ class ScpFile(BaseTask):
     NAME = "scp_file"
 
     async def run(self, params: t.Dict[str, t.Any]) -> None:
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "ScpFile requires the Meta-internal ConfigeratorClient and "
+                "ParamikoClient and cannot run under TAAC_OSS=1."
+            )
         self.logger.info(f"Running {self.NAME} task with params: {params}")
         hostname = params["hostname"]
         remote_path = params["remote_path"]
@@ -1021,6 +1038,11 @@ class InjectBgpPolicyStatements(BaseTask):
         """
         Fetch BGP policy from configerator.
         """
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "InjectBgpPolicyStatements requires the Meta-internal "
+                "ConfigeratorClient and cannot run under TAAC_OSS=1."
+            )
         try:
             self.logger.info(f"Fetching BGP policy from {config_path}")
             with ConfigeratorClient() as client:
@@ -1468,6 +1490,12 @@ class AddBgpPolicyMatchPrefixToPropagateRoutes(BaseTask):
         await asyncio.gather(*tasks)
 
     async def run(self, params: t.Dict[str, t.Any]) -> None:
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "AddBgpPolicyMatchPrefixToPropagateRoutes requires the "
+                "Meta-internal neteng.fboss.lib.hostname_utils.get_role_from_hostname "
+                "and cannot run under TAAC_OSS=1."
+            )
         hostnames = params["hostnames"]
         prefixes = params["prefixes"]
         path = params["path"]  # eg: ["BC", "FX", "BC"]
@@ -1525,6 +1553,11 @@ class AristaCreateFileFromConfig(BaseTask):
                 - file_path: Path to the file on the device (required)
                 - chunk_size: Size of each chunk (default: DEFAULT_CHUNK_SIZE)
         """
+        if TAAC_OSS:
+            raise NotImplementedError(
+                "AristaCreateFileFromConfig requires the Meta-internal "
+                "ConfigeratorClient and cannot run under TAAC_OSS=1."
+            )
         hostname = params["hostname"]
         configerator_path = params["configerator_path"]
         file_path = params["file_path"]
