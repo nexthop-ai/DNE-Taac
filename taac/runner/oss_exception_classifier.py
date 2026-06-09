@@ -10,6 +10,7 @@ stays one-way — both source-of-truth modules can be imported here
 without either of them needing to import the other.
 """
 
+import asyncio
 import unittest
 from typing import Tuple
 
@@ -29,7 +30,14 @@ def get_exception_to_status_map():
     return {
         AssertionError: OSSTestStatus.FAILED,
         unittest.SkipTest: OSSTestStatus.SKIPPED,
+        # Both the builtin TimeoutError and asyncio.TimeoutError. They
+        # alias on Python 3.11+ but are distinct classes on 3.10 and
+        # earlier — asyncio raises its own subclass, which wouldn't
+        # match a bare `TimeoutError` isinstance check on the older
+        # interpreter. Listing both keeps the map runtime-version-
+        # agnostic.
         TimeoutError: OSSTestStatus.TIMEOUT,
+        asyncio.TimeoutError: OSSTestStatus.TIMEOUT,
         # Infra-class exceptions get dedicated statuses so get_exit_code
         # can route them to the 128+ codes rather than the generic
         # ERROR → TEST_CASE_FAILURE (2) bucket reserved for real test
