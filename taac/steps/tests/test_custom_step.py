@@ -3,6 +3,7 @@ import ipaddress
 import time
 import unittest
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -405,3 +406,241 @@ class TestNdpConfigChange(unittest.IsolatedAsyncioTestCase):
             unittest.mock.call(5.5 * 60),  # Wait for old addresses to be flushed
         ]
         mock_sleep.assert_has_calls(expected_sleep_calls)
+
+
+class _FakeIxiaClass:
+    """Stand-in for the real `Ixia` class. The production code calls
+    `ixia.__class__.get_port_identifier(...)` (treating it as a static
+    method on the class). Assigning this to `mock.__class__` keeps the
+    override scoped to a single mock instance — never touching the
+    global `MagicMock` class state."""
+
+    @staticmethod
+    def get_port_identifier(port_name: str) -> str:
+        return port_name.upper()
+
+
+class TestRegisterCpuQueueStaticRoutePatcher(unittest.IsolatedAsyncioTestCase):
+    """Coverage for `CustomStep.register_cpu_queue_static_route_patcher`.
+
+    Locks in the contract used by UNH playbooks (npi_cpu_036/037/038) AND
+    the post-incident regression guard for the IXIA-cache empty-vport_indices
+    bug discovered on IcePack GTSW Run 4.4 2026-06-08: when the IXIA topology
+    cache HITs, `assign_ports()` is skipped and `vport_indices` stays empty,
+    so this step must fail with a descriptive KeyError that names the missed
+    key + lists what was available, not crash with a bare KeyError.
+    """
+
+    HOSTNAME = "gtsw001.l1001.c085.ash6"
+    PORT = "eth1/13/1"
+    # `get_port_identifier` uppercases the composed "<host>:<port>" string.
+    EXPECTED_STRICT_KEY = "GTSW001.L1001.C085.ASH6:ETH1/13/1"
+    # Realistic IXIA-side IPv6 device-group mimic IP — the value the patcher
+    # is expected to embed in the static-route Thrift kwargs.
+    DG0_IPV6 = "2401:db00:1ff:c108::10"
+    DG1_IPV6 = "2401:db00:1ff:c108::20"
+
+    def _make_vport_entry(self, dg_to_ipv6_and_prefixes):
+        """Build a vport entry whose shape mirrors what `assign_ports()`
+        and the topology-setup phase produce at runtime.
+
+        `dg_to_ipv6_and_prefixes` is a list of (ipv6_mimic, [prefix, ...])
+        tuples, indexed by device_group_index. Each device group has exactly
+        one network group with one Ipv6PrefixPool. This is the minimum shape
+        the patcher reads — anything narrower would not exercise the
+        nested traversal at lines 666-682 of `custom_step.py`.
+        """
+        device_groups = []
+        for ipv6, prefixes in dg_to_ipv6_and_prefixes:
+            pool = SimpleNamespace(NetworkAddress=SimpleNamespace(Values=prefixes))
+            network_group_obj = SimpleNamespace(
+                Ipv6PrefixPools=SimpleNamespace(find=lambda pool=pool: [pool])
+            )
+            network_group_index = SimpleNamespace(network_group=network_group_obj)
+            dg = SimpleNamespace(
+                ipv6=SimpleNamespace(Address=SimpleNamespace(Values=[ipv6])),
+                network_group_indices=[network_group_index],
+            )
+            device_groups.append(dg)
+        return SimpleNamespace(device_group_indices=device_groups)
+
+    def _make_custom_step(self):
+        """CustomStep wired with the minimum mocks needed to exercise the
+        vport_indices read path + the final patcher registration call."""
+        device = MagicMock(spec=TestDevice)
+        device.name = self.HOSTNAME
+        attributes = MagicMock()
+        attributes.operating_system = "FBOSS"
+        attributes.role = ""
+        attributes.device_name = self.HOSTNAME
+        attributes.hardware = "ICECUBE800BC"
+        attributes.ai_zone = ""
+        device.attributes = attributes
+
+        cs = CustomStep(
+            name="step",
+            device=device,
+            topology=MagicMock(spec=TestTopology),
+            test_case_results=[],
+            test_config=MagicMock(spec=TestConfig),
+            test_case_name="case",
+            test_case_start_time=time.time(),
+            parameter_evaluator=MagicMock(spec=ParameterEvaluator),
+            step=MagicMock(spec=Step),
+        )
+        # Replace anything that would otherwise reach a real DUT / chassis.
+        cs.hostname = self.HOSTNAME
+        cs.driver = AsyncMock()
+        cs.logger = MagicMock()
+
+        ixia_mock = MagicMock()
+        # `get_port_identifier` is called via `ixia.__class__.get_port_identifier(...)`
+        # — the production impl uppercases + UQDN-normalizes. We point
+        # `__class__` at a per-test fake so the override is scoped to this
+        # instance and doesn't pollute the global `MagicMock` class shared
+        # by every other test in the process.
+        ixia_mock.__class__ = _FakeIxiaClass
+        cs.ixia = ixia_mock
+        return cs, ixia_mock
+
+    async def test_happy_path_strict_match_installs_patcher(self):
+        """Populated vport_indices → patcher registered with the correct
+        next-hop IP, prefix, and patcher name. Mirrors the post-cache-fix
+        production flow."""
+        cs, ixia = self._make_custom_step()
+        ixia.vport_indices = {
+            self.EXPECTED_STRICT_KEY: self._make_vport_entry(
+                [(self.DG0_IPV6, ["2401:db00:beef::"])]
+            )
+        }
+
+        await cs.register_cpu_queue_static_route_patcher(
+            {
+                "next_hop_egress_port": self.PORT,
+                "static_route_mask": 64,
+                "patcher_name": "my_patcher",
+            }
+        )
+
+        cs.driver.async_register_python_patcher.assert_awaited_once_with(
+            patcher_name="my_patcher",
+            patcher_args={"2401:db00:beef::/64": f'["{self.DG0_IPV6}"]'},
+            config_name="agent",
+            py_func_name="add_static_routes",
+            patcher_desc="",
+        )
+        # Strict match → no fallback warning.
+        cs.logger.warning.assert_not_called()
+
+    async def test_suffix_fallback_single_match_succeeds_with_warning(self):
+        """vport_indices populated under an FQDN-suffixed key (different host
+        spelling) → suffix-tolerant fallback finds it via the trailing
+        `:ETH1/13/1` segment, succeeds, AND logs a warning so the drift is
+        observable."""
+        cs, ixia = self._make_custom_step()
+        # FQDN-suffixed key — same physical port, different upstream spelling.
+        fqdn_key = "GTSW001.L1001.C085.ASH6.TFBNW.NET:ETH1/13/1"
+        ixia.vport_indices = {
+            fqdn_key: self._make_vport_entry([(self.DG0_IPV6, ["2401:db00:cafe::"])])
+        }
+
+        await cs.register_cpu_queue_static_route_patcher(
+            {
+                "next_hop_egress_port": self.PORT,
+                "static_route_mask": 64,
+            }
+        )
+
+        cs.driver.async_register_python_patcher.assert_awaited_once()
+        # The warning must name BOTH the missed strict key and the fallback
+        # key it landed on — these are the diagnostic breadcrumbs an SRE
+        # needs to trace an FQDN/UQDN drift.
+        cs.logger.warning.assert_called_once()
+        warn_msg = cs.logger.warning.call_args[0][0]
+        self.assertIn(self.EXPECTED_STRICT_KEY, warn_msg)
+        self.assertIn(fqdn_key, warn_msg)
+
+    async def test_empty_vport_indices_raises_descriptive_keyerror(self):
+        """Regression for the IXIA topology-cache HIT scenario (Run 4.4
+        2026-06-08): `assign_ports()` is skipped so `vport_indices` is
+        empty. The error message MUST name the missed key AND show
+        `Available keys: []` so future failures aren't mis-attributed
+        to FQDN drift."""
+        cs, ixia = self._make_custom_step()
+        ixia.vport_indices = {}  # exactly the cache-hit shape
+
+        with self.assertRaises(KeyError) as ctx:
+            await cs.register_cpu_queue_static_route_patcher(
+                {
+                    "next_hop_egress_port": self.PORT,
+                    "static_route_mask": 64,
+                }
+            )
+
+        msg = str(ctx.exception)
+        self.assertIn(self.EXPECTED_STRICT_KEY, msg)
+        self.assertIn("Available keys: []", msg)
+        self.assertIn("Suffix-match candidates: []", msg)
+        # No patcher registration should be attempted when the lookup fails.
+        cs.driver.async_register_python_patcher.assert_not_awaited()
+
+    async def test_ambiguous_suffix_match_raises_with_candidates(self):
+        """Two keys share the same `:<port>` suffix → fallback refuses to
+        guess and the error lists every candidate so the engineer can
+        disambiguate (e.g. add the missing host scope).
+
+        This guard exists because the suffix-tolerant fallback could
+        otherwise silently pick the wrong device-group on a multi-host
+        IXIA configuration."""
+        cs, ixia = self._make_custom_step()
+        ambiguous_a = "OTHERHOST.SOMEWHERE:ETH1/13/1"
+        ambiguous_b = "YETANOTHER.ELSEWHERE:ETH1/13/1"
+        ixia.vport_indices = {
+            ambiguous_a: self._make_vport_entry([(self.DG0_IPV6, ["::1"])]),
+            ambiguous_b: self._make_vport_entry([(self.DG1_IPV6, ["::2"])]),
+        }
+
+        with self.assertRaises(KeyError) as ctx:
+            await cs.register_cpu_queue_static_route_patcher(
+                {
+                    "next_hop_egress_port": self.PORT,
+                    "static_route_mask": 64,
+                }
+            )
+
+        msg = str(ctx.exception)
+        self.assertIn(ambiguous_a, msg)
+        self.assertIn(ambiguous_b, msg)
+        cs.driver.async_register_python_patcher.assert_not_awaited()
+
+    async def test_device_group_index_param_selects_correct_group(self):
+        """`device_group_index=1` (non-default) must traverse to the SECOND
+        device group, picking its IP + prefixes — not silently fall back
+        to dg=0."""
+        cs, ixia = self._make_custom_step()
+        ixia.vport_indices = {
+            self.EXPECTED_STRICT_KEY: self._make_vport_entry(
+                [
+                    (self.DG0_IPV6, ["2401:db00:dg0::"]),
+                    (self.DG1_IPV6, ["2401:db00:dg1::"]),
+                ]
+            )
+        }
+
+        await cs.register_cpu_queue_static_route_patcher(
+            {
+                "next_hop_egress_port": self.PORT,
+                "static_route_mask": 64,
+                "device_group_index": 1,
+            }
+        )
+
+        # Selected dg1, NOT dg0 — verifies the index actually drives
+        # the traversal at custom_step.py:666-670.
+        cs.driver.async_register_python_patcher.assert_awaited_once_with(
+            patcher_name="cpu_queue_static_route_patcher",
+            patcher_args={"2401:db00:dg1::/64": f'["{self.DG1_IPV6}"]'},
+            config_name="agent",
+            py_func_name="add_static_routes",
+            patcher_desc="",
+        )

@@ -297,6 +297,15 @@ def create_dctypef_npi_test_config(
         name=test_config_name,
         ixia_protocol_verification_timeout=600,
         basset_pool="dne.test",
+        # Mirrors the NPI CPU queue testconfig opt-out — same shared
+        # `create_custom_step(register_cpu_queue_static_route_patcher)`
+        # invocation in the UNH playbooks reads `ixia.vport_indices`,
+        # which is empty on Tier 1/Tier 2 cache HIT. See
+        # `Ixia.assign_ports` / `Ixia.vport_indices` docstrings and
+        # `testconfigs/npi/cpu_queue_test_config.py:219` for the
+        # canonical rationale. Caught by
+        # `tests/test_ixia_cache_opt_out_gate.py`.
+        ixia_config_cache=taac_types.IxiaConfigCache(enabled=False),
         endpoints=[
             taac_types.Endpoint(
                 name=device_name,
