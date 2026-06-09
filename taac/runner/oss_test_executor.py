@@ -112,6 +112,10 @@ class OSSTestExecutor:
         """
         last_exception = None
 
+        # Clamp negatives to 0 so a stray `--retry -1` doesn't fall
+        # through `range(0)` straight into `raise last_exception` with
+        # last_exception still None (which raises TypeError).
+        max_retries = max(0, max_retries)
         for attempt in range(max_retries + 1):
             try:
                 return func()
