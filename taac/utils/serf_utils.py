@@ -123,7 +123,7 @@ async def _async_get_ip_from_hostname_oss(hostname: str) -> str:
 
     # Fallback to DNS — try IPv6 first, then IPv4. The ixia chassis
     # API server (ixapi) is an IPv4-only host, so without the IPv4
-    # fallback the runner silently sees an empty IP and fails 30s
+    # fallback the runner silently sees an empty IP and fails ~90s
     # into the connect retry loop.
     dns_result = get_ipv6_for_host(hostname)
     if dns_result:
