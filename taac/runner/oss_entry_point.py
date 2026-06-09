@@ -9,21 +9,21 @@ TaacRunner directly.
 
 Usage:
     python -m taac.runner.oss_entry_point \\
-        --test-config <config> --dut <device> [options]
+        --test-configs <config> --dut <device> [options]
 
 Examples:
     # Run all tests in a config against a single DUT
     python -m taac.runner.oss_entry_point \\
-        --test-config my_config --dut switch1.example.com
+        --test-configs my_config --dut switch1.example.com
 
     # Run specific playbooks against multiple DUTs
     python -m taac.runner.oss_entry_point \\
-        --test-config my_config --dut switch1 switch2 \\
+        --test-configs my_config --dut switch1 switch2 \\
         --playbook test_bgp test_agent
 
     # Enable debug logging
     python -m taac.runner.oss_entry_point \\
-        --test-config my_config --dut switch1 --debug
+        --test-configs my_config --dut switch1 --debug
 """
 
 import asyncio
