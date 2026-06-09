@@ -141,7 +141,24 @@ from taac.utils.system_stress_utils import (
     async_get_memory_current_pct,
 )
 from taac.utils.taac_log_formatter import log_results_table
-from rfe.scubadata.scubadata_py3 import Sample, ScubaData
+if not TAAC_OSS:
+    from rfe.scubadata.scubadata_py3 import Sample, ScubaData
+else:
+    class Sample:  # type: ignore
+        """OSS stub - rfe.scubadata.scubadata_py3.Sample isn't shipped."""
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(
+                "rfe.scubadata.scubadata_py3.Sample is Meta-internal; not shipped under OSS."
+            )
+
+    class ScubaData:  # type: ignore
+        """OSS stub - rfe.scubadata.scubadata_py3.ScubaData isn't shipped."""
+        TIME_COLUMN = "time"  # constant used by callers; harmless under OSS
+
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(
+                "rfe.scubadata.scubadata_py3.ScubaData is Meta-internal; not shipped under OSS."
+            )
 from service_automation.fboss.remediations.utils.bmc_helper import run_bmc_cmd_hwcontrol
 from taac.health_check.health_check import types as hc_types
 from taac.test_as_a_config import types as taac_types
