@@ -44,7 +44,14 @@ else:
         raise NotImplementedError(
             "async_get_fboss_versions requires Meta-internal netcastle; not available in OSS mode."
         )
-from neteng.netcastle.utils.reachability_utils import wait_for_ping_reachable
+if not TAAC_OSS:
+    from neteng.netcastle.utils.reachability_utils import wait_for_ping_reachable
+else:
+    async def wait_for_ping_reachable(*args, **kwargs):  # type: ignore
+        """OSS stub - netcastle reachability helper isn't shipped."""
+        raise NotImplementedError(
+            "wait_for_ping_reachable requires Meta-internal netcastle; not available in OSS mode."
+        )
 from taac.constants import (
     FAILED_HC_STATUSES,
     OpenRRouteAction,
