@@ -159,7 +159,14 @@ else:
             raise NotImplementedError(
                 "rfe.scubadata.scubadata_py3.ScubaData is Meta-internal; not shipped under OSS."
             )
-from service_automation.fboss.remediations.utils.bmc_helper import run_bmc_cmd_hwcontrol
+if not TAAC_OSS:
+    from service_automation.fboss.remediations.utils.bmc_helper import run_bmc_cmd_hwcontrol
+else:
+    def run_bmc_cmd_hwcontrol(*args, **kwargs):  # type: ignore
+        """OSS stub - service_automation.fboss.remediations isn't shipped."""
+        raise NotImplementedError(
+            "run_bmc_cmd_hwcontrol requires Meta-internal service_automation; not shipped under OSS."
+        )
 from taac.health_check.health_check import types as hc_types
 from taac.test_as_a_config import types as taac_types
 from taac.test_as_a_config.types import (
