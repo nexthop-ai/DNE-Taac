@@ -174,9 +174,11 @@ if not TAAC_OSS:
     from taac.health_checks.dsf_health_checks.dsf_pfc_health_check import (
         DsfPfcHealthCheck,
     )
-from taac.health_checks.dsf_health_checks.dsf_traffic_rebalance_health_check import (
-    DsfTrafficRebalanceHealthCheck,
-)
+# neteng.test_infra.dne.taac dep; not shipped in OSS.
+if not TAAC_OSS:
+    from taac.health_checks.dsf_health_checks.dsf_traffic_rebalance_health_check import (
+        DsfTrafficRebalanceHealthCheck,
+    )
 from taac.health_checks.ixia_health_checks.ixia_packet_loss_health_check import (
     IxiaPacketLossHealthCheck,
 )
@@ -236,7 +238,7 @@ OSS_HEALTH_CHECKS: t.List[HealthCheck] = [
     DrainStateHealthCheck,
     DsfDrainStateHealthCheck,
     DsfFabricReachabilityHealthCheck,
-    DsfTrafficRebalanceHealthCheck,
+    # DsfTrafficRebalanceHealthCheck,  # neteng.test_infra.dne.taac dep, excluded in OSS
     DsfFsdbSessionHealthCheck,
     DsfFsdbSubscriberTimestampHealthCheck,
     NdpHealthCheck,
