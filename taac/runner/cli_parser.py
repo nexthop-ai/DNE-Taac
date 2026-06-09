@@ -31,6 +31,28 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Path(s) to Python test config files",
     )
 
+    # Topology fixtures. Exposed as CLI flags rather than env vars so a user
+    # running the entry point against a live environment doesn't need to
+    # script `export TAAC_*_PATH=...` around every invocation. main() sets
+    # the corresponding env vars before importing taac so the topology
+    # loader (which @memoize_forever-caches on first read) lands on the
+    # right paths.
+    parser.add_argument(
+        "--device-info-csv",
+        help=(
+            "Path to a device_info.csv file. Sets TAAC_DEVICE_INFO_PATH "
+            "so the OSS topology loader picks up your environment's "
+            "device list (hostname → OS / role / vendor)."
+        ),
+    )
+    parser.add_argument(
+        "--circuit-info-csv",
+        help=(
+            "Path to a circuit_info.csv file. Sets TAAC_CIRCUIT_INFO_PATH "
+            "so the OSS topology loader picks up your environment's links."
+        ),
+    )
+
     # Device selection
     parser.add_argument(
         "--dut",
