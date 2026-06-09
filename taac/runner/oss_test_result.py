@@ -127,7 +127,9 @@ class OSSTestResult:
         else:
             color = ""
             reset = ""
-        duration_str = f"{self.duration:.2f}s" if self.duration else "N/A"
+        duration_str = (
+            f"{self.duration:.2f}s" if self.duration is not None else "N/A"
+        )
         return f"{color}[{self.status.name}]{reset} {self.test_case} ({duration_str})"
 
     def detailed_message(self) -> str:
@@ -136,7 +138,11 @@ class OSSTestResult:
             f"Test Case: {self.test_case}",
             f"Test Config: {self.test_config}",
             f"Status: {self.status.name}",
-            f"Duration: {self.duration:.2f}s" if self.duration else "Duration: N/A",
+            (
+                f"Duration: {self.duration:.2f}s"
+                if self.duration is not None
+                else "Duration: N/A"
+            ),
         ]
         if self.dut:
             lines.append(f"DUT: {self.dut}")
