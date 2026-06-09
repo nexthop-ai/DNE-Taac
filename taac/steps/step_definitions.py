@@ -30,7 +30,12 @@ else:
 from neteng.fboss.ctrl.thrift_types import DsfSessionState
 from neteng.fboss.switch_config.thrift_mutable_types import PortSpeed
 from neteng.fboss.switch_config.thrift_types import SwitchDrainState
-from neteng.netcastle.exceptions import TestbedError
+if not TAAC_OSS:
+    from neteng.netcastle.exceptions import TestbedError
+else:
+    class TestbedError(Exception):  # type: ignore
+        """OSS stub - netcastle TestbedError isn't shipped."""
+        pass
 from neteng.netcastle.utils.health_check_utils import async_get_fboss_versions
 from neteng.netcastle.utils.reachability_utils import wait_for_ping_reachable
 from taac.constants import (
