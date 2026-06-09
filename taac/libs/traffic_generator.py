@@ -127,7 +127,7 @@ class TrafficGenerator:
         self.tear_down_session = tear_down_session
         self.cleanup_failed_setup = cleanup_failed_setup
         self.override_traffic_items = override_traffic_items
-        self.ixia: TaacIxia = ...
+        self.ixia: t.Optional[TaacIxia] = None
         self.logger = logger or get_root_logger()
         self.session_name = session_name
         self.basic_traffic_item_configs = basic_traffic_item_configs or []
