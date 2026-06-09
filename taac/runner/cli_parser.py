@@ -91,6 +91,15 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Skip teardown tasks",
     )
     parser.add_argument(
+        "--skip-post-setup-wait",
+        action="store_true",
+        help=(
+            "Skip the 180s interface-stabilization sleep after testbed "
+            "setup. Useful against pre-existing devices that aren't being "
+            "rebooted (default: False, i.e. sleep)"
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate configuration without executing tests",
