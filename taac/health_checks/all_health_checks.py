@@ -143,9 +143,11 @@ from taac.health_checks.device_health_checks.system_cpu_load_average_health_chec
 from taac.health_checks.device_health_checks.systemctl_active_state_health_check import (
     SystemctlActiveStateHealthCheck,
 )
-from taac.health_checks.device_health_checks.tm_reconciliation_firing_health_check import (
-    TmReconciliationFiringHealthCheck,
-)
+# ODS-dependent; taac.internal isn't shipped in the OSS slice.
+if not TAAC_OSS:
+    from taac.health_checks.device_health_checks.tm_reconciliation_firing_health_check import (
+        TmReconciliationFiringHealthCheck,
+    )
 # ODS-dependent; taac.internal isn't shipped in the OSS slice.
 if not TAAC_OSS:
     from taac.health_checks.device_health_checks.ucmp_traffic_distribution_health_check import (
@@ -296,7 +298,7 @@ OSS_HEALTH_CHECKS: t.List[HealthCheck] = [
     OpenrKvstoreConsistencyHealthCheck,
     AristaFbossNextHopValidityHealthCheck,
     PortChannelExpectedStateHealthCheck,
-    TmReconciliationFiringHealthCheck,
+    # TmReconciliationFiringHealthCheck,  # ODS-dependent (taac.internal), excluded in OSS
     TmKernelStateSnapshotHealthCheck,
 ]
 
