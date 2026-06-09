@@ -11,9 +11,11 @@ Designed to run *inside* the `fboss-taac` image via
 + the baked-in install path), and auto-forwards `TAAC_*` env vars from
 the host, so passwords stay out of inline `bash -c` strings:
 
-    # Source the password from a file (chmod 600), not the command line.
+    # Auth: either TAAC_SSH_KEY (path to a private key, default ~/.ssh/id_rsa)
+    # or TAAC_SSH_PASSWORD — set whichever your devices accept.
     export TAAC_OSS=1 TAAC_SSH_USER=netops
-    source ~/.taac-secrets  # exports TAAC_SSH_PASSWORD=...
+    export TAAC_SSH_KEY=~/.ssh/id_rsa             # key auth, OR:
+    source ~/.taac-secrets                        # password auth (chmod 600)
 
     ./docker/run_taac_docker.sh run \\
         python3 /workspace/examples/smoke_live_device.py \\
@@ -45,7 +47,8 @@ import os
 import sys
 
 
-REQUIRED_ENV = ("TAAC_OSS", "TAAC_SSH_USER", "TAAC_SSH_PASSWORD")
+REQUIRED_ENV = ("TAAC_OSS", "TAAC_SSH_USER")
+AUTH_ENV = ("TAAC_SSH_KEY", "TAAC_SSH_PASSWORD")  # at least one required
 
 
 def _read_hostnames_from_csv(path: str) -> list:
@@ -60,6 +63,11 @@ def _preflight() -> None:
     if missing:
         sys.exit(
             f"Missing required env vars: {', '.join(missing)}.\n"
+            f"See the docstring at the top of this file for the full setup."
+        )
+    if not any(os.environ.get(v) for v in AUTH_ENV):
+        sys.exit(
+            f"Need at least one of {', '.join(AUTH_ENV)} set for SSH auth.\n"
             f"See the docstring at the top of this file for the full setup."
         )
 
