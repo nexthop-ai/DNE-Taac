@@ -76,7 +76,14 @@ from taac.health_checks.all_health_checks import (
 from taac.health_checks.healthcheck_definitions import (
     create_next_hop_count_check,
 )
-from taac.internal.coop_utils import async_unregister_patcher
+if not TAAC_OSS:
+    from taac.internal.coop_utils import async_unregister_patcher
+else:
+    async def async_unregister_patcher(*args, **kwargs):  # type: ignore
+        """OSS stub - taac.internal.coop_utils isn't shipped."""
+        raise NotImplementedError(
+            "async_unregister_patcher requires Meta-internal taac.internal.coop_utils."
+        )
 from taac.internal.drainer_utils import async_nds_drain
 from taac.internal.utils.openr_route_utils import (
     OpenRRouteManager,
