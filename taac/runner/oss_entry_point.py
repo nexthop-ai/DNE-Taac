@@ -84,23 +84,29 @@ def load_test_config(config_path: str):
         # Look for a TestConfig object or a function that returns one.
         # Try common naming conventions.
         #
-        # IMPORTANT: gate the "call as factory" branch on `not isinstance
-        # (config, TestConfig)`, not on bare callable(). thrift-python
-        # structs are themselves callable — that's how copy-with-override
-        # works (e.g. config(endpoints=new_endpoints) elsewhere in this
-        # file). A naive callable(config) check therefore matches both a
+        # IMPORTANT: gate the "call as factory" branch on
+        # `not isinstance(config, TestConfig)`, not on bare callable().
+        # thrift-python structs (taac.test_as_a_config.thrift_types) are
+        # themselves callable — invoking an instance with kwargs returns
+        # a copy with those fields replaced (immutable copy-with-override).
+        # A naive callable(config) check therefore matches both a
         # module-level `test_config = TestConfig(...)` value *and* a
-        # `def test_config(): ...` factory. Calling a TestConfig instance
-        # with no kwargs happens to return a no-arg copy of itself, so
-        # this used to be a silent no-op — but the next code reader who
-        # expects their module-level value not to be invoked would be
-        # surprised. Exclude instances explicitly so only real factories
-        # get called.
+        # `def test_config(): ...` factory. A TestConfig instance called
+        # with no kwargs returns a no-arg copy of itself, so this used
+        # to be a silent no-op — but the next code reader who expects
+        # their module-level value not to be invoked would be surprised.
+        # Exclude instances explicitly so only real factories get called.
+        #
+        # Check both binding flavors: thrift_types (thrift-python, the
+        # callable copy-with-override variant) and types (legacy
+        # thrift-py3, used by Meta-internal configs).
+        from taac.test_as_a_config import thrift_types as _taac_thrift_types
         from taac.test_as_a_config import types as _taac_types
+        _testconfig_classes = (_taac_thrift_types.TestConfig, _taac_types.TestConfig)
         for attr_name in ['test_config', 'TEST_CONFIG', 'config', 'CONFIG']:
             if hasattr(module, attr_name):
                 config = getattr(module, attr_name)
-                if callable(config) and not isinstance(config, _taac_types.TestConfig):
+                if callable(config) and not isinstance(config, _testconfig_classes):
                     config = config()
                 return config
 
