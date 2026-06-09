@@ -2,7 +2,7 @@
 name = taac
 
 [git]
-repo_url = https://github.com/nexthop-ai/private-DNE-Taac.git
+repo_url = https://github.com/facebook/DNE-TaaC.git
 
 [build]
 builder = cmake
