@@ -84,7 +84,14 @@ else:
         raise NotImplementedError(
             "async_unregister_patcher requires Meta-internal taac.internal.coop_utils."
         )
-from taac.internal.drainer_utils import async_nds_drain
+if not TAAC_OSS:
+    from taac.internal.drainer_utils import async_nds_drain
+else:
+    async def async_nds_drain(*args, **kwargs):  # type: ignore
+        """OSS stub - taac.internal.drainer_utils isn't shipped."""
+        raise NotImplementedError(
+            "async_nds_drain requires Meta-internal taac.internal.drainer_utils."
+        )
 from taac.internal.utils.openr_route_utils import (
     OpenRRouteManager,
 )
