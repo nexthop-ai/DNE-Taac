@@ -50,9 +50,17 @@ from taac.health_checks.all_health_checks import (
     SNAPSHOT_HEALTH_CHECKS,
 )
 from taac.ixia.taac_ixia import TaacIxia
-from taac.libs.fpf.fpf_collector_registry import (
-    set_test_case_start_time,
-)
+if not TAAC_OSS:
+    from taac.libs.fpf.fpf_collector_registry import (
+        set_test_case_start_time,
+    )
+else:
+    # OSS stub - taac.libs.fpf.* pulls in neteng.netcastle / taac.internal
+    # via fpf_stress_checks and friends. FPF collector is for Meta-internal
+    # performance flows; under OSS the call site becomes a no-op.
+    def set_test_case_start_time(*args, **kwargs):  # type: ignore
+        """OSS stub - FPF collector isn't shipped."""
+        pass
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.libs.periodic_task_executor import PeriodicTaskExecutor
 from taac.libs.test_setup_orchestrator import (
