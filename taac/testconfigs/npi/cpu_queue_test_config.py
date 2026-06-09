@@ -1237,15 +1237,25 @@ def create_npi_cpu_queue_test_config(
                 traffic_type=ixia_types.TrafficType.RAW,
                 bidirectional=False,
                 packet_headers=MTU_EXCEED_IPV6_TRAFFIC_PACKET_HEADERS,
-                # 1700 byte fixed frame size comfortably exceeds the DUT
-                # interface MTU of 1500 so the routed packet triggers an
-                # MTU-exceed exception and is punted to the LOW CPU queue
-                # (with the DUT emitting ICMPv6 "Packet Too Big" back).
+                # 9100 byte fixed frame size exceeds the DUT interface MTU
+                # (confirmed 9000 jumbo on gtsw001.l1001.c085.ash6 eth1/13/1
+                # via `fboss2 show interface`, 2026-06-08) so the routed
+                # packet triggers the MTU-exceed exception and is punted to
+                # the LOW CPU queue (with the DUT emitting ICMPv6 "Packet
+                # Too Big" back).
+                #
+                # IcePack and other modern Meta DC fabric ports run jumbo
+                # MTU (9000+) to accommodate VXLAN/MPLS encap overhead, so
+                # the standard "1500+1 = MTU-exceed" assumption from
+                # textbook routers does not apply here. D107915723 set
+                # fixed_size=1700 expecting MTU=1500 and Run 4.3+4.4
+                # 2026-06-08 showed "No output packet increase detected on
+                # queue 0" because 1700 < 9000 → no MTU-exceed fires.
                 # Default RAW frame size (~64B) is below MTU and the
-                # exception never fires — Run 4 (2026-06-06) confirmed.
+                # exception never fires either.
                 frame_size_settings=ixia_types.FrameSize(
                     type=ixia_types.FrameSizeType.FIXED,
-                    fixed_size=1700,
+                    fixed_size=9100,
                 ),
             ),
             # CPU_046: martian SIP=switch's default gateway IPv4 address —
