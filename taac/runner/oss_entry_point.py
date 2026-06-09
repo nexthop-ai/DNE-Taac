@@ -202,6 +202,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Parse arguments
     args = parse_args(argv)
 
+    # Wire --device-info-csv / --circuit-info-csv to the topology loader's
+    # env vars BEFORE any taac.* import. The OSS topology loader
+    # @memoize_forever-caches its lookups on first read, so a late export
+    # leaves stale data behind for the rest of the process.
+    if args.device_info_csv:
+        os.environ["TAAC_DEVICE_INFO_PATH"] = os.path.abspath(args.device_info_csv)
+    if args.circuit_info_csv:
+        os.environ["TAAC_CIRCUIT_INFO_PATH"] = os.path.abspath(args.circuit_info_csv)
+
     # Setup logger (stdlib; structured-logger integration is a follow-up)
     log_level = logging.DEBUG if args.debug else getattr(logging, args.log_level)
     handlers: List[logging.Handler] = [logging.StreamHandler()]
