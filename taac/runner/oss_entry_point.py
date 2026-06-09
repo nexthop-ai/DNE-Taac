@@ -35,6 +35,7 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
+from taac.libs.taac_runner import TaacRunner
 from taac.test_as_a_config.thrift_types import Endpoint
 
 from taac.runner.cli_parser import parse_args
@@ -231,11 +232,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.info("Dry-run mode: All configurations validated successfully")
             return OSSReturnCode.SUCCESS
 
-        # Execute playbooks from all configs
-        # Per VP1 spec: Use OSSTestExecutor to run each playbook and capture results
+        # Execute playbooks from all configs. OSSTestExecutor wraps each
+        # (playbook, dut) call so we capture an individual OSSTestResult
+        # per execution rather than TaacRunner's collective pass/fail.
         logger.info("Starting test execution...")
-
-        from taac.libs.taac_runner import TaacRunner
 
         # Group playbooks by config
         configs_to_run = {}
