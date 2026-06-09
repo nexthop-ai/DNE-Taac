@@ -125,19 +125,32 @@ class OSSResultAggregator:
         if not self.results:
             return OSSReturnCode.NO_TESTS_FOUND
 
-        # Real test failures (FAILED / ERROR) dominate infra-class signals:
-        # a run of 49 FAILED + 1 TIMEOUT should exit TEST_CASE_FAILURE (2),
-        # not TIMEOUT_ERROR (131). Callers keying on "2 == real test
-        # regression, 128+ == environment" must not see real regressions
-        # masked by an infra blip on a sibling result.
+        # Real test failures (FAILED / non-transient ERROR) dominate
+        # infra-class signals: a run of 49 FAILED + 1 TIMEOUT should
+        # exit TEST_CASE_FAILURE (2), not TIMEOUT_ERROR (131). Callers
+        # keying on "2 == real test regression, 128+ == environment"
+        # must not see real regressions masked by an infra blip on a
+        # sibling result.
+        #
+        # Transient-flagged ERRORs are excluded from this check —
+        # they're infra-class (retry-able), and routing them through
+        # TEST_CASE_FAILURE would shadow TRANSIENT_ERROR (130).
+        # Testbed/connection errors land in their own statuses
+        # (TESTBED_FAILED / CONNECTION_FAILED), so they're not in this
+        # tuple either; classify_exception produces those directly.
         if any(
-            result.status in (OSSTestStatus.FAILED, OSSTestStatus.ERROR)
+            result.status == OSSTestStatus.FAILED
+            or (result.status == OSSTestStatus.ERROR and not result.is_transient)
             for result in self.results
         ):
             return OSSReturnCode.TEST_CASE_FAILURE
 
         # No real test failure — map remaining infra-class signals to
         # their dedicated codes. Order is specific → generic.
+        if any(result.status == OSSTestStatus.TESTBED_FAILED for result in self.results):
+            return OSSReturnCode.TESTBED_ERROR
+        if any(result.status == OSSTestStatus.CONNECTION_FAILED for result in self.results):
+            return OSSReturnCode.CONNECTION_ERROR
         if any(result.status == OSSTestStatus.TIMEOUT for result in self.results):
             return OSSReturnCode.TIMEOUT_ERROR
         if any(result.is_transient for result in self.results):

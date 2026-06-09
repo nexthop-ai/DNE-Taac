@@ -28,10 +28,12 @@ class OSSTestStatus(str, Enum):
     OMITTED = "OMITTED"    # Test was not considered to run (filtered out)
     RETRIED = "RETRIED"    # Previous attempt before a retry that passed
 
-    # Additional infrastructure states (not in VP1 spec but useful)
-    SETUP_FAILED = "SETUP_FAILED"  # Test setup failed
-    TEARDOWN_FAILED = "TEARDOWN_FAILED"  # Test teardown failed
-    NOT_RUN = "NOT_RUN"  # Test was not executed
+    # Additional infrastructure states (not in the spec but useful)
+    SETUP_FAILED = "SETUP_FAILED"            # Test setup failed
+    TEARDOWN_FAILED = "TEARDOWN_FAILED"      # Test teardown failed
+    TESTBED_FAILED = "TESTBED_FAILED"        # OSSTestbedError (device/testbed connectivity)
+    CONNECTION_FAILED = "CONNECTION_FAILED"  # OSSConnectionError (thrift/network connection)
+    NOT_RUN = "NOT_RUN"                      # Test was not executed
 
     def __str__(self) -> str:
         """String representation of the status."""
@@ -40,12 +42,13 @@ class OSSTestStatus(str, Enum):
     @property
     def failed(self) -> bool:
         """
-        A test is considered "failed" if the status is:
-        - FAILED (AssertionError)
+        A test is considered "failed" if the status is one of the
+        non-passing, non-skipped buckets:
+        - FAILED (AssertionError / TestCaseFailure)
         - ERROR (unexpected exception)
         - TIMEOUT
-        - SETUP_FAILED
-        - TEARDOWN_FAILED
+        - SETUP_FAILED / TEARDOWN_FAILED
+        - TESTBED_FAILED (OSSTestbedError) / CONNECTION_FAILED (OSSConnectionError)
         """
         return self in (
             OSSTestStatus.FAILED,
@@ -53,6 +56,8 @@ class OSSTestStatus(str, Enum):
             OSSTestStatus.TIMEOUT,
             OSSTestStatus.SETUP_FAILED,
             OSSTestStatus.TEARDOWN_FAILED,
+            OSSTestStatus.TESTBED_FAILED,
+            OSSTestStatus.CONNECTION_FAILED,
         )
 
     @property
@@ -68,6 +73,8 @@ class OSSTestStatus(str, Enum):
             OSSTestStatus.RETRIED: "\x1b[37m",  # WHITE
             OSSTestStatus.SETUP_FAILED: "\x1b[31m",  # RED
             OSSTestStatus.TEARDOWN_FAILED: "\x1b[33m",  # YELLOW
+            OSSTestStatus.TESTBED_FAILED: "\x1b[33m",  # YELLOW (infra, not test regression)
+            OSSTestStatus.CONNECTION_FAILED: "\x1b[33m",  # YELLOW (infra, not test regression)
             OSSTestStatus.NOT_RUN: "\x1b[37m",  # WHITE
         }
         return COLOR_MAP.get(self, "\x1b[0m")

@@ -30,9 +30,17 @@ def get_exception_to_status_map():
         AssertionError: OSSTestStatus.FAILED,
         unittest.SkipTest: OSSTestStatus.SKIPPED,
         TimeoutError: OSSTestStatus.TIMEOUT,
-        OSSTestbedError: OSSTestStatus.ERROR,
+        # Infra-class exceptions get dedicated statuses so get_exit_code
+        # can route them to the 128+ codes rather than the generic
+        # ERROR → TEST_CASE_FAILURE (2) bucket reserved for real test
+        # regressions.
+        OSSTestbedError: OSSTestStatus.TESTBED_FAILED,
+        OSSConnectionError: OSSTestStatus.CONNECTION_FAILED,
+        # Transient stays on ERROR — the is_transient flag (set
+        # separately in classify_exception below) is the routing signal,
+        # and get_exit_code excludes transient-flagged ERRORs from the
+        # FAILED/ERROR check so TRANSIENT_ERROR (130) is reachable.
         OSSTransientError: OSSTestStatus.ERROR,
-        OSSConnectionError: OSSTestStatus.ERROR,
         OSSSetupError: OSSTestStatus.SETUP_FAILED,
         OSSTeardownError: OSSTestStatus.TEARDOWN_FAILED,
     }
