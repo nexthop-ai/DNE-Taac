@@ -132,7 +132,7 @@ class TestExitCodes(TestCase):
     """Test that exit codes match specification."""
 
     def test_exit_codes_match_spec(self):
-        """Verify exit codes match specification."""
+        """Verify exit codes match the specification."""
         # Success
         self.assertEqual(OSSReturnCode.SUCCESS, 0)
 

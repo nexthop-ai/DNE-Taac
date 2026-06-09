@@ -2,10 +2,10 @@
 # pyre-unsafe
 
 """
-Tests for retry logic — validates transient failure retry mechanism
-per VP1 spec lines 809-828. The actual retry *loop* (transient →
-retry → success → original marked RETRIED + is_transient cleared)
-lives in oss_entry_point.main() and is exercised end-to-end by
+Tests for retry logic — validates the executor-level pieces of the
+transient-failure retry mechanism. The actual retry *loop* (transient →
+retry → success → original marked RETRIED + is_transient cleared) lives
+in oss_entry_point.main() and is exercised end-to-end by
 test_oss_entry_point.TestEntryPointIntegration.test_main_retry_loop_marks_original_retried_and_clears_transient.
 """
 
@@ -20,7 +20,7 @@ from taac.runner.result_formatter import OSSResultAggregator
 
 
 class TestRetryLogic(unittest.IsolatedAsyncioTestCase):
-    """Test the executor-level pieces of retry per VP1 spec."""
+    """Test the executor-level pieces of retry."""
 
     def setUp(self):
         self.mock_runner = mock.MagicMock()

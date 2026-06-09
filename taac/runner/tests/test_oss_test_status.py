@@ -15,7 +15,6 @@ class TestOSSTestStatus(unittest.TestCase):
 
     def test_all_status_values_exist(self):
         """Test all required status values are defined."""
-        # Per VP1 spec
         self.assertIsNotNone(OSSTestStatus.PASSED)
         self.assertIsNotNone(OSSTestStatus.FAILED)
         self.assertIsNotNone(OSSTestStatus.ERROR)
