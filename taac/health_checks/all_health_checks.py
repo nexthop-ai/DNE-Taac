@@ -169,9 +169,11 @@ from taac.health_checks.dsf_health_checks.dsf_fsdb_session_health_check import (
 from taac.health_checks.dsf_health_checks.dsf_fsdb_subscriber_timestamp_health_check import (
     DsfFsdbSubscriberTimestampHealthCheck,
 )
-from taac.health_checks.dsf_health_checks.dsf_pfc_health_check import (
-    DsfPfcHealthCheck,
-)
+# neteng.test_infra.dne.taac dep; not shipped in OSS.
+if not TAAC_OSS:
+    from taac.health_checks.dsf_health_checks.dsf_pfc_health_check import (
+        DsfPfcHealthCheck,
+    )
 from taac.health_checks.dsf_health_checks.dsf_traffic_rebalance_health_check import (
     DsfTrafficRebalanceHealthCheck,
 )
@@ -241,7 +243,7 @@ OSS_HEALTH_CHECKS: t.List[HealthCheck] = [
     IxiaPortStatsHealthCheck,
     SystemctlActiveStateHealthCheck,
     WedgeAgentConfiguredHealthCheck,
-    DsfPfcHealthCheck,
+    # DsfPfcHealthCheck,  # neteng.test_infra.dne.taac dep, excluded in OSS
     CoreDumpsHealthCheck,
     PortStateHealthCheck,
     LldpHealthCheck,
