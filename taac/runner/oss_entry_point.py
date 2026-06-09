@@ -37,7 +37,9 @@ from typing import List, Optional
 from taac.runner.cli_parser import parse_args
 from taac.runner.oss_exceptions import (
     OSSConfigError,
+    OSSConnectionError,
     OSSInfrastructureError,
+    OSSTestbedError,
 )
 from taac.runner.oss_return_code import OSSReturnCode
 from taac.runner.oss_test_executor import OSSTestExecutor
@@ -308,6 +310,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except OSSConfigError as e:
         logger.error(f"Configuration error: {e}")
         return OSSReturnCode.CONFIG_ERROR
+    except OSSTestbedError as e:
+        logger.error(f"Testbed error: {e}")
+        return OSSReturnCode.TESTBED_ERROR
+    except OSSConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        return OSSReturnCode.CONNECTION_ERROR
     except OSSInfrastructureError as e:
         logger.error(f"Infrastructure error: {e}")
         return OSSReturnCode.INFRA_ERROR
