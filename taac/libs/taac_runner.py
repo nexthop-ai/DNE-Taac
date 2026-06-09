@@ -10,6 +10,9 @@ import time
 import typing as t
 import uuid
 from datetime import datetime
+
+TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
+
 from urllib.parse import quote  # noqa: F401
 
 from neteng.netcastle.exceptions import TestbedError
@@ -115,8 +118,6 @@ else:
 from taac.health_check.health_check import types as hc_types
 from taac.test_as_a_config import types as taac_types
 from tabulate import tabulate
-
-TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 if not TAAC_OSS:
     from taac.internal.netwhoami_utils import (

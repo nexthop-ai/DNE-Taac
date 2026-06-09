@@ -3,6 +3,8 @@
 import os
 import typing as t
 
+TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
+
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
     AbstractIxiaHealthCheck,
@@ -221,8 +223,6 @@ from taac.health_checks.topology_health_checks.openr_kvstore_consistency_health_
     OpenrKvstoreConsistencyHealthCheck,
 )
 from taac.health_check.health_check import types as hc_types
-
-TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 HealthCheck = t.Union[
     t.Type[AbstractIxiaHealthCheck],
