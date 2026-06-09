@@ -11,10 +11,13 @@ import asyncio
 import ipaddress
 import itertools
 import json
+import os
 import time
 import typing as t
 from collections import defaultdict
 from dataclasses import dataclass
+
+TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 from libfb.py.asyncio.await_utils import convert_to_async
 from neteng.fboss.ctrl.thrift_types import DsfSessionState
