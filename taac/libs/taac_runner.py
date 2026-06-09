@@ -15,7 +15,15 @@ TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
 from urllib.parse import quote  # noqa: F401
 
-from neteng.netcastle.exceptions import TestbedError
+if not TAAC_OSS:
+    from neteng.netcastle.exceptions import TestbedError
+else:
+    # OSS stub — netcastle isn't shipped. The only use site is an
+    # `except TestbedError:` precheck-failure handler that only fires
+    # against Meta-internal testbeds; an uncatchable stub is the intent.
+    class TestbedError(Exception):
+        pass
+
 from taac.constants import (
     DNE_LOG_DIR,
     FAILED_HC_STATUSES,
