@@ -45,6 +45,9 @@ OSS_STEPS: t.List[t.Type[Step]] = [
     InterfaceFlapStep,
     LongevityStep,
     RunSSHCmdStep,
+    # SystemRebootStep is selectable under OSS but its run() calls
+    # wait_for_ping_reachable (netcastle, gated) and will raise
+    # NotImplementedError at execution time.
     SystemRebootStep,
     ValidationStep,
     RegisterPatcherStep,
