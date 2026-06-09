@@ -92,9 +92,17 @@ else:
         raise NotImplementedError(
             "async_nds_drain requires Meta-internal taac.internal.drainer_utils."
         )
-from taac.internal.utils.openr_route_utils import (
-    OpenRRouteManager,
-)
+if not TAAC_OSS:
+    from taac.internal.utils.openr_route_utils import (
+        OpenRRouteManager,
+    )
+else:
+    class OpenRRouteManager:  # type: ignore
+        """OSS stub - taac.internal.utils.openr_route_utils isn't shipped."""
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(
+                "OpenRRouteManager requires Meta-internal taac.internal.utils.openr_route_utils."
+            )
 from neteng.test_infra.dne.taac.steps.step import Step as StepBase
 from taac.tasks.utils import run_task
 from taac.utils.common import (
