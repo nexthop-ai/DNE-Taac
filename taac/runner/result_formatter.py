@@ -39,7 +39,7 @@ class OSSResultAggregator:
 
     def add_results(self, results: List[OSSTestResult]) -> None:
         """
-        Add multiple test results to the aggregator (VP1 spec).
+        Add multiple test results to the aggregator.
 
         Args:
             results: List of test results to add
@@ -48,28 +48,28 @@ class OSSResultAggregator:
 
     @property
     def total_count(self) -> int:
-        """Total number of test results (VP1 spec)."""
+        """Total number of test results."""
         return len(self.results)
 
     def count_by_status(self) -> Dict[OSSTestStatus, int]:
-        """Count of results by status (VP1 spec)."""
+        """Count of results by status."""
         from collections import Counter
         counter = Counter(r.status for r in self.results)
         return dict(counter)
 
     @property
     def passed_count(self) -> int:
-        """Number of passed tests (VP1 spec)."""
+        """Number of passed tests."""
         return sum(1 for r in self.results if r.status == OSSTestStatus.PASSED)
 
     @property
     def failed_count(self) -> int:
-        """Number of failed tests (VP1 spec)."""
+        """Number of failed tests."""
         return sum(1 for r in self.results if r.status.failed)
 
     @property
     def skipped_count(self) -> int:
-        """Number of skipped tests (VP1 spec).
+        """Number of skipped tests.
 
         Mirrors OSSTestStatus.is_skipped() — SKIPPED + OMITTED + NOT_RUN —
         so the suite-level `skipped=` attribute in to_junit_xml() agrees
@@ -82,7 +82,7 @@ class OSSResultAggregator:
 
     @property
     def has_failures(self) -> bool:
-        """Check if any results have failures (VP1 spec)."""
+        """Check if any results have failures."""
         return any(r.status.failed for r in self.results)
 
     @property
@@ -110,7 +110,7 @@ class OSSResultAggregator:
 
     @property
     def all_passed(self) -> bool:
-        """Check if all tests passed (VP1 spec)."""
+        """Check if all tests passed."""
         return all(r.status == OSSTestStatus.PASSED for r in self.results)
 
     def get_summary(self) -> Dict[str, int]:

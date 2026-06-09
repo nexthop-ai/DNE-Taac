@@ -41,7 +41,6 @@ class OSSTestResult:
     exception: Optional[Exception] = None  # Exception that caused failure (if any)
     traceback: Optional[str] = None  # Full traceback (if any)
 
-    # VP1 spec additional fields
     stdout: str = ""                        # Captured stdout
     stderr: str = ""                        # Captured stderr
     exception_type: Optional[str] = None    # Exception class name
@@ -53,20 +52,20 @@ class OSSTestResult:
     # Metadata
     metadata: Dict[str, str] = field(default_factory=dict)  # Additional metadata
 
-    # Aliases for VP1 spec compatibility
+    # Aliases
     @property
     def test_case(self) -> str:
-        """Alias for playbook (VP1 spec uses test_case)."""
+        """Alias for playbook (spec uses test_case)."""
         return self.playbook
 
     @property
     def stacktrace(self) -> Optional[str]:
-        """Alias for traceback (VP1 spec uses stacktrace)."""
+        """Alias for traceback (spec uses stacktrace)."""
         return self.traceback
 
     @property
     def failed(self) -> bool:
-        """Check if this test result represents a failure (VP1 spec)."""
+        """Check if this test result represents a failure."""
         return self.status.failed
 
     def mark_complete(self, status: OSSTestStatus, message: str = "") -> None:
@@ -113,7 +112,7 @@ class OSSTestResult:
         }
 
     def summary(self) -> str:
-        """One-line summary of the test result (VP1 spec).
+        """One-line summary of the test result.
 
         ANSI color is emitted only when stdout is a TTY so that
         --log-file output and non-tty CI captures (Jenkins / GHA console
@@ -133,7 +132,7 @@ class OSSTestResult:
         return f"{color}[{self.status.name}]{reset} {self.test_case} ({duration_str})"
 
     def detailed_message(self) -> str:
-        """Multi-line detailed message (VP1 spec)."""
+        """Multi-line detailed message."""
         lines = [
             f"Test Case: {self.test_case}",
             f"Test Config: {self.test_config}",
