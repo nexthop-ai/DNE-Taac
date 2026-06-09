@@ -205,8 +205,6 @@ from taac.utils.oss_taac_lib_utils import (
     to_fb_uqdn,
 )
 
-TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
-
 if not TAAC_OSS:
     from openr.py.openr.cli.utils.commands import OpenrCtrlCmd
     from openr.py.openr.clients.openr_client import get_openr_ctrl_cpp_client
