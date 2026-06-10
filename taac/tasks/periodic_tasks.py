@@ -1237,6 +1237,17 @@ class ThriftStressPeriodicTask(PeriodicTask):
 
     NAME = "thrift_stress"
     DEFAULT_REQUESTS_PER_API: int = 10000
+    # Burst timeout — if `asyncio.gather(...)` hasn't returned by this many
+    # seconds, we cancel all pending coroutines, log a loud warning, record a
+    # timed-out burst with the count, and return so the worker loop continues
+    # to the next interval. Without this, an unresponsive agent (e.g. when
+    # the storm we're firing pegs `fboss_sw_agent` CPU at 100%) causes
+    # gather() to hang indefinitely — we'd never get a burst result, never
+    # write to shared_data, and the test would terminate the worker with
+    # `_data entries=0` and no diagnostic. 60s default is generous for
+    # ~70K well-behaved concurrent calls (~5-30s normal) but tight enough
+    # to surface trouble within one burst window.
+    DEFAULT_BURST_TIMEOUT_S: float = 60.0
 
     @staticmethod
     def _resolve_calls(params: t.Dict[str, t.Any]) -> t.List[ThriftStressCall]:
@@ -1317,12 +1328,44 @@ class ThriftStressPeriodicTask(PeriodicTask):
             )
             return
 
+        burst_timeout_s: float = float(
+            params.get("burst_timeout_s", self.DEFAULT_BURST_TIMEOUT_S)
+        )
         self.logger.info(
             f"thrift_stress: firing {len(coros)} concurrent calls "
-            f"({', '.join(scheduled_breakdown)})"
+            f"(timeout={burst_timeout_s:.0f}s) ({', '.join(scheduled_breakdown)})"
         )
         burst_start = time.time()
-        results = await asyncio.gather(*coros, return_exceptions=True)
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*coros, return_exceptions=True),
+                timeout=burst_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            elapsed = time.time() - burst_start
+            # `asyncio.wait_for` cancels the pending gather on timeout,
+            # which cancels each child coroutine. We can't recover partial
+            # results, so we record a fully timed-out burst and continue.
+            # The worker loop's outer `time.sleep(interval)` then fires,
+            # then we try the next burst — if the agent has recovered we
+            # see normal completion; if it's still unresponsive we keep
+            # timing out, but at least we get a diagnostic per burst
+            # instead of an indefinite hang that produces no data.
+            self.logger.warning(
+                f"thrift_stress: burst TIMED OUT after {elapsed:.1f}s "
+                f"(limit {burst_timeout_s}s) — device likely unresponsive; "
+                f"{len(coros)} coros cancelled, no per-call results"
+            )
+            self.add_data(
+                {
+                    "total": len(coros),
+                    "success": 0,
+                    "failures": 0,
+                    "timed_out": len(coros),
+                    "elapsed_s": elapsed,
+                }
+            )
+            return
         elapsed = time.time() - burst_start
 
         success = sum(1 for r in results if not isinstance(r, BaseException))
@@ -1332,6 +1375,7 @@ class ThriftStressPeriodicTask(PeriodicTask):
                 "total": len(results),
                 "success": success,
                 "failures": failures,
+                "timed_out": 0,
                 "elapsed_s": elapsed,
             }
         )
@@ -1359,14 +1403,20 @@ class ThriftStressPeriodicTask(PeriodicTask):
         total = sum(d.get("total", 0) for d in self._data.values())
         success = sum(d.get("success", 0) for d in self._data.values())
         failures = sum(d.get("failures", 0) for d in self._data.values())
+        timed_out = sum(d.get("timed_out", 0) for d in self._data.values())
+        timed_out_bursts = sum(
+            1 for d in self._data.values() if d.get("timed_out", 0) > 0
+        )
         elapsed_total = sum(d.get("elapsed_s", 0.0) for d in self._data.values())
         avg_elapsed = elapsed_total / batches if batches else 0.0
         success_pct = (100.0 * success / total) if total else 0.0
 
         message = (
-            f"thrift_stress: {batches} bursts, {total} total calls, "
+            f"thrift_stress: {batches} bursts "
+            f"({timed_out_bursts} timed out), {total} total calls, "
             f"{success} ok ({success_pct:.1f}%), "
-            f"{failures} exceptions, avg burst {avg_elapsed:.1f}s"
+            f"{failures} exceptions, {timed_out} timed-out calls, "
+            f"avg burst {avg_elapsed:.1f}s"
         )
 
         return PeriodicCheckResult(

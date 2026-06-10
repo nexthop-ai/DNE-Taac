@@ -1,4 +1,5 @@
 # pyre-unsafe
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -322,3 +323,42 @@ class ThriftStressPeriodicTaskTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("300 total calls", result.message)
         self.assertIn("295 ok", result.message)
         self.assertIn("5 exceptions", result.message)
+
+    async def test_burst_timeout_records_timed_out_burst(self) -> None:
+        """If gather() exceeds burst_timeout_s, we cancel + log + record + return."""
+        driver = _make_fboss_driver()
+
+        # Make every API call hang forever to force a timeout.
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(3600)  # well past the test's 1s timeout
+
+        for api_name in [c.method for c in READ_ONLY_FBOSS_APIS]:
+            setattr(driver, api_name, AsyncMock(side_effect=_hang))
+
+        with patch(
+            f"{PERIODIC_TASKS_PATH}.async_get_device_driver",
+            AsyncMock(return_value=driver),
+        ):
+            await self.task.run(
+                {
+                    "hostname": "gtsw001.l1001.c085.ash6",
+                    "requests_per_api": 3,
+                    "burst_timeout_s": 1.0,  # 1 second
+                }
+            )
+
+        # One burst recorded, fully timed-out
+        self.assertEqual(len(self.task._data), 1)
+        burst = next(iter(self.task._data.values()))
+        # 7 APIs * 3 = 21 coros, all hung -> 21 timed_out, 0 success
+        self.assertEqual(burst["total"], 21)
+        self.assertEqual(burst["timed_out"], 21)
+        self.assertEqual(burst["success"], 0)
+        self.assertEqual(burst["failures"], 0)
+        # A loud WARNING was emitted for the timeout
+        warning_calls = [
+            call
+            for call in self.logger.warning.call_args_list
+            if "TIMED OUT" in str(call)
+        ]
+        self.assertTrue(warning_calls, "expected TIMED OUT warning")

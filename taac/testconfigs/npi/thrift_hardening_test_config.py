@@ -100,6 +100,8 @@ def create_npi_thrift_hardening_test_config(
     downlink_peer_tag: str,
     stsw_flap_ports: list,
     test_duration_s: int = 600,
+    requests_per_burst: int = 10000,
+    burst_timeout_s: float = 60.0,
     direct_ixia_connections=None,
     basset_pool: str | None = None,
     service_restart_services: list | None = None,
@@ -523,6 +525,8 @@ def create_npi_thrift_hardening_test_config(
                     device_name=device_name,
                     stsw_flap_ports=stsw_flap_ports,
                     test_duration_s=test_duration_s,
+                    requests_per_burst=requests_per_burst,
+                    burst_timeout_s=burst_timeout_s,
                 )
             ],
             service_restart_services=service_restart_services,
@@ -730,7 +734,13 @@ NPI_DVT_ICEPACK_GTSW__THRIFT_HARDENING_TEST_CONFIG = (
         downlink_peer_tag="HOST",
         uplink_peer_tag="STSW",
         stsw_flap_ports=ICEPACK_GTSW_STSW_FLAP_PORTS,
-        test_duration_s=600,  # 10 min smoke; prod runs override to 14400 (4 hr)
+        test_duration_s=14400,  # 4 hr prod (override to 600 = 10 min for smoke)
+        # Scale-down: 1000 per API (vs Pavan's 10000). At 10000 the 70K-call
+        # asyncio.gather pegged `fboss_sw_agent` CPU at 1339% within ~2.5 min
+        # and ticked `coop.unclean_exits` (gather() hung indefinitely with no
+        # bursts completing). 1000 keeps gather() within `burst_timeout_s` and
+        # lets multiple bursts complete per run.
+        requests_per_burst=1000,
         basset_pool="dne.test",
         # IcePack backend GTSW does not run openr — drop from postcheck list
         # to avoid false-fail on INACTIVE (same rationale as cpu_queue config).

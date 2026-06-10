@@ -3072,6 +3072,7 @@ def create_thrift_stress_periodic_task(
     calls: t.Optional[t.List[ThriftStressCall]] = None,
     requests_per_api: int = 10000,
     apis: t.Optional[t.List[str]] = None,
+    burst_timeout_s: float = 60.0,
 ) -> PeriodicTask:
     """Periodic task that drives a sustained thrift workload.
 
@@ -3119,7 +3120,10 @@ def create_thrift_stress_periodic_task(
         raise ValueError(
             "create_thrift_stress_periodic_task: pass `calls` OR `apis`, not both"
         )
-    params: t.Dict[str, t.Any] = {"hostname": device_name}
+    params: t.Dict[str, t.Any] = {
+        "hostname": device_name,
+        "burst_timeout_s": burst_timeout_s,
+    }
     if calls is not None:
         params["calls"] = [c.to_dict() for c in calls]
     elif apis is not None:
