@@ -37,6 +37,7 @@ from taac.routing.ebb.ebb_bgp_plus_plus_test_config.ebb_bgp_plus_plus_conveyor.c
     IXIA_EBGP_IC_PARENT_NETWORK_V6,
     IXIA_IBGP_IC_PARENT_NETWORK_V4_DC_PLANE1,
     IXIA_IBGP_IC_PARENT_NETWORK_V6_DC_PLANE1,
+    IXIA_IPV4_START_OFFSET,
     PEERGROUP_EBGP_V4,
     PEERGROUP_EBGP_V6,
     PEERGROUP_IBGP_V4,
@@ -47,6 +48,9 @@ from taac.testconfigs.routing.ebb.test_config_performance_scaling_case1 import (
 )
 from taac.testconfigs.routing.ebb.test_config_performance_scaling_case2 import (
     test_config_constant_attribute_storage_varying_combinations_on_eos,
+)
+from taac.testconfigs.routing.ebb.test_config_performance_scaling_case9 import (
+    test_config_for_bgp_plus_plus_on_ebb_arista_bounded_ecmp_sets,
 )
 from taac.testconfigs.routing.ebb.test_config_queue_memory_monitor import (
     test_config_bgp_queue_memory_monitoring_with_route_scale,
@@ -491,4 +495,105 @@ BAG012_ASH6_PERFORMANCE_SCALING_TEST_UPDATE_GROUP_CONFIG = (
     create_bag012_ash6_performance_scaling_test_config(
         enable_update_group=True,
     )
+)
+
+
+# =============================================================================
+# BGP++ Bounded ECMP Sets on bag012.ash6 conveyor.
+# Converted from EB02-ARISTA_PERFORMANCE_SCALING_TEST_9_BOUNDED_ECMP_SETS: the
+# same upstream factory, retargeted to bag012.ash6 (IXIA ports 7/7 eBGP, 7/8
+# iBGP). Device setup runs through netcastle's MANAGED shell (no raw SSH) — the
+# factory patches /mnt/flash/bgpcpp_config + /usr/sbin/run_bgpcpp.sh and bounces
+# the Bgp daemon via create_arista_daemon_control_task. The DUT runs with BGP++
+# update_group enabled.
+# =============================================================================
+BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT: int = 128
+BAG012_ASH6_BOUNDED_ECMP_PREFIX_COUNT: int = 5000
+
+
+def create_bag012_ash6_bounded_ecmp_sets_test_config() -> taac_types.TestConfig:
+    """Bounded-ECMP-sets TestConfig for bag012.ash6 conveyor.
+
+    Verifies BGP++ ECMP-set bounding at production peer scale (128 EBGP + 128
+    IBGP per AFI) with update_group enabled. Targets bag012.ash6 (IXIA ports
+    7/7 eBGP, 7/8 iBGP).
+
+    Device setup uses the standard ``get_update_packing_setup_tasks`` helper --
+    the same path Constant Attribute Storage / Queue Memory Monitor / Update
+    Packing use -- so the configerator bgpcpp_config is deployed cleanly
+    (BgpTcpdump disable, pre-IXIA interface config, control plane + ACLs,
+    interface secondary IPs, config validator gate, OpenR profile handling,
+    iptables flush) instead of patching the image's leftover config in place.
+
+    Because bounded ECMP brings up IPv4 sessions too (most conveyor tests are
+    validated IPv6-only), it passes ``v4_peer_start_offset=IXIA_IPV4_START_OFFSET``
+    so the generated v4 peers align with the device's v4 secondary IPs and the
+    bounded-ECMP IXIA-side addressing (v4 device gateways from ``.10``; v6 from
+    ``::10`` which already matches the default offset 16).
+
+    Returns:
+        TestConfig object configured for bag012.ash6
+    """
+    setup_tasks = get_update_packing_setup_tasks(
+        device_name=DEVICE_NAME,
+        bgp_asn=BAG012_EOS_BGP_AS,
+        ixia_interface_mimic_ebgp=IXIA_INTERFACE_MIMIC_EBGP,
+        ixia_interface_mimic_ibgp=IXIA_INTERFACE_MIMIC_IBGP,
+        ebgp_peer_count=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ibgp_peer_count=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ebgp_remote_as=EBGP_REMOTE_AS,
+        ibgp_remote_as=IBGP_REMOTE_AS,
+        ixia_ebgp_ic_parent_network_v6=IXIA_EBGP_IC_PARENT_NETWORK_V6,
+        ixia_ibgp_ic_parent_network_v6=IXIA_IBGP_IC_PARENT_NETWORK_V6_DC_PLANE1,
+        # Dual-stack: bounded ECMP runs v4 + v6 peers on both interfaces.
+        ixia_ebgp_ic_parent_network_v4=IXIA_EBGP_IC_PARENT_NETWORK_V4,
+        ixia_ibgp_ic_parent_network_v4=IXIA_IBGP_IC_PARENT_NETWORK_V4_DC_PLANE1,
+        router_id=BAG012_ROUTER_ID,
+        bgpcpp_configerator_path=BGPCPP_CONFIGERATOR_PATH,
+        profile=BgpPlusPlusProfile.BGP_PLUS_PLUS_WITHOUT_OPEN_R,
+        # Align v4 peers with the device v4 secondary IPs + IXIA .10 layout.
+        v4_peer_start_offset=IXIA_IPV4_START_OFFSET,
+        # DUT runs with BGP++ update_group enabled.
+        enable_update_group=True,
+    )
+
+    return test_config_for_bgp_plus_plus_on_ebb_arista_bounded_ecmp_sets(
+        test_config_name="BAG012_ASH6_BGP_BOUNDED_ECMP_SETS_CONVEYOR_TEST_UPDATE_GROUP",
+        device_name=DEVICE_NAME,
+        ixia_interface_mimic_ebgp=IXIA_INTERFACE_MIMIC_EBGP,
+        ixia_interface_mimic_ibgp=IXIA_INTERFACE_MIMIC_IBGP,
+        ebgp_peer_count_v6=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ibgp_peer_count_v6=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ebgp_peer_count_v4=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ibgp_peer_count_v4=BAG012_ASH6_BOUNDED_ECMP_PEER_COUNT,
+        ebgp_remote_as=EBGP_REMOTE_AS,
+        ibgp_remote_as=IBGP_REMOTE_AS,
+        ixia_ebgp_ic_parent_network_v6=IXIA_EBGP_IC_PARENT_NETWORK_V6,
+        ixia_ebgp_ic_parent_network_v4=IXIA_EBGP_IC_PARENT_NETWORK_V4,
+        ixia_ibgp_ic_parent_network_v6=IXIA_IBGP_IC_PARENT_NETWORK_V6_DC_PLANE1,
+        ixia_ibgp_ic_parent_network_v4=IXIA_IBGP_IC_PARENT_NETWORK_V4_DC_PLANE1,
+        prefix_count=BAG012_ASH6_BOUNDED_ECMP_PREFIX_COUNT,
+        direct_ixia_connections=[
+            DirectIxiaConnection(
+                interface=IXIA_INTERFACE_MIMIC_EBGP,
+                ixia_chassis_ip=IXIA_CHASSIS_IP,
+                ixia_port=IXIA_PORT_EBGP,
+            ),
+            DirectIxiaConnection(
+                interface=IXIA_INTERFACE_MIMIC_IBGP,
+                ixia_chassis_ip=IXIA_CHASSIS_IP,
+                ixia_port=IXIA_PORT_IBGP,
+            ),
+        ],
+        host_os_type_map={DEVICE_NAME: taac_types.DeviceOsType.ARISTA_FBOSS},
+        # Standard device setup (configerator deploy + control plane + validator
+        # + interface IPs + update_group), shared with the other bag012 conveyor
+        # nodes. Passing setup_tasks skips case9's in-shell fallback.
+        setup_tasks=setup_tasks,
+        log_collection_timeout=600,
+    )
+
+
+BAG012_ASH6_BOUNDED_ECMP_SETS_TEST_UPDATE_GROUP_CONFIG = (
+    create_bag012_ash6_bounded_ecmp_sets_test_config()
 )

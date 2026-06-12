@@ -90,7 +90,7 @@ from taac.test_as_a_config.types import DirectIxiaConnection, Endpoint, Task, Te
 # =============================================================================
 def _generate_bgpcpp_peers_modification_tasks(
     bgpcpp_device: str,
-    router_id: str,
+    router_id: t.Optional[str],
     peers: t.List[t.Dict[str, t.Any]],
     config_path: str = BGPCPP_CONFIG_PATH,
     local_as_4_byte: t.Optional[int] = None,
@@ -152,13 +152,19 @@ def _generate_bgpcpp_peers_modification_tasks(
     local_as_line = ""
     if local_as_4_byte is not None:
         local_as_line = f"c['local_as_4_byte']={local_as_4_byte}; "
+    # router_id is optional: when None we preserve the deployed config's
+    # router_id (matching the legacy in-shell peer-replace behavior, which
+    # only swapped the 'peers' field and never touched router_id).
+    router_id_line = ""
+    if router_id is not None:
+        router_id_line = f"c['router_id']='{router_id}'; "
     merge_script = (
         f'python3 -c "'
         f"import json; "
         f"f=open('{config_path}'); c=json.load(f); f.close(); "
         f"p=open('/tmp/experiment_peers.json'); "
         f"c['peers']=json.load(p); p.close(); "
-        f"c['router_id']='{router_id}'; "
+        f"{router_id_line}"
         f"{local_as_line}"
         f"f=open('{config_path}','w'); "
         f"json.dump(c,f,indent=2); f.close(); "
