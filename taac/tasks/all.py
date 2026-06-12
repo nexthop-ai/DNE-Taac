@@ -2047,15 +2047,16 @@ class SetPortChannelMinLinkPatcherTask(BaseTask):
 
 class AssertThriftRateLimitEnabledTask(BaseTask):
     """Setup-gate task: fail-fast if `thriftApiToRateLimitInQps` is empty in
-    the DUT's running agent config.
+    the DUT's COOP-materialized agent config.
 
     Background: the THFT (thrift-hardening) testconfig fires ~7,000
     concurrent read-only thrift calls per burst against `fboss_sw_agent`.
     Without server-side rate limiting (configerator
     `agent_thrift_api_to_rate_limit.mcconf`), the storm pegs CPU and can
-    cascade into kernel OOMs on swap-tight hosts (see T275336067). With
-    rate limiting on, the agent throttles excess calls and CPU stays
-    bounded.
+    cascade into kernel OOMs on swap-tight hosts (see T275336067 /
+    T275512222). With rate limiting on, the agent throttles excess calls
+    and CPU stays bounded (confirmed working on gtsw001 2026-06-11: bgpd
+    1% CPU under 10K-concurrent storm vs 1339% pre-D108220182).
 
     D108220182 removed `ICECUBE800BC` from the EMPTY_HW exclusion list so
     RTSW/FTSW/STSW/GTSW roles on TH6 IcePack now pick up the default
@@ -2065,81 +2066,217 @@ class AssertThriftRateLimitEnabledTask(BaseTask):
     clear pointer rather than burning a 4-hour soak before the postcheck
     catches the symptom.
 
-    Implementation: calls `getRunningConfig()` thrift API on the agent,
-    recursively searches the returned JSON for a non-empty
-    `thriftApiToRateLimitInQps` map. Recursive search is robust to where
-    the materialized config lands in the SwitchConfig schema (top-level
-    vs nested under switchSettings / cooperConfig / etc.) so this task
-    survives FBOSS-side schema changes that move the key.
+    Implementation: reads the COOP-materialized agent config at
+    `/etc/coop/agent/current` on the DUT (this is the canonical "running"
+    config — what the FBOSS agent actually loads on (re)start, and what
+    `/dev/shm/fboss/agent_startup_config` symlinks to). Verified on
+    gtsw001 2026-06-11 that the `thriftApiToRateLimitInQps` key lives at
+    the top level of this JSON with ~140 APIs populated. Earlier shelved
+    implementation that called `getRunningConfig()` thrift API on the
+    agent did NOT find the key because that thrift API returns a different
+    (filtered) view of the config; the COOP-materialized file is the
+    authoritative source. Parsing is done server-side via a small Python
+    script (sent base64-encoded to avoid shell-quoting fragility) so we
+    transfer ~50 bytes of summary instead of the full 830 KB config blob.
+
+    Probe states (one printed per run, parsed by `run()` for tailored
+    error messages so on-call can distinguish failure modes without re-
+    running the probe by hand):
+
+      OK size=<N> sample=<k=v,...>     map is populated; precheck passes
+      MISSING                          key absent at top level
+      WRONG_TYPE type=<typename>       key present but not a dict (list/str/int/...)
+      EMPTY                            key present, is a dict, but empty
+      NOT_DICT type=<typename>         the entire config root is not a dict
+      MISSING_FILE path=<p>            config file does not exist on the DUT
+      INVALID_JSON error=<ExcName: ..> open()/json.loads() raised
+      ERROR <ExcName: ...>             any other unexpected exception (catch-all)
     """
 
     NAME = "assert_thrift_rate_limit_enabled"
     THRIFT_RATE_LIMIT_KEY = "thriftApiToRateLimitInQps"
+    AGENT_CONFIG_PATH = "/etc/coop/agent/current"
+
+    # Multi-line python script run on the DUT. Sent base64-encoded so we
+    # don't have to escape quotes/newlines in the shell command. Catches
+    # every failure mode and emits a single structured status line on
+    # stdout so the caller can distinguish file-missing / parse-error /
+    # wrong-type / empty / populated without re-running by hand.
+    _PROBE_SCRIPT: str = """
+import json, os, sys
+PATH = {path!r}
+KEY = {key!r}
+try:
+    if not os.path.exists(PATH):
+        print(f'MISSING_FILE path={{PATH}}')
+        sys.exit(0)
+    with open(PATH) as f:
+        raw = f.read()
+    try:
+        cfg = json.loads(raw)
+    except (ValueError, TypeError) as e:
+        print(f'INVALID_JSON error={{type(e).__name__}}: {{e}}')
+        sys.exit(0)
+    if not isinstance(cfg, dict):
+        print(f'NOT_DICT type={{type(cfg).__name__}}')
+        sys.exit(0)
+    m = cfg.get(KEY)
+    if m is None:
+        print('MISSING')
+    elif not isinstance(m, dict):
+        print(f'WRONG_TYPE type={{type(m).__name__}}')
+    elif len(m) == 0:
+        print('EMPTY')
+    else:
+        print(f'OK size={{len(m)}} sample=' + ','.join(f'{{k}}={{v}}' for k, v in list(m.items())[:5]))
+except Exception as e:
+    print(f'ERROR {{type(e).__name__}}: {{e}}')
+"""
+
+    # Prefixes the probe script emits — one of these MUST be at the start
+    # of the status line. The `OK ` trailing-space prefix is intentional
+    # (distinguishes "OK size=..." status from anything that happens to
+    # start with the substring "OK").
+    _STATUS_PREFIXES: tuple = (
+        "OK ",
+        "MISSING_FILE ",
+        "INVALID_JSON ",
+        "NOT_DICT ",
+        "WRONG_TYPE ",
+        "ERROR ",
+        "MISSING",
+        "EMPTY",
+    )
 
     @classmethod
-    def _find_key_recursive(
-        cls, node: t.Any, target_key: str
-    ) -> t.Optional[t.Dict[str, t.Any]]:
-        """Depth-first search for `target_key` in a nested JSON structure.
+    def _build_probe_cmd(cls) -> str:
+        """Encode the probe script as base64 and wrap it in a shell command
+        that decodes + pipes to python3, with stderr merged so any shell-
+        level failure (python3-not-found, base64-not-found) surfaces in
+        the captured output instead of disappearing."""
+        script = cls._PROBE_SCRIPT.format(
+            path=cls.AGENT_CONFIG_PATH, key=cls.THRIFT_RATE_LIMIT_KEY
+        )
+        b64 = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        return f"echo {b64} | base64 -d | python3 - 2>&1"
 
-        Returns the value at the first match, or None if not found. Used
-        to handle FBOSS schema variations that may nest the rate-limit map.
+    @classmethod
+    def _extract_status_line(cls, raw: str) -> t.Optional[str]:
+        """Find the structured status line in the probe's output.
+
+        Since we redirect stderr to stdout via `2>&1`, any incidental
+        stderr noise (DeprecationWarning, locale banners, sudo messages,
+        thrift-py-deprecated warnings) can prepend or interleave with the
+        status line. The probe script emits EXACTLY ONE status line, so
+        we scan ALL lines and return the LAST one that starts with a
+        known status prefix. This makes the parser tolerant of stderr
+        noise while still failing cleanly if no status line is present.
         """
-        if isinstance(node, dict):
-            if target_key in node:
-                return node[target_key]
-            for value in node.values():
-                found = cls._find_key_recursive(value, target_key)
-                if found is not None:
-                    return found
-        elif isinstance(node, list):
-            for item in node:
-                found = cls._find_key_recursive(item, target_key)
-                if found is not None:
-                    return found
+        if not raw:
+            return None
+        for line in reversed(raw.splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for prefix in cls._STATUS_PREFIXES:
+                if stripped == prefix or stripped.startswith(prefix):
+                    return stripped
         return None
+
+    def _raise_for_probe_status(
+        self, hostname: str, result: str, probe_cmd: str
+    ) -> None:
+        """Translate a structured probe-status line into a tailored
+        RuntimeError. Caller has already verified result is non-empty and
+        is not the success ('OK ...') case. Raises in every code path
+        (catch-all at the end handles unrecognized output)."""
+        if result == "MISSING":
+            raise RuntimeError(
+                f"{hostname}: `{self.THRIFT_RATE_LIMIT_KEY}` not found at "
+                f"top level of {self.AGENT_CONFIG_PATH}. Thrift API rate "
+                f"limiting is NOT enabled — refusing to start a THFT "
+                f"(thrift-hardening) run because the storm will overload "
+                f"`fboss_sw_agent`. See D108220182 (enables defaults for "
+                f"ICECUBE800BC) and verify the configerator change has "
+                f"shipped + COOP has re-applied the agent config on this "
+                f"host."
+            )
+        if result.startswith("WRONG_TYPE "):
+            raise RuntimeError(
+                f"{hostname}: `{self.THRIFT_RATE_LIMIT_KEY}` is present in "
+                f"{self.AGENT_CONFIG_PATH} but is NOT a dict ({result}). "
+                f"Expected mapping of API-name → qps int. The COOP-side "
+                f"schema may have changed; inspect the config and the "
+                f"`agent_thrift_api_to_rate_limit.mcconf` materialization "
+                f"path."
+            )
+        if result == "EMPTY":
+            raise RuntimeError(
+                f"{hostname}: `{self.THRIFT_RATE_LIMIT_KEY}` is present "
+                f"and is a dict but empty in {self.AGENT_CONFIG_PATH}. "
+                f"Thrift API rate limiting is effectively disabled — "
+                f"refusing to start THFT run. See D108220182."
+            )
+        if result.startswith("NOT_DICT "):
+            raise RuntimeError(
+                f"{hostname}: root of {self.AGENT_CONFIG_PATH} is not a "
+                f"dict ({result}). The COOP-materialized config schema "
+                f"may have changed; cannot probe for "
+                f"`{self.THRIFT_RATE_LIMIT_KEY}`."
+            )
+        if result.startswith("MISSING_FILE "):
+            raise RuntimeError(
+                f"{hostname}: COOP-materialized agent config does not "
+                f"exist on the DUT ({result}). COOP may not have applied "
+                f"the agent config yet — try `systemctl restart coop` and "
+                f"wait for the file to materialize at "
+                f"{self.AGENT_CONFIG_PATH}."
+            )
+        if result.startswith("INVALID_JSON "):
+            raise RuntimeError(
+                f"{hostname}: {self.AGENT_CONFIG_PATH} exists but is not "
+                f"valid JSON ({result}). The file may have been truncated "
+                f"by a partial COOP write — re-fetch via `coop` CLI."
+            )
+        if result.startswith("ERROR "):
+            raise RuntimeError(
+                f"{hostname}: probe script hit an unexpected exception "
+                f"({result}). Re-run the probe manually on the DUT to "
+                f"reproduce: {probe_cmd}"
+            )
+        # Catch-all: shell-level failure (e.g. python3 not on PATH, base64
+        # missing) or unrecognized output. Include the raw output so on-
+        # call can diagnose without re-running.
+        raise RuntimeError(
+            f"{hostname}: unexpected probe output (likely python3/base64 "
+            f"missing on the remote, or a shell-level failure). Raw: "
+            f"{result[:500]!r}"
+        )
 
     async def run(self, params: t.Dict[str, t.Any]) -> None:
         hostname = params["hostname"]
         driver = await async_get_device_driver(hostname)
-        # pyre-ignore[16]: AbstractSwitch has no attribute `async_agent_client`
-        async with driver.async_agent_client as client:
-            running_config_json = await client.getRunningConfig()
-        try:
-            running_config = json.loads(running_config_json)
-        except (ValueError, TypeError) as e:
+        probe_cmd = self._build_probe_cmd()
+        # pyre-ignore[16]: AbstractSwitch has no attribute `async_run_cmd_on_shell`
+        raw = await driver.async_run_cmd_on_shell(probe_cmd)
+        raw_str = raw or ""
+        # Tolerate stderr noise (DeprecationWarning, locale banners) that
+        # gets merged into stdout by `2>&1`. The probe emits exactly one
+        # status line; scan ALL lines and pick the last one matching a
+        # known prefix. Falling back to the catch-all if no line matches.
+        status = self._extract_status_line(raw_str)
+        if status is None:
             raise RuntimeError(
-                f"{hostname}: getRunningConfig() returned non-JSON payload "
-                f"({type(e).__name__}: {e}); cannot verify thrift rate limit "
-                f"is enabled."
-            ) from e
-
-        rate_limit_map = self._find_key_recursive(
-            running_config, self.THRIFT_RATE_LIMIT_KEY
-        )
-        if rate_limit_map is None:
-            raise RuntimeError(
-                f"{hostname}: `{self.THRIFT_RATE_LIMIT_KEY}` not found in "
-                f"running agent config. Thrift API rate limiting is NOT "
-                f"enabled — refusing to start a THFT (thrift-hardening) "
-                f"run because the storm will overload `fboss_sw_agent`. "
-                f"See D108220182 (enables defaults for ICECUBE800BC) and "
-                f"verify the configerator change has shipped + COOP has "
-                f"re-applied the agent config on this host."
+                f"{hostname}: probe output contained no recognizable "
+                f"status line (likely shell exited before writing, or "
+                f"python3/base64 missing on the remote). Raw (first 500 "
+                f"chars): {raw_str.strip()[:500]!r}. Probe was: {probe_cmd}"
             )
-        if not isinstance(rate_limit_map, dict) or len(rate_limit_map) == 0:
-            raise RuntimeError(
-                f"{hostname}: `{self.THRIFT_RATE_LIMIT_KEY}` is present but "
-                f"empty (type={type(rate_limit_map).__name__}, "
-                f"size={len(rate_limit_map) if hasattr(rate_limit_map, '__len__') else 'n/a'}). "
-                f"Thrift API rate limiting is effectively disabled — "
-                f"refusing to start THFT run. See D108220182."
+        if status.startswith("OK "):
+            # "OK size=N sample=k1=v1,k2=v2,..."
+            self.logger.info(
+                f"{hostname}: thrift API rate limiting is ENABLED. "
+                f"Probe output: {status}"
             )
-
-        self.logger.info(
-            f"{hostname}: thrift API rate limiting is ENABLED "
-            f"({len(rate_limit_map)} APIs in the limit map). "
-            f"Sample rates: "
-            + ", ".join(f"{k}={v}" for k, v in list(rate_limit_map.items())[:5])
-            + " ..."
-        )
+            return
+        self._raise_for_probe_status(hostname, status, probe_cmd)

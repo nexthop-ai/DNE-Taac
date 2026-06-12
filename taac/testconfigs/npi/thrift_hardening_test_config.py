@@ -29,6 +29,7 @@ from taac.playbooks.playbook_definitions import (
     create_thft_playbooks,
 )
 from taac.task_definitions import (
+    create_assert_thrift_rate_limit_enabled_task,
     create_configure_parallel_bgp_peers_task,
     create_coop_apply_patchers_task,
     create_coop_register_patcher_task,
@@ -174,15 +175,17 @@ def create_npi_thrift_hardening_test_config(
         # MINUS the rogue interface — THFT only needs downlink+uplink for
         # BGP_SESSION_ESTABLISH precheck + BGP_PEER_ROUTE snapshot).
         #
-        # TODO: re-enable `create_assert_thrift_rate_limit_enabled_task` as
-        # the first setup-task once partner team confirms the config path
-        # for `thriftApiToRateLimitInQps` in `getRunningConfig()` output —
-        # current recursive-search implementation did not locate the key on
-        # the DUT despite D108220182 having shipped, so the gate is shelved
-        # to avoid false-FAIL on tonight's overnight campaign. The task
-        # class + factory remain in place (tasks/all.py +
-        # task_definitions.py) so re-enable is a one-line add here.
+        # `create_assert_thrift_rate_limit_enabled_task` runs FIRST as a
+        # fail-fast gate. It reads the COOP-materialized agent config at
+        # `/etc/coop/agent/current` on the DUT and asserts that the
+        # `thriftApiToRateLimitInQps` map is populated. Without this map
+        # the THFT 70K-concurrent burst would peg `fboss_sw_agent` CPU at
+        # 1339% and cascade into kernel OOMs (T275336067 / T275512222).
+        # With D108220182 landed and confirmed working on gtsw001 (2026-06-11
+        # — 140 APIs in the map, bgpd at 1% CPU under the storm), this
+        # precheck should PASS on any TH6 IcePack device.
         setup_tasks=[
+            create_assert_thrift_rate_limit_enabled_task(device_name),
             create_coop_unregister_patchers_task(device_name),
             # Remove all existing BGP peers first.
             create_coop_register_patcher_task(

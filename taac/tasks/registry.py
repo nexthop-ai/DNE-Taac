@@ -51,6 +51,7 @@ from taac.tasks.all import (
     AllocateCgroupSliceMemory,
     AristaCreateFileFromConfig,
     AristaDaemonControlTask,
+    AssertThriftRateLimitEnabledTask,
     ConfigureParallelBgpPeers,
     CoopApplyPatchersTask,
     CoopApplyPatchersV2,
@@ -126,6 +127,7 @@ from taac.tasks.verify_best_path_changes_task import (
 
 TASK_REGISTRY = [
     AristaDaemonControlTask,
+    AssertThriftRateLimitEnabledTask,
     BgpTcpdumpTask,
     CoopUnregisterPatchersTask,
     DeployEosImageTask,
