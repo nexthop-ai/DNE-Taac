@@ -26,10 +26,7 @@ IXIA Ports:
 - Et3/36/3 -> 8/4 (BGP MON)
 """
 
-from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    BgpPlusPlusProfile,
-    Gigabyte,
-)
+from neteng.test_infra.dne.taac.constants import BgpPlusPlusProfile, Gigabyte
 from taac.health_checks.healthcheck_definitions import (
     create_bgp_graceful_restart_check,
     create_bgp_session_establish_check,

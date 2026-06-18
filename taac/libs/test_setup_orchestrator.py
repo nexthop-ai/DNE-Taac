@@ -6,10 +6,7 @@ import os
 import time
 import typing as t
 
-from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    FbossPackage,
-    TestTopology,
-)
+from neteng.test_infra.dne.taac.constants import FbossPackage, TestTopology
 from taac.ixia.taac_ixia import TaacIxia
 from taac.libs.oss_test_bed_chunker import OssTestBedChunker
 from taac.libs.traffic_generator import TrafficGenerator

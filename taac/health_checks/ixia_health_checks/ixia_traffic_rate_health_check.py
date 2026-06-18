@@ -5,9 +5,7 @@ import typing as t
 from taac.health_checks.abstract_health_check import (
     AbstractIxiaHealthCheck,
 )
-from taac.ixia.taac_ixia import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    TaacIxia as Ixia,
-)
+from neteng.test_infra.dne.taac.ixia.taac_ixia import TaacIxia as Ixia
 from taac.utils.common import async_everpaste_str
 from taac.health_check.health_check import types as hc_types
 from tabulate import tabulate

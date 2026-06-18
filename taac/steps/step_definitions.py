@@ -52,9 +52,7 @@ from taac.internal.drainer_utils import async_nds_drain
 from taac.internal.utils.openr_route_utils import (
     OpenRRouteManager,
 )
-from taac.steps.step import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    Step as StepBase,
-)
+from neteng.test_infra.dne.taac.steps.step import Step as StepBase
 from taac.tasks.utils import run_task
 from taac.utils.common import (
     async_write_test_result,

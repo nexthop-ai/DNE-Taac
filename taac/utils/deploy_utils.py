@@ -3,10 +3,7 @@
 import asyncio
 import typing as t
 
-from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    DNE_LOG_DIR,
-    RSYSLOG_AGENT_FILE,
-)
+from neteng.test_infra.dne.taac.constants import DNE_LOG_DIR, RSYSLOG_AGENT_FILE
 from taac.utils.driver_factory import async_get_device_driver
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,

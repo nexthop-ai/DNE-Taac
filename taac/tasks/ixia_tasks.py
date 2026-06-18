@@ -11,10 +11,7 @@ from taac.ixia.ixia import Ipv4PrefixPools
 from taac.tasks.base_task import BaseTask
 from taac.utils.common import get_default_bgp_configs
 from taac.utils.driver_factory import async_get_device_driver
-from taac.utils.oss_taac_lib_utils import (  # oss-rewrite (force ShipIt re-export to taac.* root)
-    none_throws,
-    retryable,
-)
+from neteng.test_infra.dne.taac.utils.oss_taac_lib_utils import none_throws, retryable
 
 
 class IxiaEnableDisableBgpPrefixes(BaseTask):
