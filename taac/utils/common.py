@@ -15,7 +15,10 @@ from textwrap import wrap
 from typing import Type
 
 import pyjq
-from neteng.test_infra.dne.taac.constants import TestDevice, TestResult
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestResult,
+)
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
     get_root_logger,

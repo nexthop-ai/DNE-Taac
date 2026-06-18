@@ -48,7 +48,10 @@ from taac.libs.test_setup_orchestrator import (
     TestSetupOrchestrator,
 )
 from taac.stages.stage_definitions import create_steps_stage
-from neteng.test_infra.dne.taac.steps.all_steps import NAME_TO_STEP, STEP_NAME_TO_INPUT
+from taac.steps.all_steps import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    NAME_TO_STEP,
+    STEP_NAME_TO_INPUT,
+)
 from taac.steps.step import Step
 from taac.steps.step_definitions import ValidationStep
 from taac.tasks.utils import run_task

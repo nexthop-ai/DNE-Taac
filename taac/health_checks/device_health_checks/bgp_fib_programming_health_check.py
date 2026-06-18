@@ -10,7 +10,10 @@ from taac.constants import TestDevice
 from taac.health_checks.abstract_health_check import (
     AbstractDeviceHealthCheck,
 )
-from neteng.test_infra.dne.taac.utils import arista_utils, log_parsing_utils
+from taac.utils import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    arista_utils,
+    log_parsing_utils,
+)
 from taac.health_check.health_check import types as hc_types
 
 

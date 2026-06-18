@@ -4,7 +4,9 @@ import time
 import typing as t
 
 from taac.constants import PeriodicCheckResult
-from neteng.test_infra.dne.taac.ixia.taac_ixia import TaacIxia as Ixia
+from taac.ixia.taac_ixia import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TaacIxia as Ixia,
+)
 from taac.utils.driver_factory import async_get_device_driver
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
