@@ -6,7 +6,9 @@ import multiprocessing
 import threading
 import typing as t
 
-from neteng.test_infra.dne.taac.ixia.taac_ixia import TaacIxia as Ixia
+from taac.ixia.taac_ixia import (
+    TaacIxia as Ixia,
+)  # OSS ship-rewrite probe
 from taac.libs.periodic_task_worker import PeriodicTaskWorker
 from taac.utils.oss_taac_lib_utils import (
     ConsoleFileLogger,
