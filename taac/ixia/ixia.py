@@ -5730,10 +5730,18 @@ class Ixia:
 
     @require_traffic_item
     def apply_traffic(self) -> None:
-        try:
-            self.ixnetwork.Traffic.Apply()
-        except Exception as e:
-            self.logger.debug(f"Failed to apply traffic: {e}")
+        # IxNetwork's Traffic.Apply() returns HTTP 400 BadRequestError
+        # ("Error in L2/L3 Traffic Apply") when invoked with all traffic
+        # items disabled — the per-item .Enabled=False setter has already
+        # committed the disable state, so Apply() has nothing to roll up.
+        # Skip the call in that case rather than swallowing a broad
+        # Exception, so any future real failure of Apply() propagates.
+        if not any(ti.Enabled for ti in self.ixnetwork.Traffic.TrafficItem.find()):
+            self.logger.debug(
+                "apply_traffic: no enabled traffic items — skipping Traffic.Apply()"
+            )
+            return
+        self.ixnetwork.Traffic.Apply()
 
     def has_traffic_items(self) -> bool:
         try:
