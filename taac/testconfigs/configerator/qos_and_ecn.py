@@ -6,28 +6,28 @@ import itertools
 from typing import List
 
 from ixia.ixia import types as ixia_thrift
-from neteng.qosdb.Cos import types as cos
 from taac.testconfigs.configerator.test_config import (
     thrift_to_json,
 )
+from taac.utils.qos_constants import ClassOfService
 from taac.health_check.health_check import types as hc_thrift
 from taac.test_as_a_config import types as taac_thrift
 
 
 QUEUE_DSCP_VALUE_MAP = {
-    cos.ClassOfService.BRONZE: 10,
-    cos.ClassOfService.SILVER: 0,
-    cos.ClassOfService.GOLD: 18,
-    cos.ClassOfService.ICP: 35,
-    cos.ClassOfService.NC: 48,
+    ClassOfService.BRONZE: 10,
+    ClassOfService.SILVER: 0,
+    ClassOfService.GOLD: 18,
+    ClassOfService.ICP: 35,
+    ClassOfService.NC: 48,
 }
 
 COS_QUEUE_TO_STR = {
-    cos.ClassOfService.BRONZE: "BRONZE",
-    cos.ClassOfService.SILVER: "SILVER",
-    cos.ClassOfService.GOLD: "GOLD",
-    cos.ClassOfService.ICP: "ICP",
-    cos.ClassOfService.NC: "NC",
+    ClassOfService.BRONZE: "BRONZE",
+    ClassOfService.SILVER: "SILVER",
+    ClassOfService.GOLD: "GOLD",
+    ClassOfService.ICP: "ICP",
+    ClassOfService.NC: "NC",
 }
 
 FRAME_SIZE_SETTING_MAPPING = {
@@ -50,7 +50,7 @@ FRAME_SIZE_SETTING_MAPPING = {
 def create_qos_ipv6_traffic_item(
     src_endpoint: str,
     dst_endpoint: str,
-    cos: cos.ClassOfService,
+    cos: ClassOfService,
     ecn_capability: ixia_thrift.EcnCapability = ixia_thrift.EcnCapability.MIXED,
     line_rate: int = 10,
 ) -> List[taac_thrift.BasicTrafficItemConfig]:
@@ -87,7 +87,7 @@ def create_qos_ipv6_traffic_item(
 def create_qos_playbook(
     hostname: str,
     egress_ixia_port: str,
-    cos: cos.ClassOfService,
+    cos: ClassOfService,
     frame_size_str: str,
 ) -> taac_thrift.Playbook:
     return taac_thrift.Playbook(
@@ -103,7 +103,7 @@ def create_qos_playbook(
                             hc_thrift.TxQueueInfo(
                                 hostname=hostname,
                                 interface=egress_ixia_port,
-                                cos_list=[cos],
+                                cos_list=[int(cos)],
                                 val=1000,
                             )
                         ]

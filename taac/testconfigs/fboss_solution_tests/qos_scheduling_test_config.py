@@ -11,7 +11,6 @@ import json
 import typing as t
 
 from ixia.ixia import types as ixia_types
-from neteng.qosdb.Cos import types as qos_types
 from taac.health_checks.healthcheck_definitions import (
     create_buffer_utilization_snapshot_check,
     create_ixia_packet_loss_check,
@@ -39,6 +38,7 @@ from taac.testconfigs.fboss_solution_tests.fboss_bgp_and_platform_hardening_conv
     test_config_for_bgp_and_fboss_platform_hardening_in_conveyor,
 )
 from taac.utils.json_thrift_utils import thrift_to_json
+from taac.utils.qos_constants import ClassOfService
 from taac.health_check.health_check import types as hc_types
 from taac.test_as_a_config import types as taac_types
 from taac.test_as_a_config.types import (
@@ -56,12 +56,12 @@ from taac.test_as_a_config.types import (
 
 # DSCP values for each ClassOfService.
 # These are the "self-marking" DSCP values from the cos_utility_maps configerator config.
-COS_DSCP_VALUES: t.Dict[qos_types.ClassOfService, int] = {
-    qos_types.ClassOfService.BRONZE: 10,
-    qos_types.ClassOfService.SILVER: 9,
-    qos_types.ClassOfService.GOLD: 18,
-    qos_types.ClassOfService.ICP: 35,
-    qos_types.ClassOfService.NC: 48,
+COS_DSCP_VALUES: t.Dict[ClassOfService, int] = {
+    ClassOfService.BRONZE: 10,
+    ClassOfService.SILVER: 9,
+    ClassOfService.GOLD: 18,
+    ClassOfService.ICP: 35,
+    ClassOfService.NC: 48,
 }
 
 # NCNF is not yet a first-class ClassOfService enum value.
@@ -71,23 +71,23 @@ NCNF_QUEUE_DESC = "queue0.ncnf"
 
 # Mapping from ClassOfService to human-readable queue description.
 # Mirrors COS_QUEUE_FB303_COUNTER_DESC in qos_dscp_tx_queue_health_check.py.
-COS_QUEUE_DESC: t.Dict[qos_types.ClassOfService, str] = {
-    qos_types.ClassOfService.BRONZE: "queue1.bronze",
-    qos_types.ClassOfService.SILVER: "queue2.silver",
-    qos_types.ClassOfService.GOLD: "queue3.gold",
-    qos_types.ClassOfService.ICP: "queue6.icp",
-    qos_types.ClassOfService.NC: "queue7.nc",
+COS_QUEUE_DESC: t.Dict[ClassOfService, str] = {
+    ClassOfService.BRONZE: "queue1.bronze",
+    ClassOfService.SILVER: "queue2.silver",
+    ClassOfService.GOLD: "queue3.gold",
+    ClassOfService.ICP: "queue6.icp",
+    ClassOfService.NC: "queue7.nc",
 }
 
 # Priority ordering (highest → lowest) used to generate congestion test pairs.
 # Tests verify that a higher-priority queue is not affected when a
 # lower-priority queue is congested.
-COS_PRIORITY_ORDER: t.List[qos_types.ClassOfService] = [
-    qos_types.ClassOfService.NC,
-    qos_types.ClassOfService.ICP,
-    qos_types.ClassOfService.GOLD,
-    qos_types.ClassOfService.SILVER,
-    qos_types.ClassOfService.BRONZE,
+COS_PRIORITY_ORDER: t.List[ClassOfService] = [
+    ClassOfService.NC,
+    ClassOfService.ICP,
+    ClassOfService.GOLD,
+    ClassOfService.SILVER,
+    ClassOfService.BRONZE,
 ]
 
 LONGEVITY_DURATION_S = 120
@@ -108,11 +108,11 @@ NON_CONGESTED_QUEUE_BUFFER_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 MULTI_CONGESTION_LINERATE = 10
 
 # Per-queue congestion traffic item name suffixes.
-COS_CONGESTION_TRAFFIC_SUFFIX: t.Dict[qos_types.ClassOfService, str] = {
-    qos_types.ClassOfService.ICP: "CONGESTION_TRAFFIC_ICP",
-    qos_types.ClassOfService.GOLD: "CONGESTION_TRAFFIC_GOLD",
-    qos_types.ClassOfService.SILVER: "CONGESTION_TRAFFIC_SILVER",
-    qos_types.ClassOfService.BRONZE: "CONGESTION_TRAFFIC_BRONZE",
+COS_CONGESTION_TRAFFIC_SUFFIX: t.Dict[ClassOfService, str] = {
+    ClassOfService.ICP: "CONGESTION_TRAFFIC_ICP",
+    ClassOfService.GOLD: "CONGESTION_TRAFFIC_GOLD",
+    ClassOfService.SILVER: "CONGESTION_TRAFFIC_SILVER",
+    ClassOfService.BRONZE: "CONGESTION_TRAFFIC_BRONZE",
 }
 
 # Default frame size for QoS traffic items — weighted IMIX distribution.
@@ -154,7 +154,7 @@ def _get_ipv6_packet_headers() -> t.List[taac_types.PacketHeader]:
 
 def _make_buffer_utilization_check(
     device_name: str,
-    active_cos_list: t.List[qos_types.ClassOfService],
+    active_cos_list: t.List[ClassOfService],
     interfaces: t.List[str],
     active_queue_max_bytes: int,
     other_queue_max_bytes: int,
@@ -167,7 +167,7 @@ def _make_buffer_utilization_check(
             hc_types.BufferUtilizationThreshold(  # pyre-ignore[16]
                 hostname=device_name,
                 interfaces=interfaces,
-                active_cos_list=active_cos_list,
+                active_cos_list=[int(c) for c in active_cos_list],
                 active_queue_max_bytes=active_queue_max_bytes,
                 other_queue_max_bytes=other_queue_max_bytes,
             ),
@@ -179,7 +179,7 @@ def _make_buffer_utilization_check(
 
 def _make_qos_snapshot_check(
     device_name: str,
-    cos: qos_types.ClassOfService,
+    cos: ClassOfService,
     interfaces: t.List[str],
     pre_snapshot_checkpoint_id: t.Optional[str] = None,
     post_snapshot_checkpoint_id: t.Optional[str] = None,
@@ -190,7 +190,7 @@ def _make_qos_snapshot_check(
             hc_types.TxQueueInfo(
                 hostname=device_name,
                 interface=interface,
-                cos_list=[cos],
+                cos_list=[int(cos)],
                 key_desc="out_bytes.sum.60",
                 val=0,
                 comparison=hc_types.ComparisonType.GREATER_THAN,
@@ -326,7 +326,7 @@ def _ixia_start_traffic_step(
 # ---------------------------------------------------------------------------
 def _create_qos_scheduling_playbook(
     device_name: str,
-    cos: qos_types.ClassOfService,
+    cos: ClassOfService,
     dscp_value: int,
     queue_desc: str,
     interfaces: t.List[str],
@@ -511,8 +511,8 @@ def _create_qos_scheduling_playbook(
 # ---------------------------------------------------------------------------
 def _create_qos_congestion_playbook(
     device_name: str,
-    priority_cos: qos_types.ClassOfService,
-    congested_cos: qos_types.ClassOfService,
+    priority_cos: ClassOfService,
+    congested_cos: ClassOfService,
     ixia_downlink_interface: str,
     frame_size: t.Optional[ixia_types.FrameSize] = None,
 ) -> Playbook:
@@ -944,7 +944,7 @@ def get_qos_congestion_playbooks(
 # ---------------------------------------------------------------------------
 def _create_qos_per_queue_congestion_playbook(
     device_name: str,
-    cos: qos_types.ClassOfService,
+    cos: ClassOfService,
     ixia_downlink_interface: str,
     frame_size: t.Optional[ixia_types.FrameSize] = None,
 ) -> Playbook:
@@ -1332,7 +1332,7 @@ def get_qos_per_queue_congestion_playbooks(
 # ---------------------------------------------------------------------------
 def _create_qos_single_queue_congestion_playbook(
     device_name: str,
-    congested_cos: qos_types.ClassOfService,
+    congested_cos: ClassOfService,
     ixia_downlink_interface: str,
     frame_size: t.Optional[ixia_types.FrameSize] = None,
 ) -> Playbook:
@@ -1357,7 +1357,7 @@ def _create_qos_single_queue_congestion_playbook(
        should not.
     7. Packet loss: congestion item expects loss, priority items do not.
     """
-    priority_cos = qos_types.ClassOfService.NC
+    priority_cos = ClassOfService.NC
     priority_dscp = COS_DSCP_VALUES[priority_cos]
     congested_dscp = COS_DSCP_VALUES[congested_cos]
 
@@ -1579,8 +1579,8 @@ def get_qos_single_queue_congestion_playbooks(
 # ---------------------------------------------------------------------------
 def _create_qos_multi_congestion_playbook(
     device_name: str,
-    priority_cos: qos_types.ClassOfService,
-    congested_cos_list: t.List[qos_types.ClassOfService],
+    priority_cos: ClassOfService,
+    congested_cos_list: t.List[ClassOfService],
     ixia_downlink_interface: str,
     frame_size: t.Optional[ixia_types.FrameSize] = None,
 ) -> Playbook:

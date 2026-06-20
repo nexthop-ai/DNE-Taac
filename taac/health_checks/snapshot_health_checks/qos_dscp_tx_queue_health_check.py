@@ -3,7 +3,6 @@
 import asyncio
 import typing as t
 
-from neteng.qosdb.Cos import types as qos_types
 from taac.constants import TestTopology
 from taac.health_checks.abstract_snapshot_health_check import (
     AbstractTopologySnapshotHealthCheck,
@@ -11,15 +10,16 @@ from taac.health_checks.abstract_snapshot_health_check import (
 from taac.health_checks.common_utils import evaluate_comparison
 from taac.health_checks.constants import Snapshot
 from taac.utils.health_check_utils import get_fb303_client
+from taac.utils.qos_constants import ClassOfService
 from taac.health_check.health_check import types as hc_types
 
 
 COS_QUEUE_FB303_COUNTER_DESC = {
-    qos_types.ClassOfService.BRONZE: "queue1.bronze",
-    qos_types.ClassOfService.SILVER: "queue2.silver",
-    qos_types.ClassOfService.GOLD: "queue3.gold",
-    qos_types.ClassOfService.ICP: "queue6.icp",
-    qos_types.ClassOfService.NC: "queue7.nc",
+    ClassOfService.BRONZE: "queue1.bronze",
+    ClassOfService.SILVER: "queue2.silver",
+    ClassOfService.GOLD: "queue3.gold",
+    ClassOfService.ICP: "queue6.icp",
+    ClassOfService.NC: "queue7.nc",
 }
 
 # NC queue always carries background control plane traffic (BGP keepalives,
@@ -117,7 +117,7 @@ class QoSDscpTxQueueHealthCheck(
                 diff = post_counter - pre_counter
                 offset = (
                     NC_QUEUE_OFFSET_BYTES
-                    if cos == qos_types.ClassOfService.NC
+                    if cos == ClassOfService.NC
                     else DEFAULT_QUEUE_OFFSET_BYTES
                 )
                 diff = max(0, diff - offset)
@@ -142,7 +142,7 @@ class QoSDscpTxQueueHealthCheck(
                     diff = post_counter - pre_counter
                     offset = (
                         NC_QUEUE_OFFSET_BYTES
-                        if cos == qos_types.ClassOfService.NC
+                        if cos == ClassOfService.NC
                         else DEFAULT_QUEUE_OFFSET_BYTES
                     )
                     diff = max(0, diff - offset)

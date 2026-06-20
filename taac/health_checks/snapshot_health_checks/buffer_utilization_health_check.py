@@ -4,25 +4,25 @@ import asyncio
 import re
 import typing as t
 
-from neteng.qosdb.Cos import types as qos_types
 from taac.constants import TestTopology
 from taac.health_checks.abstract_snapshot_health_check import (
     AbstractTopologySnapshotHealthCheck,
 )
 from taac.health_checks.constants import Snapshot
 from taac.utils.health_check_utils import get_fb303_client
+from taac.utils.qos_constants import ClassOfService
 from taac.health_check.health_check import types as hc_types
 
 
 # Mapping from ClassOfService to the queue label used in
 # buffer_watermark_ucast fb303 counter names.
 # Counter format: buffer_watermark_ucast.<port>.queue<N>.<name>.p100.60
-COS_QUEUE_BUFFER_WM_LABEL: t.Dict[qos_types.ClassOfService, str] = {
-    qos_types.ClassOfService.BRONZE: "queue1.bronze",
-    qos_types.ClassOfService.SILVER: "queue2.silver",
-    qos_types.ClassOfService.GOLD: "queue3.gold",
-    qos_types.ClassOfService.ICP: "queue6.icp",
-    qos_types.ClassOfService.NC: "queue7.nc",
+COS_QUEUE_BUFFER_WM_LABEL: t.Dict[ClassOfService, str] = {
+    ClassOfService.BRONZE: "queue1.bronze",
+    ClassOfService.SILVER: "queue2.silver",
+    ClassOfService.GOLD: "queue3.gold",
+    ClassOfService.ICP: "queue6.icp",
+    ClassOfService.NC: "queue7.nc",
 }
 
 # Regex to extract per-port per-queue unicast watermark counters.
@@ -120,7 +120,8 @@ class BufferUtilizationHealthCheck(
             host_counters = post_counters.get(hostname, {})
 
             active_queue_labels = {
-                COS_QUEUE_BUFFER_WM_LABEL[cos] for cos in threshold.active_cos_list
+                COS_QUEUE_BUFFER_WM_LABEL[ClassOfService(cos)]
+                for cos in threshold.active_cos_list
             }
             all_queue_labels = set(COS_QUEUE_BUFFER_WM_LABEL.values())
             other_queue_labels = all_queue_labels - active_queue_labels
