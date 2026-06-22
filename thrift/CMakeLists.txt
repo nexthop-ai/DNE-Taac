@@ -307,14 +307,6 @@ add_taac_thrift_python_library(
 # ============================================================================
 
 add_taac_thrift_python_library(
-    qosdb_cos_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/qosdb/Cos.thrift"
-    NAMESPACE "neteng.qosdb"
-    OPTIONS json
-    DEPENDS thrift_roots
-)
-
-add_taac_thrift_python_library(
     ixia_py
     "${TAAC_THRIFT_DIR}/configerator/structs/neteng/ixia/ixia.thrift"
     NAMESPACE "ixia"
@@ -418,7 +410,7 @@ add_taac_thrift_python_library(
     "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/health_check.thrift"
     NAMESPACE "taac.health_check"
     OPTIONS json
-    DEPENDS thrift_roots qosdb_cos_py
+    DEPENDS thrift_roots
 )
 
 add_taac_thrift_python_library(
@@ -470,7 +462,6 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     fsdb_oper_py.py_sources_built
     highfreq_py.py_sources_built
     switch_state_py.py_sources_built
-    qosdb_cos_py.py_sources_built
     ixia_py.py_sources_built
     qos_config_py.py_sources_built
     ixia_config_thrift_py.py_sources_built
