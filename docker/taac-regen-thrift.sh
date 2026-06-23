@@ -11,7 +11,7 @@
 #
 #   thrift_src_dir  Path to a directory containing .thrift files (the
 #                   helper walks it recursively). Typically your
-#                   bind-mounted workspace's thrift/ tree.
+#                   bind-mounted workspace's taac/thrift/ tree.
 #   output_dir      Where to write generated Python bindings. Defaults
 #                   to /tmp/taac-regen.
 #
@@ -57,12 +57,32 @@ fi
 
 mkdir -p "$OUT"
 
+# Upstream-tracked .thrift files at $SRC/{taac,ixia,neteng}/... use
+# Meta-internal monorepo include paths (e.g.
+# `include "configerator/structs/neteng/taac/health_check.thrift"`).
+# Build a symlink farm at $OUT/staging/ where each include path resolves
+# to the actual file under $SRC, then add the staging dir to thrift1 -I.
+# Keeps include statements byte-for-byte identical to Meta's upstream.
+STAGING="$OUT/staging"
+rm -rf "$STAGING"
+mkdir -p "$STAGING/configerator/structs/neteng/taac" \
+         "$STAGING/configerator/structs/neteng/ixia" \
+         "$STAGING/neteng/test_infra/dne/utils/if"
+ln -sf "$SRC/taac/health_check.thrift" \
+       "$STAGING/configerator/structs/neteng/taac/health_check.thrift"
+ln -sf "$SRC/taac/test_as_a_config.thrift" \
+       "$STAGING/configerator/structs/neteng/taac/test_as_a_config.thrift"
+ln -sf "$SRC/ixia/ixia.thrift" \
+       "$STAGING/configerator/structs/neteng/ixia/ixia.thrift"
+ln -sf "$SRC/neteng/test_infra/dne/utils/if/qos_config.thrift" \
+       "$STAGING/neteng/test_infra/dne/utils/if/qos_config.thrift"
+
 # thrift_files is computed via process substitution (not a pipe) so the
 # while loop runs in the current shell and `count` survives the loop.
 count=0
 while IFS= read -r -d '' f; do
     "$THRIFT1" --gen mstch_python \
-        -I "$SRC" \
+        -I "$STAGING" \
         -I "$FBOSS_SCHEMAS" \
         -I "$FBTHRIFT_INCLUDE" \
         -o "$OUT" \

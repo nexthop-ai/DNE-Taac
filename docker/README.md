@@ -106,7 +106,7 @@ docker run --rm -it --network host \
 docker run --rm -it --network host \
     -v "$PWD":/workspace \
     fboss-taac \
-    bash -c 'taac-regen-thrift /workspace/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH && exec bash'
+    bash -c 'taac-regen-thrift /workspace/taac/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH && exec bash'
 ```
 
 ## Where to look for details

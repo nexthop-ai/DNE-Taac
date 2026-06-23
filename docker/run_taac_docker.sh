@@ -65,7 +65,7 @@ while IFS= read -r _taac_var; do
 done < <(env | grep '^TAAC_' | cut -d= -f1)
 
 if [[ "$REGEN" -eq 1 ]]; then
-    INIT='taac-regen-thrift --quiet /workspace/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH'
+    INIT='taac-regen-thrift --quiet /workspace/taac/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH'
 else
     INIT='export PYTHONPATH=/workspace:$PYTHONPATH'
 fi

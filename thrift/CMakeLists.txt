@@ -2,12 +2,41 @@
 # TAAC Thrift -> Python Codegen
 # ============================================================================
 # Two sources of .thrift files:
-#   1. TAAC-owned: ${TAAC_THRIFT_DIR} (thrift/ directory in THIS repo)
-#   2. FBOSS:     ${FBOSS_THRIFT_DIR} (fetched by getdeps fboss-thrift-defs)
+#   1. TAAC-owned: ${UPSTREAM_THRIFT_DIR} (taac/thrift/ — Meta-canonical paths)
+#   2. FBOSS:      ${FBOSS_THRIFT_DIR}    (fetched by getdeps fboss-thrift-defs)
 # ============================================================================
 
-set(TAAC_THRIFT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(FBOSS_THRIFT_DIR "${FBOSS_THRIFT_SOURCE_DIR}")
+
+# Upstream-tracked .thrift files live at taac/thrift/{taac,ixia,neteng}/... in
+# this repo (paths and include statements match Meta's facebook/DNE-Taac mirror
+# byte-for-byte). Their `include` statements reference Meta's internal
+# monorepo paths (e.g. `include "configerator/structs/neteng/taac/health_check.thrift"`).
+# To resolve those without rewriting the include statements, we build a
+# symlink farm at THRIFT_STAGING_DIR where each include path maps to the
+# corresponding file under taac/thrift/, then add THRIFT_STAGING_DIR to the
+# thrift1 -I search list.
+get_filename_component(UPSTREAM_THRIFT_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../taac/thrift" ABSOLUTE
+)
+set(THRIFT_STAGING_DIR "${CMAKE_CURRENT_BINARY_DIR}/thrift-staging")
+file(MAKE_DIRECTORY
+    "${THRIFT_STAGING_DIR}/configerator/structs/neteng/taac"
+    "${THRIFT_STAGING_DIR}/configerator/structs/neteng/ixia"
+    "${THRIFT_STAGING_DIR}/neteng/test_infra/dne/utils/if"
+)
+file(CREATE_LINK
+    "${UPSTREAM_THRIFT_DIR}/taac/health_check.thrift"
+    "${THRIFT_STAGING_DIR}/configerator/structs/neteng/taac/health_check.thrift" SYMBOLIC)
+file(CREATE_LINK
+    "${UPSTREAM_THRIFT_DIR}/taac/test_as_a_config.thrift"
+    "${THRIFT_STAGING_DIR}/configerator/structs/neteng/taac/test_as_a_config.thrift" SYMBOLIC)
+file(CREATE_LINK
+    "${UPSTREAM_THRIFT_DIR}/ixia/ixia.thrift"
+    "${THRIFT_STAGING_DIR}/configerator/structs/neteng/ixia/ixia.thrift" SYMBOLIC)
+file(CREATE_LINK
+    "${UPSTREAM_THRIFT_DIR}/neteng/test_infra/dne/utils/if/qos_config.thrift"
+    "${THRIFT_STAGING_DIR}/neteng/test_infra/dne/utils/if/qos_config.thrift" SYMBOLIC)
 
 # add_taac_thrift_python_library() propagates thrift1 -I paths via its DEPENDS
 # list. Each DEPENDS entry <X> contributes X.thrift_includes to the target.
@@ -28,7 +57,7 @@ get_filename_component(FBTHRIFT_ANNOTATION_INCLUDE
 add_library(thrift_roots.thrift_includes INTERFACE)
 target_include_directories(thrift_roots.thrift_includes
     INTERFACE
-    "${TAAC_THRIFT_DIR}"
+    "${THRIFT_STAGING_DIR}"
     "${FBOSS_THRIFT_DIR}"
     "${FBTHRIFT_ANNOTATION_INCLUDE}"
 )
@@ -308,7 +337,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     ixia_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/ixia/ixia.thrift"
+    "${UPSTREAM_THRIFT_DIR}/ixia/ixia.thrift"
     NAMESPACE "ixia"
     OPTIONS json
     DEPENDS thrift_roots
@@ -317,7 +346,7 @@ add_taac_thrift_python_library(
 # Leaf QoS enum used by the ixia_config_thrift schema below.
 add_taac_thrift_python_library(
     qos_config_py
-    "${TAAC_THRIFT_DIR}/neteng/test_infra/dne/utils/if/qos_config.thrift"
+    "${UPSTREAM_THRIFT_DIR}/neteng/test_infra/dne/utils/if/qos_config.thrift"
     NAMESPACE "neteng.test_infra.dne.utils"
     OPTIONS json
     DEPENDS thrift_roots
@@ -329,10 +358,10 @@ add_taac_thrift_python_library(
 # this binding must exist at runtime.
 add_taac_thrift_python_library(
     ixia_config_thrift_py
-    "${TAAC_THRIFT_DIR}/ixia/ixia_config_thrift.thrift"
+    "${UPSTREAM_THRIFT_DIR}/neteng/test_infra/ixia/ixnetwork_restpy/ixia_config_thrift.thrift"
     NAMESPACE "neteng.test_infra.ixia.ixnetwork_restpy"
     OPTIONS json
-    DEPENDS thrift_roots
+    DEPENDS thrift_roots qos_config_py
 )
 
 # BGP thrift schemas. bgp_attr / bgp_config / bgp_policy / rib_policy
@@ -407,7 +436,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     health_check_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/health_check.thrift"
+    "${UPSTREAM_THRIFT_DIR}/taac/health_check.thrift"
     NAMESPACE "taac.health_check"
     OPTIONS json
     DEPENDS thrift_roots
@@ -415,7 +444,7 @@ add_taac_thrift_python_library(
 
 add_taac_thrift_python_library(
     test_as_a_config_py
-    "${TAAC_THRIFT_DIR}/configerator/structs/neteng/taac/test_as_a_config.thrift"
+    "${UPSTREAM_THRIFT_DIR}/taac/test_as_a_config.thrift"
     NAMESPACE "taac"
     OPTIONS json
     DEPENDS thrift_roots health_check_py ixia_py
