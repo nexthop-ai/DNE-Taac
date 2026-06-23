@@ -2,6 +2,7 @@
 
 # pyre-unsafe
 import asyncio
+import time
 import traceback
 import typing as t
 from abc import ABC, abstractmethod
@@ -40,6 +41,12 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
             )
         self.logger = logger
         self.ixia = ixia
+        # Per-attempt diff magnitude (e.g. RIB-FIB missing-route count).
+        # Subclasses MAY populate this inside `_run()` so the retry-loop
+        # framework can capture a per_attempt_diff[] trajectory in the
+        # always-on timing annotation. Reset by the framework before
+        # each attempt; None means "no trajectory data" (default).
+        self._last_attempt_diff: t.Optional[int] = None
 
     async def run_wrapper(
         self,
@@ -119,6 +126,17 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
             current_delay = retry_delay
             check_result = None
 
+            # Heal-latency instrumentation state (T274256815, paste
+            # P2390924278). Always-on, additive — never alters verdict.
+            # `t0` is the wall-clock anchor used by both the timing
+            # annotation and the optional post-verdict heal probe so
+            # they report from the same origin. Monotonic clock chosen
+            # to be robust against wall-clock adjustments.
+            t0_monotonic = time.monotonic()
+            per_attempt_diff: t.List[t.Optional[int]] = []
+            attempts_to_pass: t.Optional[int] = None
+            elapsed_to_pass_sec: t.Optional[float] = None
+
             for attempt in range(1 + retry_count):
                 if attempt > 0:
                     self.logger.info(
@@ -128,9 +146,14 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                     await asyncio.sleep(current_delay)
                     current_delay *= retry_multiplier
 
+                self._last_attempt_diff = None
                 check_result = await run_fn(obj, input, check_params)
+                per_attempt_diff.append(self._last_attempt_diff)
 
                 if check_result.status != hc_types.HealthCheckStatus.FAIL:
+                    if check_result.status == hc_types.HealthCheckStatus.PASS:
+                        attempts_to_pass = attempt + 1
+                        elapsed_to_pass_sec = time.monotonic() - t0_monotonic
                     break
 
                 if attempt < retry_count:
@@ -150,6 +173,17 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                     f"[Failed after {retry_count} retries] {check_result.message}"
                 )
                 check_result = check_result(message=annotated_msg)
+
+            check_result = await self._apply_timing_and_probe_annotations(
+                check_result=check_result,
+                obj=obj,
+                input=input,
+                check_params=check_params,
+                t0_monotonic=t0_monotonic,
+                attempts_to_pass=attempts_to_pass,
+                elapsed_to_pass_sec=elapsed_to_pass_sec,
+                per_attempt_diff=per_attempt_diff,
+            )
 
             check_result = check_result(
                 message=await self._safe_shorten(
@@ -173,6 +207,55 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                 status=hc_types.HealthCheckStatus.ERROR,
                 message=await self._safe_shorten(err_msg, shorten_fburl=True),
             )
+
+    async def _apply_timing_and_probe_annotations(
+        self,
+        check_result: hc_types.HealthCheckResult,
+        obj: Object,
+        input: HealthCheckIn,
+        check_params: t.Dict[str, t.Any],
+        t0_monotonic: float,
+        attempts_to_pass: t.Optional[int],
+        elapsed_to_pass_sec: t.Optional[float],
+        per_attempt_diff: t.List[t.Optional[int]],
+    ) -> hc_types.HealthCheckResult:
+        """Append the always-on timing annotation and (on FAIL) the
+        opt-in post-verdict probe annotation. Verdict-preserving:
+        annotations may only enrich `message`, never change `status`.
+        """
+        timing_annotation = self._format_timing_annotation(
+            attempts_to_pass=attempts_to_pass,
+            elapsed_to_pass_sec=elapsed_to_pass_sec,
+            per_attempt_diff=per_attempt_diff,
+            final_status=check_result.status,
+        )
+        if timing_annotation:
+            check_result = check_result(
+                message=self._append_annotation(check_result.message, timing_annotation)
+            )
+
+        if check_result.status != hc_types.HealthCheckStatus.FAIL:
+            return check_result
+
+        try:
+            probe_annotation = await self._run_post_verdict_probe(
+                obj, input, check_params, t0_monotonic
+            )
+        except Exception as probe_exc:
+            # A probe failure must never escalate to ERROR or otherwise
+            # affect the verdict — log and move on.
+            self.logger.warning(
+                f"[{self.__class__.__name__}] post-verdict probe "
+                f"raised {type(probe_exc).__name__}: {probe_exc}; "
+                f"continuing with original FAIL verdict"
+            )
+            return check_result
+
+        if probe_annotation:
+            check_result = check_result(
+                message=self._append_annotation(check_result.message, probe_annotation)
+            )
+        return check_result
 
     async def _safe_shorten(
         self, msg: t.Optional[str], shorten_fburl: bool = False
@@ -203,6 +286,81 @@ class AbstractPointInTimeHealthCheck(t.Generic[HealthCheckIn, Object], ABC):
                 f"{type(e).__name__}: {e}"
             )
             return msg
+
+    @staticmethod
+    def _append_annotation(existing_message: t.Optional[str], annotation: str) -> str:
+        if not existing_message:
+            return annotation
+        return f"{existing_message} {annotation}"
+
+    def _format_timing_annotation(
+        self,
+        attempts_to_pass: t.Optional[int],
+        elapsed_to_pass_sec: t.Optional[float],
+        per_attempt_diff: t.List[t.Optional[int]],
+        final_status: hc_types.HealthCheckStatus,
+    ) -> t.Optional[str]:
+        """Format a single-line timing annotation appended to `message`.
+
+        Verdict-preserving: this annotation only encodes timing data
+        captured by the framework retry loop. On PASS it distinguishes
+        first-try success from passed-on-retry; on FAIL it records the
+        per-attempt diff trajectory so consumers can spot a
+        monotonically-shrinking diff (transient/recovering) versus a
+        stuck diff (persistent).
+
+        Returns None for first-try PASS (the common path) to keep noise
+        down — the absence of the annotation itself encodes
+        "passed@attempt=1".
+        """
+        if final_status == hc_types.HealthCheckStatus.PASS:
+            if (
+                attempts_to_pass is not None
+                and attempts_to_pass > 1
+                and elapsed_to_pass_sec is not None
+            ):
+                return (
+                    f"[timing: passed@attempt={attempts_to_pass} "
+                    f"elapsed_to_pass_sec={elapsed_to_pass_sec:.1f}]"
+                )
+            return None
+        if final_status == hc_types.HealthCheckStatus.FAIL:
+            attempts_used = len(per_attempt_diff)
+            diff_traj = ",".join(
+                str(d) if d is not None else "?" for d in per_attempt_diff
+            )
+            final_diff = per_attempt_diff[-1] if per_attempt_diff else None
+            final_diff_str = f"{final_diff}" if final_diff is not None else "?"
+            return (
+                f"[timing: failed attempts={attempts_used} "
+                f"final_diff={final_diff_str} "
+                f"per_attempt_diff=[{diff_traj}]]"
+            )
+        return None
+
+    async def _run_post_verdict_probe(
+        self,
+        obj: Object,
+        input: HealthCheckIn,
+        check_params: t.Dict[str, t.Any],
+        t0_monotonic: float,
+    ) -> t.Optional[str]:
+        """Optional diagnostic probe invoked only after a FAIL verdict.
+
+        Subclasses opt in by overriding this and gating execution on a
+        check_params flag (e.g. RIB-FIB uses
+        ``rib_fib_record_heal_latency``). The probe MUST be
+        diagnostic-only — it may not flip the verdict. Return either an
+        annotation string (appended to the FAIL message) or None (no
+        annotation).
+
+        ``t0_monotonic`` is the framework's first-attempt start so the
+        probe can report heal-latency from the same origin used by the
+        timing annotation.
+
+        Default: no probe.
+        """
+        return None
 
     @abstractmethod
     async def _run(

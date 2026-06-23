@@ -181,6 +181,9 @@ def create_bgp_rib_fib_consistency_check(
     retry_count: t.Optional[int] = None,
     retry_delay_seconds: t.Optional[float] = None,
     retry_delay_multiplier: t.Optional[float] = None,
+    record_heal_latency: t.Optional[bool] = None,
+    heal_latency_max_sec: t.Optional[int] = None,
+    heal_latency_poll_sec: t.Optional[int] = None,
 ) -> PointInTimeHealthCheck:
     """Create a point-in-time check that the BGP RIB matches the device FIB.
 
@@ -208,6 +211,19 @@ def create_bgp_rib_fib_consistency_check(
             the delay after each retry (default 1.5).
             1.0 = constant delay, 1.5 = 50 % longer each retry,
             2.0 = double each retry.
+        record_heal_latency: Opt in to the post-verdict heal-latency
+            probe (paste P2390924278, T274256815). When True AND the
+            normal retry budget yields FAIL, the check spends up to
+            ``heal_latency_max_sec`` polling the live RIB-vs-FIB diff
+            so the resulting FAIL can be classified transient (healed
+            mid-probe) versus persistent (still inconsistent at max).
+            The probe is diagnostic-only and never changes the verdict.
+            Default (None) = OFF — behavior is byte-identical to today.
+        heal_latency_max_sec: Probe cap in seconds (default 480 — chosen
+            to cover the observed ~430s cold-boot heal with margin).
+            Only consulted when ``record_heal_latency`` is True.
+        heal_latency_poll_sec: Probe poll interval in seconds (default
+            10). Only consulted when ``record_heal_latency`` is True.
 
     Returns:
         A `PointInTimeHealthCheck` with `name=BGP_RIB_FIB_CONSISTENCY_CHECK`.
@@ -221,6 +237,12 @@ def create_bgp_rib_fib_consistency_check(
         json_payload["retry_delay_seconds"] = retry_delay_seconds
     if retry_delay_multiplier is not None:
         json_payload["retry_delay_multiplier"] = retry_delay_multiplier
+    if record_heal_latency is not None:
+        json_payload["rib_fib_record_heal_latency"] = record_heal_latency
+    if heal_latency_max_sec is not None:
+        json_payload["rib_fib_heal_latency_max_sec"] = heal_latency_max_sec
+    if heal_latency_poll_sec is not None:
+        json_payload["rib_fib_heal_latency_poll_sec"] = heal_latency_poll_sec
 
     check_params = None
     if json_payload:
