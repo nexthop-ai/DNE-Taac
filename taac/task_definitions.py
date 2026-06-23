@@ -3188,6 +3188,7 @@ def create_fpf_start_collectors_task(
     fsdb_session_host: t.Optional[str] = None,
     fsdb_session_poll_interval_sec: float = 3.0,
     fsdb_session_expected: int = 32,
+    rf_vf_groups: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
 ) -> Task:
     """Create a setup task that starts long-lived FPF collectors.
 
@@ -3225,6 +3226,8 @@ def create_fpf_start_collectors_task(
         "fsdb_session_poll_interval_sec": fsdb_session_poll_interval_sec,
         "fsdb_session_expected": fsdb_session_expected,
     }
+    if rf_vf_groups:
+        params["rf_vf_groups"] = rf_vf_groups
     if fsdb_session_host is not None:
         params["fsdb_session_host"] = fsdb_session_host
     if prod_prefixes:
@@ -3325,18 +3328,103 @@ def create_fpf_stop_collectors_task(
     prefix_base: str = "5000:dd::/64",
     increment_step: str = "0:0:1::",
     community_list: str = "stsw",
+    withdraw: bool = True,
 ) -> Task:
-    """Create a teardown task that stops FPF collectors and withdraws prefixes."""
+    """Create a teardown task that stops FPF collectors and (optionally) withdraws prefixes.
+
+    Pass ``withdraw=False`` to stop the collectors ONLY, without withdrawing any
+    prefixes — used by configs whose prefixes are cleared another way (e.g. the
+    8-STSW split-per-VF configs restart bgpd on the STSWs at teardown via
+    ``create_fpf_restart_service_task``, which drops the runtime-injected
+    networks). This replaces the earlier ``prefix_count=0`` sentinel.
+    """
+    stop_params: t.Dict[str, t.Any] = {
+        "trigger_stsws": trigger_stsws,
+        "prefix_count": prefix_count,
+        "prefix_base": prefix_base,
+        "increment_step": increment_step,
+        "community_list": community_list,
+    }
+    # Only emit the key when disabling withdrawal, so existing callers (default
+    # withdraw=True) keep byte-identical params (stable golden manifest); the
+    # runtime defaults to withdraw=True when the key is absent.
+    if not withdraw:
+        stop_params["withdraw"] = False
     return Task(
         task_name="fpf_stop_collectors",
+        params=Params(json_params=json.dumps(stop_params)),
+    )
+
+
+def create_fpf_restart_service_task(
+    devices: t.List[str],
+    service: str = "BGP",
+    wait_for_convergence: bool = False,
+) -> Task:
+    """Create a task that restarts a systemd service (default bgpd) on ``devices``.
+
+    Used at teardown to clear runtime BGP-injected prefixes off the STSWs: a
+    ``bgpd`` restart reloads persistent config (no injected networks), dropping
+    them — and also clears any leftover injected state, keeping the testbed clean
+    run-to-run. ``service`` is a ``FbossSystemctlServiceName`` member name (e.g.
+    "BGP" -> bgpd, "AGENT" -> wedge_agent). Best-effort (never fails teardown).
+    """
+    return Task(
+        task_name="fpf_restart_service",
         params=Params(
             json_params=json.dumps(
                 {
-                    "trigger_stsws": trigger_stsws,
-                    "prefix_count": prefix_count,
-                    "prefix_base": prefix_base,
-                    "increment_step": increment_step,
-                    "community_list": community_list,
+                    "devices": devices,
+                    "service": service,
+                    "wait_for_convergence": wait_for_convergence,
+                }
+            )
+        ),
+    )
+
+
+def create_fpf_inject_vf_groups_task(
+    groups: t.List[t.Dict[str, t.Any]],
+    settle_sec: int = 0,
+) -> Task:
+    """Create a SETUP task that injects one or more BGP prefix groups.
+
+    ``groups`` is a list of group dicts (devices, prefix_base, count,
+    community_list) — e.g. the 8-STSW split-per-VF spec from
+    ``fpf_vf_injection_groups()``. The injection runs on every (device, group)
+    pair in parallel and, on success, settles ``settle_sec`` for the prefixes to
+    program on the GTSW/HRT. Any injection failure aborts the test setup. This
+    keeps a netcastle run self-contained — no external inject script.
+    """
+    return Task(
+        task_name="fpf_inject_bgp_prefixes",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "groups": groups,
+                    "withdraw": False,
+                    "settle_sec": settle_sec,
+                }
+            )
+        ),
+    )
+
+
+def create_fpf_withdraw_vf_groups_task(
+    groups: t.List[t.Dict[str, t.Any]],
+) -> Task:
+    """Create a TEARDOWN task that withdraws the injected prefix groups.
+
+    Pairs with ``create_fpf_inject_vf_groups_task``. Best-effort — a withdrawal
+    error is logged but never masks the test result.
+    """
+    return Task(
+        task_name="fpf_inject_bgp_prefixes",
+        params=Params(
+            json_params=json.dumps(
+                {
+                    "groups": groups,
+                    "withdraw": True,
                 }
             )
         ),

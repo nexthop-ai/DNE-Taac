@@ -2346,6 +2346,7 @@ def create_fpf_hrt_remote_failure_convergence_check(
     only_hosts: t.Optional[t.List[str]] = None,
     window_start: t.Optional[float] = None,
     window_end: t.Optional[float] = None,
+    collector_name: t.Optional[str] = None,
     check_id: t.Optional[str] = None,
 ) -> PointInTimeHealthCheck:
     """FPF_HRT_REMOTE_FAILURE_CONVERGENCE_CHECK — HRT negative-route convergence per lane.
@@ -2355,6 +2356,11 @@ def create_fpf_hrt_remote_failure_convergence_check(
     ``only_hosts`` restricts evaluation to those GPU host(s) — for a link event
     only the impacted host's lane changes, so the unimpacted remote host must be
     excluded or it is a false FAIL.
+    ``collector_name`` selects which registered HRT remote-failure collector to
+    read (default "hrt_remote_failure"). For the 8-STSW split-per-VF injection,
+    pass the per-group collector ("hrt_remote_failure_vf1" / "_vf2") so the stable
+    assertion on a group's own lanes sees only that group's (zero) failures, not
+    the other group's expected cross-plane failures.
     """
     params: t.Dict[str, t.Any] = {
         "lanes": lanes or [0, 1, 2, 3],
@@ -2364,6 +2370,8 @@ def create_fpf_hrt_remote_failure_convergence_check(
         "trigger_delay_sec": trigger_delay_sec,
         "use_live_collectors": use_live_collectors,
     }
+    if collector_name:
+        params["collector_name"] = collector_name
     if lane_labels:
         params["lane_labels"] = lane_labels
     if only_hosts:

@@ -123,6 +123,30 @@ class FpfStartCollectorsTask(BaseTask):
         register_collector("bgp", bgp_collector)
         register_collector("hrt_remote_failure", hrt_remote_failure_collector)
 
+        # Per-VF-group remote-failure collectors (8-STSW split-per-VF injection).
+        # Each VF group's prefixes are reachable only on its own planes, so on the
+        # OTHER group's planes they show as (expected) remote-failures. To assert
+        # each group has zero remote-failure on its OWN lanes, start a per-group
+        # collector with the group's NARROW subnet (e.g. 5000:dd::/32 for VF1),
+        # registered as "hrt_remote_failure_<suffix>". The per-group remote-failure
+        # checks (scoped to the group's lanes) target these by collector name.
+        rf_vf_groups: t.List[t.Dict[str, t.Any]] = params.get("rf_vf_groups", []) or []
+        for group in rf_vf_groups:
+            suffix = group["suffix"]
+            group_subnet = group["subnet"]
+            group_rf_collector = HrtRemoteFailureCollector(
+                hosts=hosts,
+                supernet=group_subnet,
+                interval_sec=poll_interval_sec,
+            )
+            group_rf_collector.set_append_mode(True)
+            group_rf_collector.start()
+            register_collector(f"hrt_remote_failure_{suffix}", group_rf_collector)
+            logger.info(
+                f"[FpfStartCollectors] Per-VF-group remote-failure collector "
+                f"'hrt_remote_failure_{suffix}' started (subnet {group_subnet})"
+            )
+
         # HRT FSDB-session-count collector (getFsdbSessions CONNECTED census):
         # tracks the per-host CONNECTED session count + per-lane breakdown for
         # the FpfHrtSessionStatHealthCheck (disruption / stable contracts). HRT
@@ -208,6 +232,9 @@ class FpfStopCollectorsTask(BaseTask):
         prefix_count: int = params.get("prefix_count", 70000)
         prefix_base: str = params.get("prefix_base", "5000:dd::/64")
         increment_step: str = params.get("increment_step", "0:0:1::")
+        # When False, only stop the collectors — prefixes are cleared elsewhere
+        # (e.g. an 8-STSW config that restarts bgpd at teardown).
+        withdraw: bool = params.get("withdraw", True)
         # community_list is currently unused — withdraw_prefixes() doesn't
         # take it. Keep params.get() so callers can still pass it without
         # KeyError, but discard the value.
@@ -226,19 +253,27 @@ class FpfStopCollectorsTask(BaseTask):
                         f"moving on; daemon thread will die with parent process"
                     )
 
-            prefix_strs = expand_prefix_range(prefix_base, prefix_count, increment_step)
-            tip_prefixes = [build_tip_prefix(p) for p in prefix_strs]
+            if withdraw and prefix_count > 0:
+                prefix_strs = expand_prefix_range(
+                    prefix_base, prefix_count, increment_step
+                )
+                tip_prefixes = [build_tip_prefix(p) for p in prefix_strs]
 
-            logger.info(
-                f"[FpfStopCollectors] Withdrawing {prefix_count} prefixes "
-                f"from {len(trigger_stsws)} STSW devices"
-            )
+                logger.info(
+                    f"[FpfStopCollectors] Withdrawing {prefix_count} prefixes "
+                    f"from {len(trigger_stsws)} STSW devices"
+                )
 
-            async def _withdraw_on_device(device: str) -> None:
-                driver = FbossSwitchInternal(hostname=device, logger=self.logger)
-                await withdraw_prefixes(driver, tip_prefixes)
+                async def _withdraw_on_device(device: str) -> None:
+                    driver = FbossSwitchInternal(hostname=device, logger=self.logger)
+                    await withdraw_prefixes(driver, tip_prefixes)
 
-            await asyncio.gather(*[_withdraw_on_device(d) for d in trigger_stsws])
+                await asyncio.gather(*[_withdraw_on_device(d) for d in trigger_stsws])
+            else:
+                logger.info(
+                    "[FpfStopCollectors] withdraw=False — collectors stopped only; "
+                    "prefixes cleared elsewhere (e.g. bgpd restart at teardown)"
+                )
         finally:
             await self._emit_artifacts_summary()
             clear_all()

@@ -65,6 +65,12 @@ if t.TYPE_CHECKING or not TAAC_OSS:
         FpfStartCollectorsTask,
         FpfStopCollectorsTask,
     )
+    from taac.tasks.fpf_inject_bgp_prefixes_task import (
+        FpfInjectBgpPrefixesTask,
+    )
+    from taac.tasks.fpf_restart_service_task import (
+        FpfRestartServiceTask,
+    )
     from taac.tasks.full_reboot_task import FullRebootTask
 from taac.tasks.all import (
     AddBgpPolicyMatchPrefixToPropagateRoutes,
@@ -210,6 +216,8 @@ if not TAAC_OSS:
             GetEnforceFirstAsRejectsTask,
             FpfStartCollectorsTask,
             FpfStopCollectorsTask,
+            FpfInjectBgpPrefixesTask,
+            FpfRestartServiceTask,
             DeployExaBGPTask,
             CleanupExaBGPTask,
             FullRebootTask,

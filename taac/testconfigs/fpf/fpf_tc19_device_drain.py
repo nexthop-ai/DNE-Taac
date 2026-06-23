@@ -42,31 +42,48 @@ from taac.steps.step_definitions import (
     create_longevity_step,
 )
 from taac.task_definitions import (
+    create_fpf_inject_vf_groups_task,
+    create_fpf_restart_service_task,
     create_fpf_start_collectors_task,
     create_fpf_start_ib_traffic_task,
     create_fpf_stop_collectors_task,
     create_fpf_stop_ib_traffic_task,
+    create_fpf_withdraw_vf_groups_task,
 )
 from taac.testconfigs.fpf.fpf_hardening_common import (
+    ALL_LANES,
+    ALL_STSWS,
     ALLOW_BASELINE_FAILURES,
     Circuit,
     create_fpf_endpoints,
     DEFAULT_COMMUNITY_LIST,
-    DEFAULT_SUBNET_PREFIX,
     EXPECTED_FSDB_SESSION_COUNT,
+    fpf_rf_vf_groups,
+    fpf_vf_injection_groups,
     FSDB_COLLECTOR_MODE,
     GPU_HOSTS,
     impacted_lanes_by_host_gpu,
     OBSERVER_GTSWS,
     skip_ssh_dependencies,
-    TRIGGER_STSWS,
+    VF_COLLECTOR_SUBNET,
+    VF_GROUP_PREFIX_COUNT,
 )
 from taac.test_as_a_config.types import TestConfig
 
-PREFIX_COUNT = 1000
+# Prefixes injected on ALL 8 STSWs, split per VF group (VF1 5000:dd on s001-s004,
+# VF2 5000:ee on s005-s008), via the fpf_inject_bgp_prefixes SETUP TASK — this
+# netcastle run is fully self-contained (no external script). The fabric is
+# VF-segregated (VF1 only on lanes 0-3, VF2 only on lanes 4-7), so each observer
+# GTSW / lane sees only its own VF group's count: PREFIX_COUNT =
+# VF_GROUP_PREFIX_COUNT. Collector subnet is 5000::/16 to count both groups.
+INJECTION_GROUPS = fpf_vf_injection_groups()
+RF_VF_GROUPS = fpf_rf_vf_groups()
+TRIGGER_STSWS = ALL_STSWS
+PREFIX_COUNT = VF_GROUP_PREFIX_COUNT
+INJECT_SETTLE_SEC = 300
 STABILIZATION_DELAY_SEC = 300
 LONGEVITY_SEC = 120
-INJECTED_LANES = [0, 1]
+INJECTED_LANES = ALL_LANES
 
 # The drained DEVICE is the DUT GTSW. The circuit below is what we MONITOR on it
 # (rtptest1555 GPU0 lane 0); draining the whole GTSW depreferences this plane, so
@@ -171,6 +188,12 @@ def create_fpf_tc19_test_config() -> TestConfig:
         # Device drain: the impacted plane (lane 0) goes DRAINED on the GPU's
         # hrtctl plane-status while the other 7 planes stay UP.
         plane_status_mode="drain",
+        # Prefixes injected once by the setup task (8-STSW split-per-VF).
+        skip_injection=True,
+        rf_vf_groups=RF_VF_GROUPS,
+        # Skip the drain-moment transient (a single-poll BGP-thrift read of 0 on
+        # the drained GTSW; FSDB stays converged) when judging GTSW-side stability.
+        gtsw_convergence_settle_sec=30,
         playbook_name="fpf_tc19_device_drain_disrupt",
     )
 
@@ -194,6 +217,11 @@ def create_fpf_tc19_test_config() -> TestConfig:
         stabilization_delay_sec=0,
         prefix_count=PREFIX_COUNT,
         community_list=DEFAULT_COMMUNITY_LIST,
+        # Check all 8 injected lanes recovered (not just the default [0,1]).
+        lanes=INJECTED_LANES,
+        # Prefixes injected once by the setup task; do not re-inject on restore.
+        skip_injection=True,
+        rf_vf_groups=RF_VF_GROUPS,
         playbook_name="fpf_tc19_device_drain_restore",
         prod_prefixes=PROD_PREFIXES,
         skip_ssh_dependent_checks=True,
@@ -232,25 +260,41 @@ def create_fpf_tc19_test_config() -> TestConfig:
         create_fpf_start_collectors_task(
             gtsws=OBSERVER_GTSWS,
             hosts=GPU_HOSTS,
-            subnet_prefix=DEFAULT_SUBNET_PREFIX,
+            subnet_prefix=VF_COLLECTOR_SUBNET,
             prod_prefixes=PROD_PREFIXES,
             prod_prefix_host=PROD_PREFIX_HOST,
             prod_prefix_device_id=PROD_PREFIX_DEVICE_ID,
             fsdb_mode=FSDB_COLLECTOR_MODE,
             allow_baseline_failures=ALLOW_BASELINE_FAILURES,
+            rf_vf_groups=RF_VF_GROUPS,
         )
     )
+    # Inject the two VF prefix groups on all 8 STSWs once (after collectors
+    # start), persisting across both the disrupt and restore playbooks.
+    setup_tasks.append(
+        create_fpf_inject_vf_groups_task(
+            groups=INJECTION_GROUPS,
+            settle_sec=INJECT_SETTLE_SEC,
+        )
+    )
+    teardown_tasks.append(create_fpf_withdraw_vf_groups_task(groups=INJECTION_GROUPS))
+    # Robust catch-all: restart bgpd on all 8 STSWs to clear injected + any
+    # leftover prefixes (reloads persistent config).
     teardown_tasks.append(
+        create_fpf_restart_service_task(devices=ALL_STSWS, service="BGP")
+    )
+    teardown_tasks.append(
+        # Stop collectors only (prefixes cleared above, not here).
         create_fpf_stop_collectors_task(
             trigger_stsws=TRIGGER_STSWS,
-            prefix_count=PREFIX_COUNT,
+            withdraw=False,
             community_list=DEFAULT_COMMUNITY_LIST,
         )
     )
 
     return TestConfig(
         name="fpf_tc19_device_drain",
-        endpoints=create_fpf_endpoints(),
+        endpoints=create_fpf_endpoints(stsws=ALL_STSWS),
         setup_tasks=setup_tasks,
         teardown_tasks=teardown_tasks,
         playbooks=[disrupt_playbook, restore_playbook],

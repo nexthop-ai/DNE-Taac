@@ -38,6 +38,92 @@ TRIGGER_STSWS = [
     "stsw001.s002.l202.mwg2",
 ]
 
+# ---------------------------------------------------------------------------
+# 8-STSW VF-group injection (split per VF / VIP group)
+# ---------------------------------------------------------------------------
+#
+# The inject-then-disrupt FPF configs now advertise the stress prefixes across
+# ALL EIGHT STSW planes instead of just the first two, split into the two VF
+# (VIP) groups so each group lands on its own set of planes:
+#   - VF1 (planes 0-3, served by GTSW1-4): prefix base 5000:dd::/64 on s001-s004
+#   - VF2 (planes 4-7, served by GTSW5-8): prefix base 5000:ee::/64 on s005-s008
+# Injection is performed by the FpfInjectBgpPrefixesTask SETUP TASK (so a
+# netcastle run is fully self-contained — no external inject script), and
+# withdrawn by the same task in teardown. The playbooks for these configs pass
+# skip_injection=True so the netcastle run injects exactly once, from setup.
+VF1_STSWS = [
+    "stsw001.s001.l202.mwg2",
+    "stsw001.s002.l202.mwg2",
+    "stsw001.s003.l202.mwg2",
+    "stsw001.s004.l202.mwg2",
+]
+VF2_STSWS = [
+    "stsw001.s005.l202.mwg2",
+    "stsw001.s006.l202.mwg2",
+    "stsw001.s007.l202.mwg2",
+    "stsw001.s008.l202.mwg2",
+]
+ALL_STSWS = [*VF1_STSWS, *VF2_STSWS]
+
+VF1_PREFIX_BASE = "5000:dd::/64"
+VF2_PREFIX_BASE = "5000:ee::/64"
+
+# Collector subnet filter MUST cover BOTH VF group bases (5000:dd and 5000:ee).
+# The FPF collectors (FSDB ribMap, BGP RIB, HRT bulk, HRT remote-failure) filter
+# prefixes by a single subnet-containment test, so a /32 on 5000:dd would miss
+# the VF2 (5000:ee) group entirely. 5000::/16 covers both.
+VF_COLLECTOR_SUBNET = "5000::/16"
+
+# Per-group prefix count injected on EACH STSW in the group. Each STSW in a
+# group advertises the SAME prefix set (ECMP across the group's planes).
+VF_GROUP_PREFIX_COUNT = 1000
+
+# All 8 lanes/planes carry injected prefixes once both VF groups are advertised
+# across all 8 STSW planes (lane N <-> gtsw00{N+1} <-> stsw plane N).
+ALL_LANES = [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def fpf_rf_vf_groups() -> list[dict]:
+    """Per-VF-group remote-failure monitoring spec for the 8-STSW injection.
+
+    Because the fabric is VF-segregated (VF1 reachable only on lanes 0-3, VF2 only
+    on lanes 4-7), each group's prefixes appear as (expected) remote-failures on
+    the OTHER group's planes. To assert each group has ZERO remote-failure on its
+    OWN lanes, a per-group collector with the group's NARROW subnet is started
+    (registered "hrt_remote_failure_<suffix>"), and the per-group remote-failure
+    check is scoped to the group's lanes. Consumed by both
+    ``create_fpf_start_collectors_task(rf_vf_groups=...)`` and the playbook
+    factories' ``rf_vf_groups=`` argument.
+    """
+    return [
+        {"suffix": "vf1", "subnet": "5000:dd::/32", "lanes": [0, 1, 2, 3]},
+        {"suffix": "vf2", "subnet": "5000:ee::/32", "lanes": [4, 5, 6, 7]},
+    ]
+
+
+def fpf_vf_injection_groups(count: int = VF_GROUP_PREFIX_COUNT) -> list[dict]:
+    """Injection-group spec for the 8-STSW split-per-VF injection setup task.
+
+    Returns one entry per VF group: which STSWs to inject on, the group's prefix
+    base, the per-STSW prefix count, and the community preset. Consumed by
+    ``create_fpf_inject_vf_groups_task`` / ``create_fpf_withdraw_vf_groups_task``.
+    """
+    return [
+        {
+            "devices": VF1_STSWS,
+            "prefix_base": VF1_PREFIX_BASE,
+            "count": count,
+            "community_list": "stsw",
+        },
+        {
+            "devices": VF2_STSWS,
+            "prefix_base": VF2_PREFIX_BASE,
+            "count": count,
+            "community_list": "stsw",
+        },
+    ]
+
+
 OBSERVER_GTSWS = [
     "gtsw001.l1002.c087.mwg2",
     "gtsw002.l1002.c087.mwg2",
@@ -113,11 +199,18 @@ REMOTE_FAILURE_SUBNET = "5000:dd::/32"
 DRAIN_CONVERGENCE_SLA_SEC = 120
 
 
-def create_fpf_endpoints() -> list[Endpoint]:
+def create_fpf_endpoints(stsws: list[str] | None = None) -> list[Endpoint]:
+    """Build the FPF endpoint list.
+
+    ``stsws`` overrides the STSW endpoint set (defaults to the legacy 2-STSW
+    ``TRIGGER_STSWS``). The 8-STSW inject-then-disrupt configs pass
+    ``stsws=ALL_STSWS`` so all 8 STSW planes are reserved as endpoints.
+    """
+    stsw_list = stsws if stsws is not None else TRIGGER_STSWS
     return [
         Endpoint(name=OBSERVER_GTSWS[0], dut=True),
         Endpoint(name=OBSERVER_GTSWS[1]),
-        *[Endpoint(name=stsw) for stsw in TRIGGER_STSWS],
+        *[Endpoint(name=stsw) for stsw in stsw_list],
     ]
 
 

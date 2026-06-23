@@ -92,11 +92,12 @@ class FpfHrtRemoteFailureConvergenceHealthCheck(
         max_convergence_sec: int,
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
-        collector = get_collector("hrt_remote_failure")
+        collector_name: str = check_params.get("collector_name", "hrt_remote_failure")
+        collector = get_collector(collector_name)
         if collector is None:
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.SKIP,
-                message="No live HRT remote-failure collector in registry",
+                message=f"No live HRT remote-failure collector '{collector_name}' in registry",
             )
 
         # Lane -> host-NIC mapping note (e.g. "→ beth0@rtptest1544") for messages.
