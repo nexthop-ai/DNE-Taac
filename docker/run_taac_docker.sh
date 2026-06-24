@@ -1,11 +1,18 @@
 #!/bin/bash
-# Developer shell into the TAAC container with workspace bind-mounted.
+# Run commands or an interactive shell inside the TAAC container.
+#
+# The repo (or --workspace path) is always bind-mounted at /workspace and
+# used as the working directory, so local edits override the baked-in
+# /taac source. PYTHONPATH is set so `import taac.*` resolves from the
+# workspace. Use --regen to regenerate thrift bindings on entry.
 #
 # Usage:
-#   ./docker/run_taac_docker.sh                          # shell with local source overlay
-#   ./docker/run_taac_docker.sh --regen                  # regen thrift bindings on entry, then shell
+#   ./docker/run_taac_docker.sh                          # interactive shell
+#   ./docker/run_taac_docker.sh --regen                  # regen thrift, then shell
 #   ./docker/run_taac_docker.sh --image <image>          # use a specific image
-#   ./docker/run_taac_docker.sh run <cmd>                # run a command instead of interactive shell
+#   ./docker/run_taac_docker.sh --workspace <path>       # mount a different directory
+#   ./docker/run_taac_docker.sh -v /host:/ctr            # extra volume mount (repeatable)
+#   ./docker/run_taac_docker.sh run <cmd>                # run a command (non-interactive)
 
 set -e
 
@@ -16,6 +23,7 @@ IMAGE="fboss-taac"
 WORKSPACE="$REPO_ROOT"
 REGEN=0
 SUBCMD=shell
+EXTRA_VOLUMES=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,22 +47,41 @@ while [[ $# -gt 0 ]]; do
             WORKSPACE="$(cd "$2" && pwd)"
             shift 2
             ;;
+        -v|--volume)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: -v/--volume requires a value" >&2
+                exit 1
+            fi
+            EXTRA_VOLUMES+=(-v "$2")
+            shift 2
+            ;;
         run)
             SUBCMD=run
             shift
             break
             ;;
         *)
-            echo "Usage: $0 [--regen] [--image <name>] [--workspace <path>] [run <cmd...>]" >&2
+            echo "Usage: $0 [--regen] [--image <name>] [--workspace <path>] [-v <mount>] [run <cmd...>]" >&2
             exit 1
             ;;
     esac
 done
 
+if ! docker image inspect "$IMAGE" &>/dev/null; then
+    echo "Error: Docker image '$IMAGE' not found locally." >&2
+    echo "Build it first or specify a valid image with --image." >&2
+    exit 1
+fi
+
 DOCKER_ARGS=(
-    --rm -it --network host
+    --rm -i --network host
     -v "$WORKSPACE":/workspace
+    -v /tmp:/tmp
+    "${EXTRA_VOLUMES[@]}"
 )
+if [[ "$SUBCMD" != "run" ]]; then
+    DOCKER_ARGS+=(-t)
+fi
 
 # Auto-forward TAAC_* env vars (TAAC_OSS, TAAC_SSH_USER, TAAC_SSH_PASSWORD,
 # TAAC_DEVICE_INFO_PATH, etc.) so callers can `export TAAC_FOO=bar` on the
@@ -65,9 +92,9 @@ while IFS= read -r _taac_var; do
 done < <(env | grep '^TAAC_' | cut -d= -f1)
 
 if [[ "$REGEN" -eq 1 ]]; then
-    INIT='taac-regen-thrift --quiet /workspace/taac/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH'
+    INIT='taac-regen-thrift --quiet /workspace/taac/thrift /tmp/regen && export PYTHONPATH=/workspace:/tmp/regen/gen-python:$PYTHONPATH && cd /workspace'
 else
-    INIT='export PYTHONPATH=/workspace:$PYTHONPATH'
+    INIT='export PYTHONPATH=/workspace:$PYTHONPATH && cd /workspace'
 fi
 
 echo "Using image: $IMAGE" >&2

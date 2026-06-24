@@ -65,6 +65,15 @@ if t.TYPE_CHECKING or not TAAC_OSS:
         FpfStartCollectorsTask,
         FpfStopCollectorsTask,
     )
+    from taac.tasks.bgp_policy_generator_task import (
+        GenerateCommunityBgpPolicyAndInjectTask,
+        GenerateCommunityBgpPolicyTask,
+        GenerateMultipleCommunityBgpPoliciesTask,
+    )
+    from taac.tasks.fpf_ib_traffic_task import (
+        FpfStartIbTrafficTask,
+        FpfStopIbTrafficTask,
+    )
     from taac.tasks.fpf_inject_bgp_prefixes_task import (
         FpfInjectBgpPrefixesTask,
     )
@@ -97,18 +106,9 @@ from taac.tasks.all import (
     WaitForBgpConvergenceTask,
 )
 from taac.tasks.base_task import BaseTask
-from taac.tasks.bgp_policy_generator_task import (
-    GenerateCommunityBgpPolicyAndInjectTask,
-    GenerateCommunityBgpPolicyTask,
-    GenerateMultipleCommunityBgpPoliciesTask,
-)
 from taac.tasks.bgp_tcpdump_task import BgpTcpdumpTask
 from taac.tasks.configure_bgpcpp_startup_task import (
     ConfigureBgpcppStartupTask,
-)
-from taac.tasks.fpf_ib_traffic_task import (
-    FpfStartIbTrafficTask,
-    FpfStopIbTrafficTask,
 )
 from taac.tasks.interface_ip_configuration_task import (
     InterfaceIpCleanupTask,
@@ -186,13 +186,7 @@ TASK_REGISTRY: t.List[t.Type[BaseTask]] = [
     ValidateBgpcppConfigOnDevice,
     ConfigureBgpcppStartupTask,
     VerifyBestPathChangesTask,
-    IxiaPreflightTask,
-    GenerateCommunityBgpPolicyTask,
-    GenerateMultipleCommunityBgpPoliciesTask,
-    GenerateCommunityBgpPolicyAndInjectTask,
     SetPortChannelMinLinkPatcherTask,
-    FpfStartIbTrafficTask,
-    FpfStopIbTrafficTask,
 ]
 
 # Add internal tasks only when not in OSS mode
@@ -226,6 +220,12 @@ if not TAAC_OSS:
             ConfigureEosParallelBgpPeers,
             CreateEosBgpPeerGroup,
             RestoreRunningConfigTask,
+            GenerateCommunityBgpPolicyTask,
+            GenerateMultipleCommunityBgpPoliciesTask,
+            GenerateCommunityBgpPolicyAndInjectTask,
+            IxiaPreflightTask,
+            FpfStartIbTrafficTask,
+            FpfStopIbTrafficTask,
         ]
     )
 
