@@ -2445,6 +2445,49 @@ class Ixia:
             else:
                 cap_obj.Single(False)
 
+    # IXIA defaults BgpIpv4/Ipv6Peer.LocalRouterID to the parent Ipv4 stack's
+    # auto-allocator, which restarts at a low base on every new Device Group on
+    # the same port and silently collides with router-ids already in use by
+    # sibling DGs. For carved drain-pool peers (bgp_peer_name ends with
+    # _DRAIN_PEER_NAME_SUFFIX) this collision prevents bgpcpp from establishing
+    # the session while the main pool holds the colliding id. Setting an
+    # explicit LocalRouterID base in a reserved range avoids the collision.
+    # Main-pool peers are intentionally untouched here — preserving IXIA's
+    # existing default behavior keeps all non-drain testconfigs byte-identical.
+    _DRAIN_PEER_NAME_SUFFIX = "_DRAIN"
+    _DRAIN_PEER_LOCAL_ROUTER_ID_BASE = "200.0.0.1"
+    _DRAIN_PEER_LOCAL_ROUTER_ID_STEP = "0.0.0.1"
+
+    def _maybe_set_drain_peer_local_router_id(
+        self,
+        bgp_peer_obj: t.Union["BgpIpv4Peer", "BgpIpv6Peer"],
+        bgp_peer_config: ixia_types.BgpPeerConfig,
+        port_identifier: str,
+        desired_bgp_name: str,
+    ) -> None:
+        """Set an explicit LocalRouterID on carved drain-pool peers.
+
+        See class-level _DRAIN_PEER_NAME_SUFFIX docstring above for why this
+        is necessary. Main-pool peers (bgp_peer_name not ending in _DRAIN) are
+        intentionally untouched — IXIA's default-allocator behavior is preserved
+        so non-drain testconfigs remain byte-identical pre/post this change.
+        """
+        if (
+            not bgp_peer_config.bgp_peer_name
+            or not bgp_peer_config.bgp_peer_name.endswith(self._DRAIN_PEER_NAME_SUFFIX)
+        ):
+            return
+        bgp_peer_obj.LocalRouterID.Increment(
+            start_value=self._DRAIN_PEER_LOCAL_ROUTER_ID_BASE,
+            step_value=self._DRAIN_PEER_LOCAL_ROUTER_ID_STEP,
+        )
+        self.logger.info(
+            f"[{port_identifier}] Set explicit LocalRouterID base "
+            f"{self._DRAIN_PEER_LOCAL_ROUTER_ID_BASE} on drain peer "
+            f"{desired_bgp_name} to avoid IXIA default-allocator "
+            f"collision with main pool"
+        )
+
     def create_bgp_peer(
         self,
         port_identifier: str,
@@ -2507,6 +2550,12 @@ class Ixia:
         bgp_peer_obj.DutIp.Increment(
             start_value=bgp_peer_config.remote_peer_starting_ip,
             step_value=bgp_peer_config.remote_peer_increment_ip,
+        )
+        self._maybe_set_drain_peer_local_router_id(
+            bgp_peer_obj=bgp_peer_obj,
+            bgp_peer_config=bgp_peer_config,
+            port_identifier=port_identifier,
+            desired_bgp_name=desired_bgp_name,
         )
         bgp_peer_obj.Type.Single(
             ixia_types.BGP_PEER_TYPE_MAP[bgp_peer_config.peer_type]
