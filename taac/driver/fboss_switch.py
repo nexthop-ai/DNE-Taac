@@ -266,6 +266,22 @@ class FbossSwitch(AbstractSwitch):
     def __init__(self, hostname: str, logger: logging.Logger, *args, **kwargs) -> None:
         super().__init__(hostname, logger)
 
+    # pyre-fixme[11]: Annotation `FbossAgentClient` is not defined as a type.
+    def _get_fboss_agent_client(self) -> FbossAgentClient:
+        client = FbossAgentClient(
+            self.hostname,
+            port=DEFAULT_AGENT_REMOTE_PORT,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
+        )
+        if not client:
+            self.logger.info(
+                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
+            )
+            raise Exception(
+                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
+            )
+        return client
+
     async def async_get_fboss_build_info_show(self) -> str:
         raise NotImplementedError(
             "FBOSS build info not available in OSS mode. "
