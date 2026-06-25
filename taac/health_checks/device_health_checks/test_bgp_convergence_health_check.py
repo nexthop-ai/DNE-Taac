@@ -114,3 +114,20 @@ class TestBgpConvergenceHealthCheck(unittest.IsolatedAsyncioTestCase):
         )
         result = await self.health_check._run(self.device, self.input, {})
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
+
+    async def test_stage_times_absolute_format(self):
+        """Stage times report each event's ABSOLUTE time-from-start (ms/1000),
+        not a per-stage '+delta', so out-of-order events stay readable."""
+        self.health_check.driver.async_get_bgp_initialization_events = AsyncMock(
+            return_value=_full_ordered_events()
+        )
+        result = await self.health_check._run(
+            self.device, self.input, {"validate_sequence": True}
+        )
+        self.assertIn("Stage times:", result.message)
+        # Absolute time-from-start per event, not a delta from the previous one.
+        self.assertIn("INITIALIZING: 0.00s", result.message)
+        self.assertIn("AGENT_CONFIGURED: 1.00s", result.message)
+        self.assertIn("INITIALIZED: 7.00s", result.message)
+        # The old per-stage delta format ("EVENT: +Xs") must be gone.
+        self.assertNotIn(": +", result.message)

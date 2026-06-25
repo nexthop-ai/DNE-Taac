@@ -88,27 +88,19 @@ class BgpConvergenceHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 await self.driver.async_get_bgp_initialization_events()
             )
 
-        # Build detailed stage timing information
+        # Build detailed stage timing: each event's ABSOLUTE time-from-start
+        # (ms->s), matching the `show bgpcpp initialization-events` "Time From
+        # Start" column. Sorted by timestamp so out-of-order events (e.g. a late
+        # ALL_EOR_RECEIVED after EOR_TIMER_EXPIRED) still read chronologically.
         def get_stage_details(events_dict):
             if not events_dict:
                 return "No events recorded"
 
-            sorted_events = sorted(
-                [(event, timestamp) for event, timestamp in events_dict.items()],
-                key=lambda x: x[1],
+            sorted_events = sorted(events_dict.items(), key=lambda x: x[1])
+            return ", ".join(
+                f"{event.name}: {timestamp / 1000:.2f}s"
+                for event, timestamp in sorted_events
             )
-
-            stage_times = []
-            for i in range(len(sorted_events)):
-                event, timestamp = sorted_events[i]
-                if i == 0:
-                    stage_times.append(f"{event.name}: {timestamp / 1000:.2f}s")
-                else:
-                    prev_timestamp = sorted_events[i - 1][1]
-                    time_diff = (timestamp - prev_timestamp) / 1000
-                    stage_times.append(f"{event.name}: +{time_diff:.2f}s")
-
-            return ", ".join(stage_times)
 
         stage_details = get_stage_details(bgp_initialization_events)
 
