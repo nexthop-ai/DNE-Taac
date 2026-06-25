@@ -36,10 +36,10 @@ from pathlib import Path
 from typing import List, Optional
 
 from taac.libs.taac_runner import TaacRunner
-from taac.test_as_a_config.thrift_types import Endpoint
-
 from taac.runner.cli_parser import parse_args
-from taac.runner.oss_exception_classifier import classify_exception
+from taac.runner.oss_exception_classifier import (
+    classify_exception,
+)
 from taac.runner.oss_exceptions import (
     OSSConfigError,
     OSSConnectionError,
@@ -51,6 +51,7 @@ from taac.runner.oss_test_executor import OSSTestExecutor
 from taac.runner.oss_test_result import OSSTestResult
 from taac.runner.oss_test_status import OSSTestStatus
 from taac.runner.result_formatter import OSSResultAggregator
+from taac.test_as_a_config.thrift_types import Endpoint
 
 
 def load_test_config(config_path: str):
@@ -77,7 +78,7 @@ def load_test_config(config_path: str):
         if not path.is_file():
             raise OSSConfigError(f"Test config path is not a file: {config_path}")
 
-        if path.suffix != '.py':
+        if path.suffix != ".py":
             raise OSSConfigError(f"Test config file must be a .py file: {config_path}")
 
         # Load the module from file
@@ -107,10 +108,13 @@ def load_test_config(config_path: str):
         # Check both binding flavors: thrift_types (thrift-python, the
         # callable copy-with-override variant) and types (legacy
         # thrift-py3, used by Meta-internal configs).
-        from taac.test_as_a_config import thrift_types as _taac_thrift_types
-        from taac.test_as_a_config import types as _taac_types
+        from taac.test_as_a_config import (
+            thrift_types as _taac_thrift_types,
+            types as _taac_types,
+        )
+
         _testconfig_classes = (_taac_thrift_types.TestConfig, _taac_types.TestConfig)
-        for attr_name in ['test_config', 'TEST_CONFIG', 'config', 'CONFIG']:
+        for attr_name in ["test_config", "TEST_CONFIG", "config", "CONFIG"]:
             if hasattr(module, attr_name):
                 config = getattr(module, attr_name)
                 if callable(config) and not isinstance(config, _testconfig_classes):
@@ -250,7 +254,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             configs_to_run[key][2].append(playbook)
 
         # Execute each config with all its playbooks and all DUTs
-        for (config_path, config_name), (path, config, playbooks) in configs_to_run.items():
+        for (config_path, config_name), (
+            path,
+            config,
+            playbooks,
+        ) in configs_to_run.items():
             logger.info(f"\n{'=' * 70}")
             logger.info(f"Executing test config: {config_name}")
             logger.info(f"  Config path: {path}")
@@ -313,9 +321,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                             aggregator.add_result(result)
 
                             # Handle retries for transient failures
-                            if args.retry and result.is_transient and result.status.failed:
+                            if (
+                                args.retry
+                                and result.is_transient
+                                and result.status.failed
+                            ):
                                 for retry_attempt in range(args.retry):
-                                    logger.info(f"Retry attempt {retry_attempt + 1}/{args.retry} for {playbook.name} on {dut}")
+                                    logger.info(
+                                        f"Retry attempt {retry_attempt + 1}/{args.retry} for {playbook.name} on {dut}"
+                                    )
                                     retry_result = await executor.execute_playbook(
                                         playbook=playbook,
                                         dut=dut,
@@ -371,7 +385,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 for playbook in playbooks:
                     for dut in args.duts:
                         # Only add error result if we haven't already executed this combo
-                        if not any(r.playbook == playbook.name and r.dut == dut for r in aggregator.results):
+                        if not any(
+                            r.playbook == playbook.name and r.dut == dut
+                            for r in aggregator.results
+                        ):
                             result = OSSTestResult(
                                 test_config=config_name,
                                 playbook=playbook.name,

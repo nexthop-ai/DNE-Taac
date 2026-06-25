@@ -8,7 +8,9 @@ Tests for exception classification logic - validates classify_exception() mappin
 import unittest
 
 from taac.constants import TestCaseFailure
-from taac.runner.oss_exception_classifier import classify_exception
+from taac.runner.oss_exception_classifier import (
+    classify_exception,
+)
 from taac.runner.oss_exceptions import (
     OSSConfigError,
     OSSTestbedError,

@@ -14,20 +14,21 @@ import time
 import traceback
 from typing import List
 
-from taac.test_as_a_config import types as taac_types
-
-from taac.runner.oss_exception_classifier import classify_exception
+from taac.runner.oss_exception_classifier import (
+    classify_exception,
+)
 from taac.runner.oss_exceptions import (
     OSSConfigError,
     OSSInfrastructureError,
     OSSSetupError,
     OSSTeardownError,
-    OSSTestExecutionError,
     OSSTestbedError,
+    OSSTestExecutionError,
     OSSTransientError,
 )
 from taac.runner.oss_test_result import OSSTestResult
 from taac.runner.oss_test_status import OSSTestStatus
+from taac.test_as_a_config import types as taac_types
 
 
 class OSSTestExecutor:
@@ -121,7 +122,9 @@ class OSSTestExecutor:
             exception_type=exception_type,
             exception_message=exception_message,
             is_transient=is_transient,
-            log_file=self._logger.get_log_file() if hasattr(self._logger, 'get_log_file') else None,
+            log_file=self._logger.get_log_file()
+            if hasattr(self._logger, "get_log_file")
+            else None,
         )
 
     @staticmethod
@@ -187,7 +190,7 @@ class OSSTestExecutor:
     def execute_with_retry(
         func,
         max_retries: int = 0,
-        logger = None,
+        logger=None,
     ):
         """
         Execute a function with retry logic for transient errors.
@@ -216,7 +219,9 @@ class OSSTestExecutor:
                 last_exception = e
                 if attempt < max_retries:
                     if logger:
-                        logger.warning(f"Transient error on attempt {attempt + 1}/{max_retries + 1}: {e}")
+                        logger.warning(
+                            f"Transient error on attempt {attempt + 1}/{max_retries + 1}: {e}"
+                        )
                         logger.info(f"Retrying...")
                 else:
                     if logger:

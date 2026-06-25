@@ -54,6 +54,7 @@ class OSSResultAggregator:
     def count_by_status(self) -> Dict[OSSTestStatus, int]:
         """Count of results by status."""
         from collections import Counter
+
         counter = Counter(r.status for r in self.results)
         return dict(counter)
 
@@ -99,7 +100,8 @@ class OSSResultAggregator:
         has_transient_errors above — transient ⊂ infra, not equal.
         """
         return any(
-            r.status in (
+            r.status
+            in (
                 OSSTestStatus.TESTBED_FAILED,
                 OSSTestStatus.CONNECTION_FAILED,
                 OSSTestStatus.SETUP_FAILED,
@@ -126,12 +128,24 @@ class OSSResultAggregator:
             "failed": sum(1 for r in self.results if r.status == OSSTestStatus.FAILED),
             "error": sum(1 for r in self.results if r.status == OSSTestStatus.ERROR),
             "skipped": self.skipped_count,
-            "setup_failed": sum(1 for r in self.results if r.status == OSSTestStatus.SETUP_FAILED),
-            "teardown_failed": sum(1 for r in self.results if r.status == OSSTestStatus.TEARDOWN_FAILED),
-            "testbed_failed": sum(1 for r in self.results if r.status == OSSTestStatus.TESTBED_FAILED),
-            "connection_failed": sum(1 for r in self.results if r.status == OSSTestStatus.CONNECTION_FAILED),
-            "timeout": sum(1 for r in self.results if r.status == OSSTestStatus.TIMEOUT),
-            "retried": sum(1 for r in self.results if r.status == OSSTestStatus.RETRIED),
+            "setup_failed": sum(
+                1 for r in self.results if r.status == OSSTestStatus.SETUP_FAILED
+            ),
+            "teardown_failed": sum(
+                1 for r in self.results if r.status == OSSTestStatus.TEARDOWN_FAILED
+            ),
+            "testbed_failed": sum(
+                1 for r in self.results if r.status == OSSTestStatus.TESTBED_FAILED
+            ),
+            "connection_failed": sum(
+                1 for r in self.results if r.status == OSSTestStatus.CONNECTION_FAILED
+            ),
+            "timeout": sum(
+                1 for r in self.results if r.status == OSSTestStatus.TIMEOUT
+            ),
+            "retried": sum(
+                1 for r in self.results if r.status == OSSTestStatus.RETRIED
+            ),
         }
 
         return summary
@@ -168,9 +182,13 @@ class OSSResultAggregator:
 
         # No real test failure — map remaining infra-class signals to
         # their dedicated codes. Order is specific → generic.
-        if any(result.status == OSSTestStatus.TESTBED_FAILED for result in self.results):
+        if any(
+            result.status == OSSTestStatus.TESTBED_FAILED for result in self.results
+        ):
             return OSSReturnCode.TESTBED_ERROR
-        if any(result.status == OSSTestStatus.CONNECTION_FAILED for result in self.results):
+        if any(
+            result.status == OSSTestStatus.CONNECTION_FAILED for result in self.results
+        ):
             return OSSReturnCode.CONNECTION_ERROR
         if any(result.status == OSSTestStatus.TIMEOUT for result in self.results):
             return OSSReturnCode.TIMEOUT_ERROR

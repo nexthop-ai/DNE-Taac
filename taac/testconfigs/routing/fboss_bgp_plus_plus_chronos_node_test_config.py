@@ -150,6 +150,7 @@ PLAYBOOK_CATEGORY_REGISTRY = {
 
 def get_bgp_dc_playbooks(
     playbook_categories=None,
+    wedge_agent_restart_no_of_interations=None,
     **device_params,
 ):
     """
@@ -195,7 +196,19 @@ def get_bgp_dc_playbooks(
                 f"Valid categories: {list(PLAYBOOK_CATEGORY_REGISTRY.keys())}"
             )
         getter = PLAYBOOK_CATEGORY_REGISTRY[category]
-        playbooks.extend(getter(**device_params))
+        # Route the agent-restart iteration override ONLY to the restart
+        # getter so it never perturbs get_platform_hardening_playbooks
+        # (which has its own independent default). When None, all getters
+        # use their own defaults => byte-identical to the legacy behavior.
+        if category == "restart" and wedge_agent_restart_no_of_interations is not None:
+            playbooks.extend(
+                getter(
+                    wedge_agent_restart_no_of_interations=wedge_agent_restart_no_of_interations,
+                    **device_params,
+                )
+            )
+        else:
+            playbooks.extend(getter(**device_params))
 
     return playbooks
 
@@ -277,6 +290,15 @@ def build_bgp_dc_test_config(
     allow_all_v4_policies=False,
     uplink_bgp_peer_type=None,
     skip_playbooks=None,
+    # Quick-validation knobs (all default None => legacy behavior preserved):
+    #   wedge_agent_restart_no_of_interations: override the agent-restart loop
+    #     count for the test_agent_restart playbook (legacy default is 10).
+    #   convergence_wait_timeout / _interval: cap the agent-convergence waits
+    #     in setup_tasks so a slow/unhealthy device fails fast instead of
+    #     hanging on the full per-task ceiling.
+    wedge_agent_restart_no_of_interations=None,
+    convergence_wait_timeout=None,
+    convergence_wait_interval=None,
 ):
     """
     Build the full conveyor test configuration for a BGP++ Chronos node.
@@ -306,10 +328,15 @@ def build_bgp_dc_test_config(
         "allow_all_v4_policies",
         "uplink_bgp_peer_type",
         "skip_playbooks",
+        # Builder-only knobs: routed explicitly below, not via **device_params.
+        "wedge_agent_restart_no_of_interations",
+        "convergence_wait_timeout",
+        "convergence_wait_interval",
     )
     device_params = {k: v for k, v in locals().items() if k not in _NON_PLAYBOOK_PARAMS}
     playbooks = get_bgp_dc_playbooks(
         playbook_categories=playbook_categories,
+        wedge_agent_restart_no_of_interations=wedge_agent_restart_no_of_interations,
         **device_params,
     )
 
@@ -342,9 +369,9 @@ def build_bgp_dc_test_config(
                 ],
                 dut=True,
                 mac_address=local_mac_address,
-                direct_ixia_connections=direct_ixia_connections
-                if direct_ixia_connections
-                else [],
+                direct_ixia_connections=(
+                    direct_ixia_connections if direct_ixia_connections else []
+                ),
             ),
         ],
         setup_tasks=[
@@ -352,12 +379,20 @@ def build_bgp_dc_test_config(
                 hostname=device_name,
                 cmds=["systemctl restart bgpd", "systemctl daemon-reload"],
             ),
-            create_wait_for_agent_convergence_task([device_name]),
+            create_wait_for_agent_convergence_task(
+                [device_name],
+                timeout=convergence_wait_timeout,
+                interval=convergence_wait_interval,
+            ),
             create_coop_unregister_patchers_task(device_name),
             create_coop_apply_patchers_task(
                 hostnames=[device_name],
             ),
-            create_wait_for_agent_convergence_task([device_name]),
+            create_wait_for_agent_convergence_task(
+                [device_name],
+                timeout=convergence_wait_timeout,
+                interval=convergence_wait_interval,
+            ),
             create_coop_register_patcher_task(
                 hostname=device_name,
                 config_name="bgpcpp",
@@ -774,7 +809,11 @@ def build_bgp_dc_test_config(
             create_coop_apply_patchers_task(
                 hostnames=[device_name],
             ),
-            create_wait_for_agent_convergence_task([device_name]),
+            create_wait_for_agent_convergence_task(
+                [device_name],
+                timeout=convergence_wait_timeout,
+                interval=convergence_wait_interval,
+            ),
         ],
         teardown_tasks=[
             create_coop_unregister_patchers_task(device_name),

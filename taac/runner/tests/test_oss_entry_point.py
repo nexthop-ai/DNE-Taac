@@ -179,9 +179,7 @@ class TestResultFormatter(TestCase):
         aggregator.add_result(result)
 
         # Write to temporary file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json_path = f.name
 
         try:
@@ -225,9 +223,7 @@ class TestResultFormatter(TestCase):
         aggregator.add_result(result2)
 
         # Write to temporary file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".xml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
             junit_path = f.name
 
         try:
@@ -301,13 +297,18 @@ class TestEntryPointIntegration(TestCase):
 
         # Setup mock TaacRunner with async methods
         mock_runner = Mock()
+
         # Mock async methods to return coroutines
         async def mock_async_setup():
             pass
+
         async def mock_async_teardown():
             pass
+
         mock_runner.async_test_setUp = Mock(side_effect=lambda: mock_async_setup())
-        mock_runner.async_test_tearDown = Mock(side_effect=lambda: mock_async_teardown())
+        mock_runner.async_test_tearDown = Mock(
+            side_effect=lambda: mock_async_teardown()
+        )
         mock_taac_runner_class.return_value = mock_runner
 
         # Setup mock executor
@@ -333,12 +334,18 @@ class TestEntryPointIntegration(TestCase):
 
         try:
             # Call main
-            with patch("sys.argv", [
-                "oss_entry_point.py",
-                "--test-configs", config_path,
-                "--dut", "dummy-device",
-                "--ixia-api-server", "10.0.0.1",
-            ]):
+            with patch(
+                "sys.argv",
+                [
+                    "oss_entry_point.py",
+                    "--test-configs",
+                    config_path,
+                    "--dut",
+                    "dummy-device",
+                    "--ixia-api-server",
+                    "10.0.0.1",
+                ],
+            ):
                 exit_code = oss_entry_point.main()
 
             # Verify execute_playbook was called
@@ -346,10 +353,16 @@ class TestEntryPointIntegration(TestCase):
 
             # CRITICAL: Verify the parameter name is 'test_config' not 'test_config_name'
             call_kwargs = mock_executor.execute_playbook.call_args.kwargs
-            self.assertIn("test_config", call_kwargs,
-                         "execute_playbook must be called with 'test_config' parameter")
-            self.assertNotIn("test_config_name", call_kwargs,
-                           "execute_playbook should NOT be called with 'test_config_name'")
+            self.assertIn(
+                "test_config",
+                call_kwargs,
+                "execute_playbook must be called with 'test_config' parameter",
+            )
+            self.assertNotIn(
+                "test_config_name",
+                call_kwargs,
+                "execute_playbook should NOT be called with 'test_config_name'",
+            )
 
             # Verify exit code is SUCCESS
             self.assertEqual(exit_code, OSSReturnCode.SUCCESS)
@@ -369,20 +382,29 @@ class TestEntryPointIntegration(TestCase):
         test_config = taac_types.TestConfig(
             name="multi_test",
             playbooks=[
-                taac_types.Playbook(name="playbook1", stages=[taac_types.Stage(steps=[])]),
-                taac_types.Playbook(name="playbook2", stages=[taac_types.Stage(steps=[])]),
+                taac_types.Playbook(
+                    name="playbook1", stages=[taac_types.Stage(steps=[])]
+                ),
+                taac_types.Playbook(
+                    name="playbook2", stages=[taac_types.Stage(steps=[])]
+                ),
             ],
         )
         mock_load_config.return_value = test_config
 
         # Setup mocks with async methods
         mock_runner = Mock()
+
         async def mock_async_setup():
             pass
+
         async def mock_async_teardown():
             pass
+
         mock_runner.async_test_setUp = Mock(side_effect=lambda: mock_async_setup())
-        mock_runner.async_test_tearDown = Mock(side_effect=lambda: mock_async_teardown())
+        mock_runner.async_test_tearDown = Mock(
+            side_effect=lambda: mock_async_teardown()
+        )
         mock_taac_runner_class.return_value = mock_runner
 
         mock_executor = Mock()
@@ -405,12 +427,19 @@ class TestEntryPointIntegration(TestCase):
 
         try:
             # Call main with 2 DUTs
-            with patch("sys.argv", [
-                "oss_entry_point.py",
-                "--test-configs", config_path,
-                "--dut", "device1", "device2",
-                "--ixia-api-server", "10.0.0.1",
-            ]):
+            with patch(
+                "sys.argv",
+                [
+                    "oss_entry_point.py",
+                    "--test-configs",
+                    config_path,
+                    "--dut",
+                    "device1",
+                    "device2",
+                    "--ixia-api-server",
+                    "10.0.0.1",
+                ],
+            ):
                 exit_code = oss_entry_point.main()
 
             # Verify execute_playbook was called 4 times (2 playbooks × 2 DUTs)
@@ -431,7 +460,10 @@ class TestEntryPointIntegration(TestCase):
     @patch("taac.libs.taac_runner.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_retry_loop_marks_original_retried_and_clears_transient(
-        self, mock_load_config, mock_taac_runner_class, mock_executor_class,
+        self,
+        mock_load_config,
+        mock_taac_runner_class,
+        mock_executor_class,
     ):
         """End-to-end retry-loop coverage: transient failure on attempt 1,
         success on attempt 2, --retry 1.
@@ -449,23 +481,39 @@ class TestEntryPointIntegration(TestCase):
         mock_load_config.return_value = test_config
 
         mock_runner = Mock()
-        async def mock_async_setup(): pass
-        async def mock_async_teardown(): pass
+
+        async def mock_async_setup():
+            pass
+
+        async def mock_async_teardown():
+            pass
+
         mock_runner.async_test_setUp = Mock(side_effect=lambda: mock_async_setup())
-        mock_runner.async_test_tearDown = Mock(side_effect=lambda: mock_async_teardown())
+        mock_runner.async_test_tearDown = Mock(
+            side_effect=lambda: mock_async_teardown()
+        )
         mock_taac_runner_class.return_value = mock_runner
 
         mock_executor = Mock()
         mock_executor_class.return_value = mock_executor
 
         transient_result = OSSTestResult(
-            test_config="minimal_test", playbook="test_playbook", dut="dummy-device",
-            status=OSSTestStatus.ERROR, is_transient=True, duration=0.1,
-            message="Temporary network issue", exception_type="OSSTransientError",
+            test_config="minimal_test",
+            playbook="test_playbook",
+            dut="dummy-device",
+            status=OSSTestStatus.ERROR,
+            is_transient=True,
+            duration=0.1,
+            message="Temporary network issue",
+            exception_type="OSSTransientError",
         )
         retry_pass_result = OSSTestResult(
-            test_config="minimal_test", playbook="test_playbook", dut="dummy-device",
-            status=OSSTestStatus.PASSED, is_transient=False, duration=0.1,
+            test_config="minimal_test",
+            playbook="test_playbook",
+            dut="dummy-device",
+            status=OSSTestStatus.PASSED,
+            is_transient=False,
+            duration=0.1,
             message="",
         )
         mock_executor.execute_playbook = AsyncMock(
@@ -477,13 +525,20 @@ class TestEntryPointIntegration(TestCase):
             f.write("test_config = None")
 
         try:
-            with patch("sys.argv", [
-                "oss_entry_point.py",
-                "--test-configs", config_path,
-                "--dut", "dummy-device",
-                "--ixia-api-server", "10.0.0.1",
-                "--retry", "1",
-            ]):
+            with patch(
+                "sys.argv",
+                [
+                    "oss_entry_point.py",
+                    "--test-configs",
+                    config_path,
+                    "--dut",
+                    "dummy-device",
+                    "--ixia-api-server",
+                    "10.0.0.1",
+                    "--retry",
+                    "1",
+                ],
+            ):
                 exit_code = oss_entry_point.main()
 
             # Two execute_playbook calls: 1 original + 1 retry.
@@ -507,7 +562,10 @@ class TestEntryPointIntegration(TestCase):
     @patch("taac.libs.taac_runner.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_setup_crash_marks_remaining_combos(
-        self, mock_load_config, mock_taac_runner_class, mock_executor_class,
+        self,
+        mock_load_config,
+        mock_taac_runner_class,
+        mock_executor_class,
     ):
         """Coverage for the entry-point error handler at the lifecycle
         boundary: when async_test_setUp() raises, _run_lifecycle bubbles
@@ -519,18 +577,28 @@ class TestEntryPointIntegration(TestCase):
         test_config = taac_types.TestConfig(
             name="multi_test",
             playbooks=[
-                taac_types.Playbook(name="playbook1", stages=[taac_types.Stage(steps=[])]),
-                taac_types.Playbook(name="playbook2", stages=[taac_types.Stage(steps=[])]),
+                taac_types.Playbook(
+                    name="playbook1", stages=[taac_types.Stage(steps=[])]
+                ),
+                taac_types.Playbook(
+                    name="playbook2", stages=[taac_types.Stage(steps=[])]
+                ),
             ],
         )
         mock_load_config.return_value = test_config
 
         mock_runner = Mock()
+
         async def mock_async_setup():
             raise RuntimeError("setUp crashed: thrift connection refused")
-        async def mock_async_teardown(): pass
+
+        async def mock_async_teardown():
+            pass
+
         mock_runner.async_test_setUp = Mock(side_effect=lambda: mock_async_setup())
-        mock_runner.async_test_tearDown = Mock(side_effect=lambda: mock_async_teardown())
+        mock_runner.async_test_tearDown = Mock(
+            side_effect=lambda: mock_async_teardown()
+        )
         mock_taac_runner_class.return_value = mock_runner
 
         # execute_playbook should never be reached — setUp dies first.
@@ -543,12 +611,19 @@ class TestEntryPointIntegration(TestCase):
             f.write("test_config = None")
 
         try:
-            with patch("sys.argv", [
-                "oss_entry_point.py",
-                "--test-configs", config_path,
-                "--dut", "device1", "device2",
-                "--ixia-api-server", "10.0.0.1",
-            ]):
+            with patch(
+                "sys.argv",
+                [
+                    "oss_entry_point.py",
+                    "--test-configs",
+                    config_path,
+                    "--dut",
+                    "device1",
+                    "device2",
+                    "--ixia-api-server",
+                    "10.0.0.1",
+                ],
+            ):
                 exit_code = oss_entry_point.main()
 
             # setUp crash → execute_playbook never called.

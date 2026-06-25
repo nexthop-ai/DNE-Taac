@@ -41,13 +41,13 @@ class OSSTestResult:
     exception: Optional[Exception] = None  # Exception that caused failure (if any)
     traceback: Optional[str] = None  # Full traceback (if any)
 
-    stdout: str = ""                        # Captured stdout
-    stderr: str = ""                        # Captured stderr
-    exception_type: Optional[str] = None    # Exception class name
-    exception_message: Optional[str] = None # Exception message
-    is_transient: bool = False              # Was this a transient error?
-    retry_count: int = 0                    # Number of retries attempted
-    log_file: Optional[str] = None          # Path to log file
+    stdout: str = ""  # Captured stdout
+    stderr: str = ""  # Captured stderr
+    exception_type: Optional[str] = None  # Exception class name
+    exception_message: Optional[str] = None  # Exception message
+    is_transient: bool = False  # Was this a transient error?
+    retry_count: int = 0  # Number of retries attempted
+    log_file: Optional[str] = None  # Path to log file
 
     # Metadata
     metadata: Dict[str, str] = field(default_factory=dict)  # Additional metadata
@@ -126,9 +126,7 @@ class OSSTestResult:
         else:
             color = ""
             reset = ""
-        duration_str = (
-            f"{self.duration:.2f}s" if self.duration is not None else "N/A"
-        )
+        duration_str = f"{self.duration:.2f}s" if self.duration is not None else "N/A"
         return f"{color}[{self.status.name}]{reset} {self.test_case} ({duration_str})"
 
     def detailed_message(self) -> str:

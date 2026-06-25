@@ -12,13 +12,13 @@ import unittest
 from unittest import mock
 
 from taac.constants import TestCaseFailure
-from taac.runner.oss_test_executor import OSSTestExecutor
-from taac.runner.oss_test_status import OSSTestStatus
 from taac.runner.oss_exceptions import (
     OSSConfigError,
     OSSTestbedError,
     OSSTransientError,
 )
+from taac.runner.oss_test_executor import OSSTestExecutor
+from taac.runner.oss_test_status import OSSTestStatus
 
 
 class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
@@ -43,13 +43,16 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
         mocks must be async-callable to surface exceptions through the
         await — a plain `def` would either return None or raise too early.
         """
+
         async def _coro(*args, **kwargs):
             raise exc
+
         return _coro
 
     async def test_successful_execution_returns_passed(self):
         async def mock_run_tests(*args, **kwargs):
             pass
+
         self.mock_runner.run_tests = mock_run_tests
 
         result = await self.executor.execute_playbook(
@@ -69,7 +72,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             AssertionError("Test assertion failed")
         )
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.FAILED)
         self.assertIn("Test assertion failed", result.message)
@@ -84,7 +89,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             TestCaseFailure("Postcheck failed")
         )
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.FAILED)
         self.assertIn("Postcheck failed", result.message)
@@ -94,7 +101,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
     async def test_timeout_error_returns_timeout(self):
         self.mock_runner.run_tests = self._async_raise(TimeoutError("Test timed out"))
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.TIMEOUT)
         self.assertIn("Test timed out", result.message)
@@ -105,7 +114,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             OSSTestbedError("Device unreachable")
         )
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.ERROR)
         self.assertIn("Device unreachable", result.message)
@@ -117,7 +128,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             OSSTransientError("Temporary network issue")
         )
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.ERROR)
         self.assertIn("Temporary network issue", result.message)
@@ -128,7 +141,9 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             OSSConfigError("Invalid configuration")
         )
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result.status, OSSTestStatus.ERROR)
         self.assertFalse(result.is_transient)

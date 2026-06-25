@@ -26,7 +26,7 @@ class TestEntryPointCLIModes(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Create a minimal test config file
-        self.test_config_content = '''
+        self.test_config_content = """
 from taac.test_as_a_config import types as taac_types
 
 test_config = taac_types.TestConfig(
@@ -41,7 +41,7 @@ test_config = taac_types.TestConfig(
         ),
     ],
 )
-'''
+"""
         self.temp_dir = tempfile.mkdtemp()
         self.config_file = Path(self.temp_dir) / "test_config.py"
         self.config_file.write_text(self.test_config_content)
@@ -49,37 +49,50 @@ test_config = taac_types.TestConfig(
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_list_tests_mode(self):
         """Test --list-tests mode lists playbooks without execution."""
-        exit_code = main([
-            "--test-configs", str(self.config_file),
-            "--dut", "dummy-device",
-            "--list-tests",
-        ])
+        exit_code = main(
+            [
+                "--test-configs",
+                str(self.config_file),
+                "--dut",
+                "dummy-device",
+                "--list-tests",
+            ]
+        )
 
         # Should succeed
         self.assertEqual(exit_code, OSSReturnCode.SUCCESS.value)
 
     def test_dry_run_mode(self):
         """Test --dry-run mode validates without execution."""
-        exit_code = main([
-            "--test-configs", str(self.config_file),
-            "--dut", "dummy-device",
-            "--dry-run",
-        ])
+        exit_code = main(
+            [
+                "--test-configs",
+                str(self.config_file),
+                "--dut",
+                "dummy-device",
+                "--dry-run",
+            ]
+        )
 
         # Should succeed
         self.assertEqual(exit_code, OSSReturnCode.SUCCESS.value)
 
     def test_invalid_config_file_returns_config_error(self):
         """Test invalid config file returns CONFIG_ERROR (5)."""
-        exit_code = main([
-            "--test-configs", "/nonexistent/file.py",
-            "--dut", "dummy-device",
-            "--list-tests",
-        ])
+        exit_code = main(
+            [
+                "--test-configs",
+                "/nonexistent/file.py",
+                "--dut",
+                "dummy-device",
+                "--list-tests",
+            ]
+        )
 
         # Should return CONFIG_ERROR
         self.assertEqual(exit_code, OSSReturnCode.CONFIG_ERROR.value)
@@ -107,14 +120,20 @@ test_config = taac_types.TestConfig(
     def test_output_json_argument(self):
         """Test --json-output argument is accepted."""
         import tempfile
+
         json_file = tempfile.mktemp(suffix=".json")
 
-        exit_code = main([
-            "--test-configs", str(self.config_file),
-            "--dut", "dummy-device",
-            "--json-output", json_file,
-            "--list-tests",
-        ])
+        exit_code = main(
+            [
+                "--test-configs",
+                str(self.config_file),
+                "--dut",
+                "dummy-device",
+                "--json-output",
+                json_file,
+                "--list-tests",
+            ]
+        )
 
         # Should succeed
         self.assertEqual(exit_code, OSSReturnCode.SUCCESS.value)
@@ -122,14 +141,20 @@ test_config = taac_types.TestConfig(
     def test_junit_output_argument(self):
         """Test --junit-output argument is accepted."""
         import tempfile
+
         junit_file = tempfile.mktemp(suffix=".xml")
 
-        exit_code = main([
-            "--test-configs", str(self.config_file),
-            "--dut", "dummy-device",
-            "--junit-output", junit_file,
-            "--list-tests",
-        ])
+        exit_code = main(
+            [
+                "--test-configs",
+                str(self.config_file),
+                "--dut",
+                "dummy-device",
+                "--junit-output",
+                junit_file,
+                "--list-tests",
+            ]
+        )
 
         # Should succeed
         self.assertEqual(exit_code, OSSReturnCode.SUCCESS.value)

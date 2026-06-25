@@ -12,10 +12,10 @@ test_oss_entry_point.TestEntryPointIntegration.test_main_retry_loop_marks_origin
 import unittest
 from unittest import mock
 
-from taac.runner.oss_test_executor import OSSTestExecutor
-from taac.runner.oss_test_status import OSSTestStatus
-from taac.runner.oss_test_result import OSSTestResult
 from taac.runner.oss_exceptions import OSSTransientError
+from taac.runner.oss_test_executor import OSSTestExecutor
+from taac.runner.oss_test_result import OSSTestResult
+from taac.runner.oss_test_status import OSSTestStatus
 from taac.runner.result_formatter import OSSResultAggregator
 
 
@@ -48,13 +48,17 @@ class TestRetryLogic(unittest.IsolatedAsyncioTestCase):
         self.mock_runner.run_tests = mock_run_tests
 
         result1 = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertTrue(result1.is_transient)
         self.assertTrue(result1.status.failed)
 
         result2 = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
         self.assertEqual(result2.status, OSSTestStatus.PASSED)
         self.assertFalse(result2.status.failed)
@@ -63,12 +67,16 @@ class TestRetryLogic(unittest.IsolatedAsyncioTestCase):
         """A non-transient failure leaves is_transient=False so the
         entry-point retry loop's `result.is_transient and result.status.failed`
         guard is the one that decides not to retry."""
+
         async def mock_run_tests(*args, **kwargs):
             raise AssertionError("Test failed")
+
         self.mock_runner.run_tests = mock_run_tests
 
         result = await self.executor.execute_playbook(
-            playbook=self.mock_playbook, dut="device1", test_config="test_config",
+            playbook=self.mock_playbook,
+            dut="device1",
+            test_config="test_config",
         )
 
         self.assertFalse(result.is_transient)
@@ -87,9 +95,14 @@ class TestRetryDataModel(unittest.TestCase):
     def test_retry_count_increments(self):
         """retry_count is per-attempt scalar; first attempt is 0."""
         results = [
-            OSSTestResult(test_config="test", playbook="pb", dut="dut1",
-                          status=OSSTestStatus.ERROR, duration=1.0,
-                          message=f"Attempt {i}")
+            OSSTestResult(
+                test_config="test",
+                playbook="pb",
+                dut="dut1",
+                status=OSSTestStatus.ERROR,
+                duration=1.0,
+                message=f"Attempt {i}",
+            )
             for i in range(3)
         ]
         for i, r in enumerate(results):

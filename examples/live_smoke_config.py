@@ -62,7 +62,7 @@ test_config = TestConfig(
             ],
         ),
     ],
-    endpoints=[],          # Populated at run time from oss_entry_point --dut.
-    host_os_type_map={},   # Resolved from TAAC_DEVICE_INFO_PATH.
+    endpoints=[],  # Populated at run time from oss_entry_point --dut.
+    host_os_type_map={},  # Resolved from TAAC_DEVICE_INFO_PATH.
     startup_checks=[],
 )

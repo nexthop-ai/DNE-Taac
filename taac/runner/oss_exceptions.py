@@ -13,6 +13,7 @@ so this module doesn't need to import oss_test_status.py.
 
 class OSSException(Exception):
     """Base exception for all OSS TAAC errors."""
+
     pass
 
 
@@ -23,6 +24,7 @@ class OSSConfigError(OSSException):
     Raised when there's an issue with the test configuration,
     such as invalid test config file, missing required fields, etc.
     """
+
     pass
 
 
@@ -33,6 +35,7 @@ class OSSInfrastructureError(OSSException):
     Raised when there's an issue with the test infrastructure,
     such as IXIA connection failure, device unreachable, etc.
     """
+
     pass
 
 
@@ -46,6 +49,7 @@ class OSSTransientError(OSSException):
     This is a base class for transient/retry-able errors.
     These indicate temporary issues that may succeed on retry.
     """
+
     pass
 
 
@@ -59,6 +63,7 @@ class OSSTestbedError(OSSException):
     Error related to testbed/device issues.
     Considered an infrastructure error.
     """
+
     pass
 
 
@@ -68,6 +73,7 @@ class OSSTestExecutionError(OSSException):
 
     Raised when a test fails during execution (not setup/teardown).
     """
+
     pass
 
 
@@ -77,6 +83,7 @@ class OSSSetupError(OSSException):
 
     Raised when test setup fails.
     """
+
     pass
 
 
@@ -86,6 +93,7 @@ class OSSTeardownError(OSSException):
 
     Raised when test teardown fails.
     """
+
     pass
 
 
@@ -96,4 +104,5 @@ class OSSConnectionError(OSSException):
     Raised when Thrift/network connection fails.
     Note: Named OSSConnectionError to avoid conflict with builtin ConnectionError.
     """
+
     pass

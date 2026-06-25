@@ -222,12 +222,21 @@ def create_coop_apply_patchers_v2_task(
 
 def create_wait_for_agent_convergence_task(
     hostnames: t.List[str] | str,
+    timeout: t.Optional[int] = None,
+    interval: t.Optional[int] = None,
 ) -> Task:
     """
     Create a task to wait for agent convergence.
 
     Args:
         hostnames: Single hostname or list of hostnames to wait for
+        timeout: Optional convergence timeout (seconds). When set, caps how
+            long the task polls before failing. Defaults to None, in which
+            case the underlying WaitForAgentConvergenceTask uses its own
+            default (600s). Useful for quick validation runs that want to
+            fail fast instead of waiting the full ceiling.
+        interval: Optional poll interval (seconds). Defaults to None
+            (underlying task default, 5s).
 
     Returns:
         Task object to wait for agent convergence
@@ -235,9 +244,15 @@ def create_wait_for_agent_convergence_task(
     if isinstance(hostnames, str):
         hostnames = [hostnames]
 
+    task_params: t.Dict[str, t.Any] = {"hostnames": hostnames}
+    if timeout is not None:
+        task_params["timeout"] = timeout
+    if interval is not None:
+        task_params["interval"] = interval
+
     return Task(
         task_name="wait_for_agent_convergence",
-        params=Params(json_params=json.dumps({"hostnames": hostnames})),
+        params=Params(json_params=json.dumps(task_params)),
     )
 
 

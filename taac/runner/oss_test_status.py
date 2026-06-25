@@ -20,20 +20,22 @@ class OSSTestStatus(str, Enum):
     Order indicates priority for display (ERROR/FAILED shown first).
     """
 
-    ERROR = "ERROR"        # Unexpected exception during test execution
-    FAILED = "FAILED"      # Test assertion failed (expected != actual)
-    TIMEOUT = "TIMEOUT"    # Test exceeded time limit
-    PASSED = "PASSED"      # Test completed successfully
-    SKIPPED = "SKIPPED"    # Test was intentionally skipped
-    OMITTED = "OMITTED"    # Test was not considered to run (filtered out)
-    RETRIED = "RETRIED"    # Previous attempt before a retry that passed
+    ERROR = "ERROR"  # Unexpected exception during test execution
+    FAILED = "FAILED"  # Test assertion failed (expected != actual)
+    TIMEOUT = "TIMEOUT"  # Test exceeded time limit
+    PASSED = "PASSED"  # Test completed successfully
+    SKIPPED = "SKIPPED"  # Test was intentionally skipped
+    OMITTED = "OMITTED"  # Test was not considered to run (filtered out)
+    RETRIED = "RETRIED"  # Previous attempt before a retry that passed
 
     # Additional infrastructure states (not in the spec but useful)
-    SETUP_FAILED = "SETUP_FAILED"            # Test setup failed
-    TEARDOWN_FAILED = "TEARDOWN_FAILED"      # Test teardown failed
-    TESTBED_FAILED = "TESTBED_FAILED"        # OSSTestbedError (device/testbed connectivity)
-    CONNECTION_FAILED = "CONNECTION_FAILED"  # OSSConnectionError (thrift/network connection)
-    NOT_RUN = "NOT_RUN"                      # Test was not executed
+    SETUP_FAILED = "SETUP_FAILED"  # Test setup failed
+    TEARDOWN_FAILED = "TEARDOWN_FAILED"  # Test teardown failed
+    TESTBED_FAILED = "TESTBED_FAILED"  # OSSTestbedError (device/testbed connectivity)
+    CONNECTION_FAILED = (
+        "CONNECTION_FAILED"  # OSSConnectionError (thrift/network connection)
+    )
+    NOT_RUN = "NOT_RUN"  # Test was not executed
 
     def __str__(self) -> str:
         """String representation of the status."""
@@ -64,9 +66,9 @@ class OSSTestStatus(str, Enum):
     def color(self) -> str:
         """ANSI color codes for terminal output."""
         COLOR_MAP = {
-            OSSTestStatus.PASSED: "\x1b[32m",   # GREEN
-            OSSTestStatus.FAILED: "\x1b[31m",   # RED
-            OSSTestStatus.ERROR: "\x1b[31m",    # RED
+            OSSTestStatus.PASSED: "\x1b[32m",  # GREEN
+            OSSTestStatus.FAILED: "\x1b[31m",  # RED
+            OSSTestStatus.ERROR: "\x1b[31m",  # RED
             OSSTestStatus.TIMEOUT: "\x1b[33m",  # YELLOW
             OSSTestStatus.SKIPPED: "\x1b[37m",  # WHITE
             OSSTestStatus.OMITTED: "\x1b[37m",  # WHITE
