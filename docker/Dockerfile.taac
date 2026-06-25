@@ -1,0 +1,131 @@
+# Derived image: TAAC built and installed, packaged for vendor consumption.
+#
+# Multi-stage build:
+#   Stage 1 (builder): FROM fboss-build-env:centos
+#       Full getdeps source build of fbthrift-python + fboss-thrift-defs +
+#       transitive deps (~20 min cold), then TAAC itself. Prune for runtime.
+#
+#   Stage 2 (runtime): FROM fboss-build-env:centos
+#       Single ABI surface across build and run: no risk of glibc /
+#       libstdc++ drift. Selective COPY --from=builder pulls in the
+#       trimmed install tree and the Python site-packages.
+#
+# Usage:
+#   docker build -f docker/Dockerfile.taac -t fboss-taac .
+#   docker run --rm fboss-taac python3 -c \
+#       'import taac.libs.taac_runner; print("ok")'
+#
+# Override TAAC_OSS (default 1) at run time via -e TAAC_OSS=0.
+
+# =====================================================================
+# Stage 1: builder — deps + TAAC in one pass
+# =====================================================================
+FROM fboss-build-env:centos AS builder
+
+# Optional cap on build parallelism. Empty = let each tool default to
+# nproc. Set via `docker build --build-arg NUM_JOBS=N` (or pass
+# `--num-jobs N` to build-taac-image.sh). Useful on memory-constrained
+# hosts where fbthrift / cc1plus parallel workers (~5 GiB peak each)
+# would otherwise trip the OOM killer.
+#
+# Two knobs:
+#   - NUM_JOBS              — read by our getdeps.py invocation below.
+#                             getdeps' CMakeBuilder + BoostBuilder both
+#                             pass `-j ${NUM_JOBS}` explicitly to cmake
+#                             --build / b2, so those builders are capped.
+#   - MAKEFLAGS=-j${NUM_JOBS} — caps any direct GNU `make` invocation
+#                             that doesn't get the explicit `-j` from
+#                             getdeps (e.g. recursive `make` inside a
+#                             dep's custom_command). GNU make also
+#                             propagates this to child `make`s.
+ARG NUM_JOBS=
+ENV NUM_JOBS=${NUM_JOBS}
+ENV MAKEFLAGS=${NUM_JOBS:+-j${NUM_JOBS}}
+
+# Bootstrap getdeps tooling.
+COPY scripts/setup_getdeps.sh /taac/scripts/
+COPY getdeps/manifests /taac/getdeps/manifests
+WORKDIR /taac
+RUN /taac/scripts/setup_getdeps.sh
+
+# Build the full dep tree (~20 min cold). The ${NUM_JOBS:+--num-jobs ${NUM_JOBS}}
+# expansion adds the flag only when NUM_JOBS is set, so an unset value
+# preserves getdeps' default (= nproc) without injecting an empty arg.
+RUN python3 build/fbcode_builder/getdeps.py \
+        --scratch-path /scratch \
+        --extra-cmake-defines='{"enable_tests": "OFF"}' \
+        --allow-system-packages build --no-tests \
+        ${NUM_JOBS:+--num-jobs ${NUM_JOBS}} \
+        fbthrift-python \
+    && python3 build/fbcode_builder/getdeps.py \
+        --scratch-path /scratch \
+        --extra-cmake-defines='{"enable_tests": "OFF"}' \
+        --allow-system-packages build --no-tests \
+        ${NUM_JOBS:+--num-jobs ${NUM_JOBS}} \
+        fboss-thrift-defs
+
+# Install the fbthrift python wheel.
+RUN python3 -m pip install --break-system-packages --no-index \
+        --find-links /scratch/installed/fbthrift-python/share/thrift/wheels thrift
+
+# pip deps — copy requirements.txt first so this layer is cached
+# independently of TAAC source changes.
+COPY requirements.txt /taac/requirements.txt
+RUN python3 -m pip install --break-system-packages -r /taac/requirements.txt
+
+# Bring in only what the builder needs — excludes docker/, docs, etc.
+# so edits to entrypoint/regen scripts don't bust the build cache.
+COPY CMakeLists.txt /taac/
+COPY taac/ /taac/taac/
+COPY thrift/ /taac/thrift/
+
+# Stub .git + .projectid so getdeps recognizes the local checkout
+# (the real .git is excluded from the build context via .dockerignore).
+RUN mkdir -p /taac/.git && echo taac > /taac/.projectid
+
+# Build TAAC itself (--no-deps: trust the install tree we just built).
+RUN python3 build/fbcode_builder/getdeps.py \
+        --scratch-path /scratch \
+        --extra-cmake-defines='{"enable_tests": "OFF"}' \
+        --allow-system-packages build --no-deps --no-tests \
+        ${NUM_JOBS:+--num-jobs ${NUM_JOBS}} \
+        taac
+
+# Prune for runtime. Strip .so debug symbols, delete static archives,
+# cmake configs, most includes, pkgconfig, and build intermediates.
+# Preserve fbthrift-python/include (needed by taac-regen-thrift) and
+# fbthrift-python/bin/thrift1 (the compiler binary).
+RUN find /scratch/installed \
+        -name '*.so*' -type f \
+        -exec strip --strip-unneeded {} + 2>/dev/null \
+    && find /scratch/installed -name '*.a' -delete \
+    && rm -f /scratch/installed/fbthrift-python/libthrift_python_cpp.so* \
+    && rm -rf /scratch/installed/fbthrift-python/share/thrift/wheels \
+    && find /usr/local/lib/python3.12 /usr/local/lib64/python3.12 \
+        -name '*.so*' -type f \
+        -exec strip --strip-unneeded {} + 2>/dev/null \
+    && find /scratch/installed -type d -name cmake -exec rm -rf {} + \
+    && find /scratch/installed -type d -name include \
+        -not -path '*/fbthrift-python/include' -exec rm -rf {} + \
+    && find /scratch/installed -type d -name pkgconfig -exec rm -rf {} +
+
+# =====================================================================
+# Stage 2: runtime
+# =====================================================================
+FROM fboss-build-env:centos AS runtime
+
+COPY --from=builder /scratch/installed /scratch/installed
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/python3.12/site-packages
+
+# Selective COPYs of only necessary directories
+COPY taac/ /taac/taac/
+COPY thrift/ /taac/thrift/
+COPY docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint
+COPY docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift
+COPY README.md CODE_OF_CONDUCT.md CONTRIBUTING.md /taac/
+RUN chmod +x /usr/local/bin/taac-entrypoint /usr/local/bin/taac-regen-thrift
+
+WORKDIR /taac
+ENTRYPOINT ["/usr/local/bin/taac-entrypoint"]
+CMD ["bash"]

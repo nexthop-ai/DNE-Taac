@@ -20,6 +20,7 @@ from enum import Enum
 from ipaddress import ip_address, ip_network, IPv4Interface, IPv6Interface
 from typing import (
     Any,
+    AsyncContextManager,
     AsyncGenerator,
     DefaultDict,
     Dict,
@@ -562,8 +563,8 @@ class FbossSwitch(AbstractSwitch):
         """
         intf_map: Dict = {}
 
-        with self._get_fboss_agent_client() as client:
-            port_info_result = client.getAllPortInfo()
+        async with self.async_agent_client as client:
+            port_info_result = await client.getAllPortInfo()
 
         if not port_info_result:
             raise EmptyOutputReturnError(
@@ -1259,16 +1260,23 @@ class FbossSwitch(AbstractSwitch):
             await self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
         )
         port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            port_status: PortStatus = client.getPortStatus([port_id])
+        async with self.async_agent_client as client:
+            port_status: Mapping[int, PortStatus] = await client.getPortStatus(
+                [port_id]
+            )
 
-        # pyre-fixme[16]: `PortStatus` has no attribute `__getitem__`.
         port_status_obj = port_status[port_id]
         # TODO: The transceiver ID exposed by the wedge_agent service right now
         # under getPortStatus / 'fboss port status' command is 1 lesser than
         # the actual transceiver ID value used by the qsfp_utils service.
         # This needs to be fixed and tracked in T30132285
-        transceiver_id: int = (port_status_obj.transceiverIdx.transceiverId) + 1
+        if port_status_obj.transceiverIdx is None:
+            raise InterfaceNotFoundError(
+                f"Unable to obtain the Transceiver_id ID for interface "
+                f"{interface_name} on {self.hostname} while attempting "
+                f"to change the interface state using qsfp_utils methods"
+            )
+        transceiver_id: int = port_status_obj.transceiverIdx.transceiverId + 1
 
         # NOTE: Transceiver ID can be even 0. That is why we validate the value
         # to ensure it is NOT NONE
@@ -2382,12 +2390,16 @@ class FbossSwitch(AbstractSwitch):
         Interface will be SHUT if enable is False. Else, interface will be
         UNSHUT. True will be returned.
         """
-        port_vlan_id_res: InterfaceInfo = asyncio.run(
-            self.async_get_interface_name_to_port_id_and_vlan_id(interface_name)
-        )
-        port_id = port_vlan_id_res.port_id
-        with self._get_fboss_agent_client() as client:
-            client.setPortState(port_id, enable)
+        async def _bounce() -> None:
+            port_vlan_id_res: InterfaceInfo = (
+                await self.async_get_interface_name_to_port_id_and_vlan_id(
+                    interface_name
+                )
+            )
+            async with self.async_agent_client as client:
+                await client.setPortState(port_vlan_id_res.port_id, enable)
+
+        asyncio.run(_bounce())
         return True
 
     async def async_thrift_disable_enable(
@@ -2999,13 +3011,22 @@ class FbossSwitch(AbstractSwitch):
         )
 
     @property
-    def async_agent_client(self) -> FbossCtrl:
+    def async_agent_client(self) -> AsyncContextManager[FbossCtrl]:
         """
-        Create FBOSS Agent async client
+        Create FBOSS Agent async client.
+
+        Returns an async context manager (via thrift.py3.client.get_client)
+        that yields an FbossCtrl.Async client connected to the device's
+        agent thrift port. Used as 'async with self.async_agent_client as
+        client: ...' by methods like async_get_lldp_neighbors.
         """
-        raise NotImplementedError(
-            "FBOSS Agent async client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+        from thrift.py3.client import get_client
+
+        return get_client(
+            FbossCtrl,
+            host=self.hostname,
+            port=DEFAULT_AGENT_REMOTE_PORT,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     async def async_get_lldp_neighbors(self) -> Dict[str, SwitchLldpData]:
@@ -3147,13 +3168,16 @@ class FbossSwitch(AbstractSwitch):
         OSS implementation uses asyncssh from oss_driver_utils.
         The internal mixin overrides this with Meta's AsyncSSHClient/ParamikoClient.
         """
-        username = "root"
         ssh_port = 22
 
         self.logger.debug(f"Running cmd {cmd} on {self.hostname}")
 
+        # Pass username=None so AsyncSSHClient falls back to TAAC_SSH_USER
+        # (default "root"); password is similarly picked up from
+        # TAAC_SSH_PASSWORD when set. See oss_driver_utils for the
+        # supported env vars.
         async with AsyncSSHClient(
-            self.hostname, port=ssh_port, username=username
+            self.hostname, port=ssh_port, username=None
         ) as client:
             result = await client.async_run(
                 cmd=cmd,

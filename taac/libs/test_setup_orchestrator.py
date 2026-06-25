@@ -71,6 +71,7 @@ class TestSetupOrchestrator:
         ixia_session_id: t.Optional[int] = None,
         skip_ixia_setup: bool = False,
         skip_ixia_cleanup: bool = False,
+        skip_post_setup_wait: bool = False,
         skip_basset_reservation: bool = False,
         skip_testbed_isolation: bool = True,
         desired_pkg_versions: t.Optional[t.Dict[FbossPackage, str]] = None,
@@ -92,6 +93,7 @@ class TestSetupOrchestrator:
         # Ixia is not required. Primarily used for testing purposes
         self._skip_ixia_setup = skip_ixia_setup
         self._skip_ixia_cleanup = skip_ixia_cleanup
+        self._skip_post_setup_wait = skip_post_setup_wait
         self._skip_basset_reservation = skip_basset_reservation
         self._skip_testbed_isolation = skip_testbed_isolation
         self._desired_pkg_versions = desired_pkg_versions or {}
@@ -159,9 +161,23 @@ class TestSetupOrchestrator:
         else:
             self.logger.info("Skipping IXIA setup (user requested).")
 
-        # Wait additional time for interfaces to stabilize after boot
-        self.logger.info("  Waiting 180s for interfaces to stabilize after boot...")
-        await asyncio.sleep(180)
+        # Wait additional time for interfaces to stabilize after boot, but
+        # only when there are real devices and the caller hasn't asked us to
+        # skip. Empty/synthetic configs (no devices) and explicit overrides
+        # bypass the wait so smoke tests aren't blocked on it.
+        has_real_devices = bool(self.test_topology and self.test_topology.devices)
+        if self._skip_post_setup_wait or not has_real_devices:
+            reason = (
+                "skip_post_setup_wait=True"
+                if self._skip_post_setup_wait
+                else "no devices in topology"
+            )
+            self.logger.info(
+                f"  Skipping post-setup interface stabilization wait ({reason})."
+            )
+        else:
+            self.logger.info("  Waiting 180s for interfaces to stabilize after boot...")
+            await asyncio.sleep(180)
 
     async def _async_setUp_internal(self, test_device_names: t.List[str]) -> None:
         """

@@ -1,0 +1,31 @@
+# Allowlist: ignore everything, then include only what COPY needs.
+# This way new getdeps source dirs (folly-python/, mvfst-python/, etc.)
+# that appear at the repo root after local builds are excluded
+# automatically — no maintenance required.
+#
+# If you add a new top-level dir that Dockerfile.taac needs, add a
+# `!dirname/` line here. For explicit `COPY scripts/...` lines a
+# missing entry produces a clear "file not found" build error; for
+# the `COPY . /taac` wildcard it's silent (the file just isn't in
+# the image), so audit additions accordingly.
+
+*
+# Re-include the root so BuildKit doesn't warn on `COPY . /taac`.
+!.
+
+# Selective COPYs (setup_getdeps.sh, manifests)
+!scripts/
+!getdeps/
+
+# COPY . /taac (builder stage; .git/ and .projectid are excluded —
+# the builder stubs them for getdeps project detection)
+!CMakeLists.txt
+!requirements.txt
+!taac/
+!thrift/
+!docker/
+
+# Top-level files that ship with the source
+!README.md
+!CODE_OF_CONDUCT.md
+!CONTRIBUTING.md
