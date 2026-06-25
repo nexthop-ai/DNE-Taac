@@ -1,7 +1,20 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 # pyre-unsafe
-"""Unit tests for BgpPeerRouteSetEqualityHealthCheck."""
+"""Unit tests for BgpPeerRouteSetEqualityHealthCheck.
+
+The HC compares per-peer ``postpolicy_sent_prefix_count`` (the DUT-side
+gauge for "routes currently advertised to this peer") across baseline +
+tested peers. It mocks ``driver.async_get_bgp_sessions()`` returning
+``TBgpSession``-shaped objects with ``peer_addr`` and
+``postpolicy_sent_prefix_count`` attributes.
+
+The thrift-prefix path (``getPostfilterAdvertisedNetworks``) was abandoned
+because BGP++ with UG enabled does not populate per-peer adj-RIB-out --
+the postfilter API returns 0 prefixes even when routes are being advertised
+(see T271301144). The gauge is the same counter shown in
+``show bgpcpp summary`` PS column and works correctly under UG.
+"""
 
 import json
 import unittest
@@ -18,35 +31,12 @@ from taac.health_checks.healthcheck_definitions import (
 from taac.health_check.health_check import types as hc_types
 
 
-class _P:
-    """Module-scope TIpPrefix mock so instances across calls compare equal."""
-
-    def __init__(self, addr, prefix_len):
-        self.prefix = addr
-        self.prefix_length = prefix_len
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, _P)
-            and self.prefix == other.prefix
-            and self.prefix_length == other.prefix_length
-        )
-
-    def __hash__(self):
-        return hash((self.prefix, self.prefix_length))
-
-    def __repr__(self):
-        return f"{self.prefix}/{self.prefix_length}"
-
-
-def _prefix(addr, length=128):
-    """Build a TIpPrefix-like mock comparable + hashable by (addr, length)."""
-    return _P(addr, length)
-
-
-def _prefixes(n, base="2401:db00:1::", length=128):
-    """Return n prefixes addr `base{i}` length /128 (mock TBgpPath value=None)."""
-    return {_prefix(f"{base}{i}", length): MagicMock() for i in range(n)}
+def _session(peer_addr: str, sent: int):
+    """Build a TBgpSession-shaped mock with the fields the HC reads."""
+    s = MagicMock()
+    s.peer_addr = peer_addr
+    s.postpolicy_sent_prefix_count = sent
+    return s
 
 
 BASELINE = "2401:db00::11"
@@ -63,19 +53,13 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
         self.device.name = "bag012.ash6"
         self.input = hc_types.BaseHealthCheckIn()
 
-    def _wire(self, per_peer):
-        """Wire async_get_postfilter_advertised_networks to per-peer dicts."""
+    def _wire(self, counts):
+        """Wire async_get_bgp_sessions to return one TBgpSession per peer."""
+        sessions = [_session(peer, sent) for peer, sent in counts.items()]
+        self.hc.driver.async_get_bgp_sessions = AsyncMock(return_value=sessions)
 
-        async def fake(peer):
-            return per_peer[peer]
-
-        self.hc.driver.async_get_postfilter_advertised_networks = AsyncMock(
-            side_effect=fake
-        )
-
-    async def test_passes_when_baseline_and_tested_match(self):
-        shared = _prefixes(300)
-        self._wire({BASELINE: shared, TESTED_1: shared, TESTED_2: shared})
+    async def test_passes_when_baseline_and_tested_counts_match(self):
+        self._wire({BASELINE: 300, TESTED_1: 300, TESTED_2: 300})
         result = await self.hc._run(
             self.device,
             self.input,
@@ -86,10 +70,8 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
 
-    async def test_fails_when_tested_missing_prefixes(self):
-        baseline = _prefixes(300)
-        tested = dict(list(baseline.items())[:200])
-        self._wire({BASELINE: baseline, TESTED_1: tested})
+    async def test_fails_when_tested_count_differs_from_baseline(self):
+        self._wire({BASELINE: 300, TESTED_1: 250})
         result = await self.hc._run(
             self.device,
             self.input,
@@ -99,44 +81,12 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(result.status, hc_types.HealthCheckStatus.FAIL)
-        self.assertIn("MISSING", result.message)
         self.assertIn(TESTED_1, result.message)
-
-    async def test_fails_when_tested_has_extra_prefixes_strict(self):
-        baseline = _prefixes(300)
-        extra_one = _prefix("2401:db00:1::extra", 128)
-        tested = {**baseline, extra_one: MagicMock()}
-        self._wire({BASELINE: baseline, TESTED_1: tested})
-        result = await self.hc._run(
-            self.device,
-            self.input,
-            {
-                "baseline_peer_addr": BASELINE,
-                "tested_peer_addrs": [TESTED_1],
-            },
-        )
-        self.assertEqual(result.status, hc_types.HealthCheckStatus.FAIL)
-        self.assertIn("EXTRA", result.message)
-
-    async def test_extra_tolerated_when_allow_extra_in_tested(self):
-        baseline = _prefixes(300)
-        extra_one = _prefix("2401:db00:1::extra", 128)
-        tested = {**baseline, extra_one: MagicMock()}
-        self._wire({BASELINE: baseline, TESTED_1: tested})
-        result = await self.hc._run(
-            self.device,
-            self.input,
-            {
-                "baseline_peer_addr": BASELINE,
-                "tested_peer_addrs": [TESTED_1],
-                "allow_extra_in_tested": True,
-            },
-        )
-        self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
+        self.assertIn("250", result.message)
+        self.assertIn("300", result.message)
 
     async def test_anchor_route_count_passes_at_exact_value(self):
-        shared = _prefixes(300)
-        self._wire({BASELINE: shared, TESTED_1: shared})
+        self._wire({BASELINE: 300, TESTED_1: 300})
         result = await self.hc._run(
             self.device,
             self.input,
@@ -144,16 +94,31 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
                 "baseline_peer_addr": BASELINE,
                 "tested_peer_addrs": [TESTED_1],
                 "anchor_route_count": 300,
+            },
+        )
+        self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
+
+    async def test_anchor_route_count_passes_within_tolerance(self):
+        """Anchor allows +/-tolerance; baseline == tested still required for
+        the count-equality check (the impl checks anchor AND equality)."""
+        self._wire({BASELINE: 299, TESTED_1: 299})
+        result = await self.hc._run(
+            self.device,
+            self.input,
+            {
+                "baseline_peer_addr": BASELINE,
+                "tested_peer_addrs": [TESTED_1],
+                "anchor_route_count": 300,
+                "count_tolerance": 2,
             },
         )
         self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
 
     async def test_anchor_route_count_fails_when_both_off(self):
-        """The "all peers wrong with the same count" failure: set equality
-        passes but the anchor catches the actual error (e.g. stale 500 when
-        we expected 300 post-withdrawal)."""
-        shared = _prefixes(500)
-        self._wire({BASELINE: shared, TESTED_1: shared})
+        """The "all peers wrong with the same count" failure: count equality
+        passes (both 500) but the anchor catches the actual error (e.g.
+        stale 500 when we expected 300 post-withdrawal)."""
+        self._wire({BASELINE: 500, TESTED_1: 500})
         result = await self.hc._run(
             self.device,
             self.input,
@@ -164,9 +129,37 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(result.status, hc_types.HealthCheckStatus.FAIL)
-        # Both baseline and tested should be flagged.
+        # Both baseline and tested should be flagged by the anchor check.
         self.assertIn("Baseline", result.message)
         self.assertIn("Tested", result.message)
+
+    async def test_baseline_peer_missing_from_sessions_fails(self):
+        """No TBgpSession for baseline -> fail (can't compare against
+        nothing). Common signal that the peer isn't established yet."""
+        self._wire({TESTED_1: 300})
+        result = await self.hc._run(
+            self.device,
+            self.input,
+            {
+                "baseline_peer_addr": BASELINE,
+                "tested_peer_addrs": [TESTED_1],
+            },
+        )
+        self.assertEqual(result.status, hc_types.HealthCheckStatus.FAIL)
+        self.assertIn("no BGP session", result.message)
+
+    async def test_tested_peer_missing_from_sessions_fails(self):
+        self._wire({BASELINE: 300})
+        result = await self.hc._run(
+            self.device,
+            self.input,
+            {
+                "baseline_peer_addr": BASELINE,
+                "tested_peer_addrs": [TESTED_1],
+            },
+        )
+        self.assertEqual(result.status, hc_types.HealthCheckStatus.FAIL)
+        self.assertIn("no BGP session", result.message)
 
     async def test_missing_required_params_returns_fail(self):
         result = await self.hc._run(self.device, self.input, {})
@@ -174,7 +167,7 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("baseline_peer_addr", result.message)
 
     async def test_thrift_error_returns_error(self):
-        self.hc.driver.async_get_postfilter_advertised_networks = AsyncMock(
+        self.hc.driver.async_get_bgp_sessions = AsyncMock(
             side_effect=RuntimeError("connection refused")
         )
         result = await self.hc._run(
@@ -187,34 +180,11 @@ class BgpPeerRouteSetEqualityHealthCheckTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.status, hc_types.HealthCheckStatus.ERROR)
 
-    async def test_arista_cli_falls_back_to_thrift_on_bgp_inactive(self):
-        """ARISTA_FBOSS path: CLI raises "BGP inactive" -> delegate to thrift."""
-        shared = _prefixes(300)
-        self._wire({BASELINE: shared, TESTED_1: shared})
-        self.hc.driver.async_execute_show_json_on_shell = AsyncMock(
-            side_effect=Exception("BGP inactive")
-        )
-        result = await self.hc._run_arista(
-            self.device,
-            self.input,
-            {
-                "baseline_peer_addr": BASELINE,
-                "tested_peer_addrs": [TESTED_1],
-            },
-        )
-        self.assertEqual(result.status, hc_types.HealthCheckStatus.PASS)
-
-    async def test_arista_cli_falls_back_to_thrift_on_invalid_input(self):
-        """ARISTA_FBOSS path: CLI raises "% Invalid input" (BGP++ doesn't
-        expose the EOS received-routes CLI surface) -> delegate to thrift."""
-        shared = _prefixes(300)
-        self._wire({BASELINE: shared, TESTED_1: shared})
-        self.hc.driver.async_execute_show_json_on_shell = AsyncMock(
-            side_effect=Exception(
-                "Running command: show bgp ipv6 unicast neighbors ... "
-                "resulted in exception. Response received was: % Invalid input"
-            )
-        )
+    async def test_arista_path_delegates_to_thrift(self):
+        """ARISTA_FBOSS path: thin shim that just calls _run. BGP++ doesn't
+        expose the EOS received-routes CLI surface, so there's no separate
+        CLI implementation to test."""
+        self._wire({BASELINE: 300, TESTED_1: 300})
         result = await self.hc._run_arista(
             self.device,
             self.input,

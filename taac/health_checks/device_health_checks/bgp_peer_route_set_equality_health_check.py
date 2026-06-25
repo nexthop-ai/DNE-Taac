@@ -129,7 +129,6 @@ class BgpPeerRouteSetEqualityHealthCheck(
         tested_peer_addrs = check_params.get("tested_peer_addrs") or []
         anchor_route_count = check_params.get("anchor_route_count")
         count_tolerance = int(check_params.get("count_tolerance", 0) or 0)
-        allow_extra_in_tested = bool(check_params.get("allow_extra_in_tested", False))
 
         if not baseline_peer_addr:
             return hc_types.HealthCheckResult(
@@ -162,36 +161,132 @@ class BgpPeerRouteSetEqualityHealthCheck(
         all_peer_addrs = [baseline_peer_addr] + [
             p for p in tested_peer_addrs if _norm(p) != _norm(baseline_peer_addr)
         ]
+        all_norm = {_norm(p) for p in all_peer_addrs}
 
-        # Fetch postfilter routes advertised TO each peer via thrift. "Tested
-        # peers receive" (test semantics) = "DUT advertised to them"
-        # (DUT-side mirror) -- the thrift API is queried from the DUT side
-        # so we ask "what did we advertise to ::peer".
+        # Per-peer "routes advertised to peer" count via getBgpSessions ->
+        # postpolicy_sent_prefix_count. We do NOT use
+        # getPostfilterAdvertisedNetworks because BGP++ with UG enabled does
+        # not populate per-peer adj-RIB-out (UG fans out collectively, so the
+        # postfilter API returns 0 even when routes are being advertised).
+        # postpolicy_sent_prefix_count is the same counter shown in the CLI
+        # `show bgpcpp summary` "PS" column and is reliable across UG modes.
         try:
-            per_peer_prefixes: t.Dict[str, t.Set[t.Any]] = {}
-            for peer_addr in all_peer_addrs:
-                # pyrefly: ignore [missing-attribute]
-                mapping = await self.driver.async_get_postfilter_advertised_networks(
-                    peer_addr
-                )
-                per_peer_prefixes[_norm(peer_addr)] = set(mapping.keys())
+            # pyrefly: ignore [missing-attribute]
+            sessions = await self.driver.async_get_bgp_sessions()
         except Exception as e:
             return hc_types.HealthCheckResult(
                 status=hc_types.HealthCheckStatus.ERROR,
                 message=(
                     f"BGP peer route-set equality on {hostname}: "
-                    f"thrift query failed: {e}"
+                    f"getBgpSessions thrift query failed: {e}"
                 ),
             )
 
-        return self._evaluate(
+        per_peer_count: t.Dict[str, int] = {}
+        for s in sessions or []:
+            peer_addr = _norm(s.peer_addr)
+            if peer_addr in all_norm:
+                per_peer_count[peer_addr] = int(
+                    getattr(s, "postpolicy_sent_prefix_count", 0) or 0
+                )
+
+        return self._evaluate_counts(
             hostname=hostname,
             baseline_peer_addr=_norm(baseline_peer_addr),
             tested_peer_addrs=[_norm(p) for p in tested_peer_addrs],
-            per_peer_prefixes=per_peer_prefixes,
+            per_peer_count=per_peer_count,
             anchor_route_count=anchor_route_count,
             count_tolerance=count_tolerance,
-            allow_extra_in_tested=allow_extra_in_tested,
+        )
+
+    def _evaluate_counts(
+        self,
+        hostname: str,
+        baseline_peer_addr: str,
+        tested_peer_addrs: t.List[str],
+        per_peer_count: t.Dict[str, int],
+        anchor_route_count: t.Optional[int],
+        count_tolerance: int,
+    ) -> hc_types.HealthCheckResult:
+        """Count-based evaluation using postpolicy_sent_prefix_count per peer.
+
+        We can't compare prefix SETS via this counter (it's only a count) so
+        the equality check degrades to a count equality check across baseline
+        + tested peers. The optional anchor_route_count enforces the absolute
+        expected count.
+        """
+        failures: t.List[str] = []
+        baseline_count = per_peer_count.get(baseline_peer_addr)
+        if baseline_count is None:
+            return hc_types.HealthCheckResult(
+                status=hc_types.HealthCheckStatus.FAIL,
+                message=(
+                    f"BGP peer route-set equality on {hostname}: baseline peer "
+                    f"{baseline_peer_addr} has no BGP session (not in "
+                    f"getBgpSessions result)."
+                ),
+            )
+
+        # (1) Optional anchor count
+        if anchor_route_count is not None:
+            lo = anchor_route_count - count_tolerance
+            hi = anchor_route_count + count_tolerance
+            if not (lo <= baseline_count <= hi):
+                failures.append(
+                    f"Baseline peer {baseline_peer_addr} sent_prefix_count="
+                    f"{baseline_count}; expected {anchor_route_count} "
+                    f"(+/-{count_tolerance})."
+                )
+            for tested in tested_peer_addrs:
+                tested_count = per_peer_count.get(tested)
+                if tested_count is None:
+                    failures.append(f"Tested peer {tested} has no BGP session.")
+                    continue
+                if not (lo <= tested_count <= hi):
+                    failures.append(
+                        f"Tested peer {tested} sent_prefix_count="
+                        f"{tested_count}; expected {anchor_route_count} "
+                        f"(+/-{count_tolerance})."
+                    )
+
+        # (2) Count equality vs baseline
+        for tested in tested_peer_addrs:
+            tested_count = per_peer_count.get(tested)
+            if tested_count is None:
+                # already reported above if anchor set; otherwise report here
+                if anchor_route_count is None:
+                    failures.append(f"Tested peer {tested} has no BGP session.")
+                continue
+            if tested_count != baseline_count:
+                failures.append(
+                    f"Tested peer {tested} sent_prefix_count={tested_count} "
+                    f"differs from baseline {baseline_peer_addr}="
+                    f"{baseline_count}."
+                )
+
+        if failures:
+            numbered = "\n".join(f"  {i}. {f}" for i, f in enumerate(failures, 1))
+            return hc_types.HealthCheckResult(
+                status=hc_types.HealthCheckStatus.FAIL,
+                message=(
+                    f"BGP peer route-set equality found {len(failures)} "
+                    f"failure(s) on {hostname} (baseline={baseline_peer_addr}, "
+                    f"tested={tested_peer_addrs}):\n{numbered}"
+                ),
+            )
+
+        summary = (
+            f"baseline {baseline_peer_addr} sent_prefix_count={baseline_count}; "
+            f"{len(tested_peer_addrs)} tested peer(s) all match"
+            + (
+                f" (anchor_route_count={anchor_route_count})"
+                if anchor_route_count is not None
+                else ""
+            )
+        )
+        return hc_types.HealthCheckResult(
+            status=hc_types.HealthCheckStatus.PASS,
+            message=f"BGP peer route-set equality PASSED on {hostname}: {summary}.",
         )
 
     async def _run_arista(
@@ -200,89 +295,12 @@ class BgpPeerRouteSetEqualityHealthCheck(
         input: hc_types.BaseHealthCheckIn,
         check_params: t.Dict[str, t.Any],
     ) -> hc_types.HealthCheckResult:
-        """EOS native-BGP CLI path; delegates to thrift on "BGP inactive"."""
-        hostname = obj.name
-        baseline_peer_addr = check_params.get("baseline_peer_addr")
-        tested_peer_addrs = check_params.get("tested_peer_addrs") or []
-        anchor_route_count = check_params.get("anchor_route_count")
-        count_tolerance = int(check_params.get("count_tolerance", 0) or 0)
-        allow_extra_in_tested = bool(check_params.get("allow_extra_in_tested", False))
-        address_family = check_params.get("address_family", "ipv6")
-
-        if not baseline_peer_addr or not tested_peer_addrs:
-            return hc_types.HealthCheckResult(
-                status=hc_types.HealthCheckStatus.FAIL,
-                message=(
-                    f"BGP peer route-set equality on {hostname}: "
-                    f"baseline_peer_addr and tested_peer_addrs are required."
-                ),
-            )
-        if anchor_route_count is not None:
-            try:
-                anchor_route_count = int(anchor_route_count)
-            except (TypeError, ValueError) as e:
-                return hc_types.HealthCheckResult(
-                    status=hc_types.HealthCheckStatus.FAIL,
-                    message=(
-                        f"BGP peer route-set equality on {hostname}: "
-                        f"invalid anchor_route_count: {e}"
-                    ),
-                )
-
-        all_peer_addrs = [baseline_peer_addr] + [
-            p for p in tested_peer_addrs if _norm(p) != _norm(baseline_peer_addr)
-        ]
-
-        per_peer_prefixes: t.Dict[str, t.Set[str]] = {}
-        try:
-            for peer_addr in all_peer_addrs:
-                cmd = (
-                    f"show bgp {address_family} unicast neighbors "
-                    f"{peer_addr} advertised-routes | json"
-                )
-                # pyrefly: ignore [missing-attribute]
-                result = await self.driver.async_execute_show_json_on_shell(cmd)
-                routes = (
-                    result.get("vrfs", {}).get("default", {}).get("bgpRouteEntries", {})
-                )
-                per_peer_prefixes[_norm(peer_addr)] = set(routes.keys())
-        except Exception as e:
-            # Fall back to BGP++ thrift on any of:
-            #   - "BGP inactive": native EOS BGP daemon is off (ARISTA_FBOSS with
-            #     BGP++ running instead).
-            #   - "% Invalid input": EOS CLI doesn't recognize the command,
-            #     which means BGP++ is the active BGP -- the EOS CLI surface for
-            #     advertised-routes doesn't exist on BGP++ FBOSS devices.
-            #   - "Invalid input": same as above without the leading "%".
-            err_str = str(e)
-            if (
-                "BGP inactive" in err_str
-                or "Invalid input" in err_str
-                or "% Invalid" in err_str
-            ):
-                self.logger.info(
-                    f"Native EOS BGP CLI unavailable on {hostname} "
-                    f"({err_str.strip()[:80]}); falling back to BGP++ thrift "
-                    f"route-set query."
-                )
-                return await self._run(obj, input, check_params)
-            return hc_types.HealthCheckResult(
-                status=hc_types.HealthCheckStatus.ERROR,
-                message=(
-                    f"BGP peer route-set equality on {hostname}: "
-                    f"EOS CLI query failed: {e}"
-                ),
-            )
-
-        return self._evaluate(
-            hostname=hostname,
-            baseline_peer_addr=_norm(baseline_peer_addr),
-            tested_peer_addrs=[_norm(p) for p in tested_peer_addrs],
-            per_peer_prefixes=per_peer_prefixes,
-            anchor_route_count=anchor_route_count,
-            count_tolerance=count_tolerance,
-            allow_extra_in_tested=allow_extra_in_tested,
-        )
+        """ARISTA_FBOSS path: delegates to thrift `_run` which uses
+        ``getBgpSessions`` + ``postpolicy_sent_prefix_count``. The native EOS
+        ``show bgp ipv6 unicast neighbors <peer> advertised-routes`` CLI does
+        not exist on BGP++ devices, so there is no useful CLI-only path here.
+        """
+        return await self._run(obj, input, check_params)
 
     def _evaluate(
         self,
