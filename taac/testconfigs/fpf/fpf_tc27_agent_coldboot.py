@@ -36,6 +36,7 @@ from taac.testconfigs.fpf.fpf_hardening_common import (
     DEFAULT_COMMUNITY_LIST,
     DEFAULT_SUBNET_PREFIX,
     EXPECTED_FSDB_SESSION_COUNT,
+    fpf_clean_slate_setup_task,
     fpf_ib_traffic_tasks,
     FSDB_COLLECTOR_MODE,
     GPU_HOSTS,
@@ -51,7 +52,7 @@ PREFIX_COUNT = 1000
 INJECTED_LANES = [0, 1]
 PROD_PREFIX_HOST = GPU_HOSTS[0]
 PROD_PREFIXES = [get_prefix(PROD_PREFIX_HOST, 0)]
-HRT_MEMORY_HOSTS = ["rtptest1555.mwg2", "rtptest1575.mwg2"]
+HRT_MEMORY_HOSTS = ["rtptest1544.mwg2", "rtptest1575.mwg2"]
 DUT_GTSW = OBSERVER_GTSWS[0]
 
 # Cold boot is disruptive: wait >= 5 min for recovery, and skip the recovery
@@ -91,6 +92,7 @@ def create_fpf_tc27_test_config() -> TestConfig:
         name="fpf_tc27_agent_coldboot",
         endpoints=create_fpf_endpoints(),
         setup_tasks=[
+            fpf_clean_slate_setup_task(),
             *ib_setup,
             create_fpf_start_collectors_task(
                 gtsws=OBSERVER_GTSWS,

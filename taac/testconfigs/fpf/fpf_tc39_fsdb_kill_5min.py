@@ -113,7 +113,7 @@ RECOVERY_MIN_SEC = 60
 DUT_GTSW = OBSERVER_GTSWS[0]
 # Only the GPU host whose beth0 is physically cabled to DUT_GTSW (gtsw001) drains
 # its lane 0 when gtsw001's fsdb is killed — confirmed by LLDP on gtsw001
-# (rtptest1555/beth0 -> gtsw001 eth1/45/5). The other GPU host's beth0 lands on a
+# (rtptest1544/beth0 -> gtsw001 eth1/41/5). The other GPU host's beth0 lands on a
 # different plane-0 GTSW, so it is unaffected (all 4 lanes keep spraying) and
 # serves as a blast-radius-containment control. GPU_HOSTS[0] is the config's
 # primary host (also prod-prefix and fsdb-session host) cabled to DUT_GTSW.

@@ -18,6 +18,7 @@ from taac.steps.step_definitions import (
 )
 from taac.testconfigs.fpf.fpf_hardening_common import (
     create_fpf_endpoints,
+    fpf_clean_slate_setup_task,
     GPU_HOSTS,
     HARDENING_PREFIX_COUNT,
     OBSERVER_GTSWS,
@@ -63,6 +64,7 @@ def create_fpf_tc05_test_config() -> TestConfig:
     return TestConfig(
         name="fpf_tc05_bgp_gr_within_window",
         endpoints=create_fpf_endpoints(),
+        setup_tasks=[fpf_clean_slate_setup_task()],
         playbooks=[playbook],
     )
 

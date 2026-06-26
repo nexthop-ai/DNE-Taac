@@ -10,7 +10,7 @@ health checks.
 From the GPU's prefix-reachability view a device drain of the GTSW serving lane 0
 is indistinguishable from a link drain of lane 0, so the contract is identical to
 TC21:
-  - LOCAL prefix (a284): impacted plane (lane 0) -> DRAINED (not unreachable)
+  - LOCAL prefix (a27c): impacted plane (lane 0) -> DRAINED (not unreachable)
     within ``prod_prefix_drain_sla_sec`` (30s) of the recorded drain moment.
   - REMOTE prefix (a16c): NO churn.
   - Undrain: impacted plane returns to reachable within the SLA.
@@ -54,7 +54,7 @@ from taac.test_as_a_config.types import TestConfig
 PREFIX_COUNT = 1000
 LONGEVITY_SEC = 90
 
-LOCAL_HOST = GPU_HOSTS[0]  # rtptest1555.mwg2 (the GTSW serving lane 0 is drained)
+LOCAL_HOST = GPU_HOSTS[0]  # rtptest1544.mwg2 (the GTSW serving lane 0 is drained)
 REMOTE_HOST = GPU_HOSTS[1]  # rtptest1575.mwg2 (observer, not drained)
 PROD_PREFIX_DEVICE_ID = 0
 LOCAL_PREFIXES = [get_prefix(LOCAL_HOST, PROD_PREFIX_DEVICE_ID)]

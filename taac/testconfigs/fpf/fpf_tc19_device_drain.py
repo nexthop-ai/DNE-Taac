@@ -9,7 +9,7 @@ GTSW's BGP advertisements for its plane while keeping the FSDB/HRT sessions
 CONNECTED and the data plane clean — exactly the same observable contract as a
 link drain (TC17), the only difference being the drain SCOPE (whole device vs a
 single port). Because the only circuit we monitor on the DUT GTSW is
-``rtptest1555`` GPU0 lane 0, the OBSERVED impact is identical to TC17:
+``rtptest1544`` GPU0 lane 0, the OBSERVED impact is identical to TC17:
 
   - FSDB/HRT session: stays all-CONNECTED (control plane intact).
   - ODS discards: stays within the clean bound (no packet loss).
@@ -86,14 +86,14 @@ LONGEVITY_SEC = 120
 INJECTED_LANES = ALL_LANES
 
 # The drained DEVICE is the DUT GTSW. The circuit below is what we MONITOR on it
-# (rtptest1555 GPU0 lane 0); draining the whole GTSW depreferences this plane, so
+# (rtptest1544 GPU0 lane 0); draining the whole GTSW depreferences this plane, so
 # the observed impact matches a link drain of this circuit.
 DRAIN_TARGET_GTSW = OBSERVER_GTSWS[0]
 CIRCUITS = [
     Circuit(
         a_end_device=OBSERVER_GTSWS[0],  # gtsw001.l1002 -> lane 0
-        a_end_interface="eth1/45/5",
-        z_end_device=GPU_HOSTS[0],  # rtptest1555.mwg2, GPU0 beth0
+        a_end_interface="eth1/41/5",
+        z_end_device=GPU_HOSTS[0],  # rtptest1544.mwg2, GPU0 beth0
         z_end_gpu_id=0,
     ),
 ]
@@ -101,7 +101,7 @@ CIRCUITS = [
 PROD_PREFIX_HOST = GPU_HOSTS[0]
 PROD_PREFIX_DEVICE_ID = 0
 PROD_PREFIXES = [get_prefix(PROD_PREFIX_HOST, PROD_PREFIX_DEVICE_ID)]
-HRT_MEMORY_HOSTS = ["rtptest1555.mwg2", "rtptest1575.mwg2"]
+HRT_MEMORY_HOSTS = ["rtptest1544.mwg2", "rtptest1575.mwg2"]
 IB_TRAFFIC_SERVER = GPU_HOSTS[0]
 IB_TRAFFIC_CLIENTS = [GPU_HOSTS[1]]
 SPRAY_HOSTS = [IB_TRAFFIC_SERVER, *IB_TRAFFIC_CLIENTS]

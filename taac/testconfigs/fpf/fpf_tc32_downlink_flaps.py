@@ -26,7 +26,7 @@ Downlink interface selection (runtime LLDP):
   resolved at step run time by enumerating LLDP neighbors on the DUT GTSW and
   matching the remote system name against the GPU-host pattern
   (``DOWNLINK_NEIGHBOR_PATTERN``, fnmatch glob — defaults to ``"rtptest*"`` to
-  match the MWG2 GPU hosts ``rtptest1555.mwg2`` / ``rtptest1575.mwg2``). No
+  match the MWG2 GPU hosts ``rtptest1544.mwg2`` / ``rtptest1575.mwg2``). No
   hardcoded eth1/37/* breakouts here — the testbed wiring can change without
   touching this config.
 
@@ -101,7 +101,7 @@ def create_fpf_tc32_test_config() -> TestConfig:
                 # Scope precisely to the configured GPU hosts (exact match);
                 # the glob is kept only as a fallback when neighbor_hosts is
                 # empty. This prevents flapping ALL 132 downlinks (the tc32
-                # 36h-hang root cause) — only rtptest1555/rtptest1575 are
+                # 36h-hang root cause) — only rtptest1544/rtptest1575 are
                 # flapped.
                 neighbor_hosts=GPU_HOSTS,
                 neighbor_pattern=DOWNLINK_NEIGHBOR_PATTERN,

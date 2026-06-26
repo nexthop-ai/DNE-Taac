@@ -51,7 +51,7 @@ Assumptions:
     host with a DETERMINISTIC PCIe BDF (no ethtool). The disrupt playbook flaps
     dev=0 lane=1 (BDF ``0000:03:00.1``, a lane-0/VF1 impacted scenario) on GPU 0
     of the z_end host a few times so the GTSW sees NDP go away on its peer port
-    (eth1/45/5), withdraws the impacted VF, and the HC contract fires.
+    (eth1/41/5), withdraws the impacted VF, and the HC contract fires.
   - The flap is treated as a hard link-down event (same as the GTSW
     interface-disable), hence ``flip_fsdb_session=True`` + ``flip_discards=True``.
 
@@ -104,8 +104,8 @@ INJECTED_LANES = [0, 1]
 CIRCUITS = [
     Circuit(
         a_end_device=OBSERVER_GTSWS[0],  # gtsw001.l1002 -> lane 0
-        a_end_interface="eth1/45/5",
-        z_end_device=GPU_HOSTS[0],  # rtptest1555.mwg2, GPU0 beth0 (NIC-side flap)
+        a_end_interface="eth1/41/5",
+        z_end_device=GPU_HOSTS[0],  # rtptest1544.mwg2, GPU0 beth0 (NIC-side flap)
         z_end_gpu_id=0,
     ),
 ]
@@ -113,7 +113,7 @@ CIRCUITS = [
 PROD_PREFIX_HOST = GPU_HOSTS[0]
 PROD_PREFIX_DEVICE_ID = 0
 PROD_PREFIXES = [get_prefix(PROD_PREFIX_HOST, PROD_PREFIX_DEVICE_ID)]
-HRT_MEMORY_HOSTS = ["rtptest1555.mwg2", "rtptest1575.mwg2"]
+HRT_MEMORY_HOSTS = ["rtptest1544.mwg2", "rtptest1575.mwg2"]
 IB_TRAFFIC_SERVER = GPU_HOSTS[0]
 IB_TRAFFIC_CLIENTS = [GPU_HOSTS[1]]
 SPRAY_HOSTS = [IB_TRAFFIC_SERVER, *IB_TRAFFIC_CLIENTS]

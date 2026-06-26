@@ -77,7 +77,7 @@ PROD_PREFIXES = [get_prefix(PROD_PREFIX_HOST, PROD_PREFIX_DEVICE_ID)]
 # GPU_HOSTS): system memory (<= 8 GiB max) by FpfHrtSystemMemoryHealthCheck and
 # driver connectivity (hrt.driver.created == 1) by
 # FpfHrtDriverDisconnectHealthCheck.
-HRT_MEMORY_HOSTS = ["rtptest1555.mwg2", "rtptest1575.mwg2"]
+HRT_MEMORY_HOSTS = ["rtptest1544.mwg2", "rtptest1575.mwg2"]
 
 # RDMA data-plane traffic: ib_write_bw between a pair of GPU hosts. Started as a
 # setup task (before collectors, so baseline already sees load) and validated

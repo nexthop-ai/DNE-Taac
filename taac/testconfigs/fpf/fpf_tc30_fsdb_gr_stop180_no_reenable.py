@@ -139,7 +139,7 @@ HOST_SPRAY_TRANSFORM_DESC = "formula(/ $1 125000000),avg(30s),latest"
 DUT_GTSW = OBSERVER_GTSWS[0]
 # Only the GPU host whose lane-0 (beth0) uplink is physically cabled to DUT_GTSW
 # (gtsw001) sees its beth0 drain when gtsw001's fsdb is stopped — confirmed by
-# LLDP on gtsw001 (rtptest1555/beth0 -> gtsw001 eth1/45/5). The OTHER GPU host
+# LLDP on gtsw001 (rtptest1544/beth0 -> gtsw001 eth1/41/5). The OTHER GPU host
 # (GPU_HOSTS[1]) lands its beth0 on a different plane-0 GTSW, so it is UNAFFECTED
 # and keeps spraying on all 4 lanes — it serves as the blast-radius-containment
 # control. GPU_HOSTS[0] is the config's primary host (also the prod-prefix and

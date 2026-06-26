@@ -9,7 +9,7 @@ prefixes are real (already on the fabric), so nothing needs injecting; the
 prod-prefix collector started in setup supplies the pre/post-drain samples.
 
 Contract validated (local-vs-remote attribution):
-  - LOCAL prefix (rtptest1555's own, a284): the impacted plane (lane 0) must
+  - LOCAL prefix (rtptest1544's own, a27c): the impacted plane (lane 0) must
     transition to DRAINED — and NOT to unreachable/unavailable — within
     ``prod_prefix_drain_sla_sec`` (30s) of the recorded drain moment.
   - REMOTE prefix (rtptest1575's, a16c): NO churn — its reachable plane set is
@@ -56,7 +56,7 @@ PREFIX_COUNT = 1000
 LONGEVITY_SEC = 90
 
 # LOCAL = the drained host's own prefix; REMOTE = the observer host's prefix.
-LOCAL_HOST = GPU_HOSTS[0]  # rtptest1555.mwg2 (drained)
+LOCAL_HOST = GPU_HOSTS[0]  # rtptest1544.mwg2 (drained)
 REMOTE_HOST = GPU_HOSTS[1]  # rtptest1575.mwg2 (observer, not drained)
 PROD_PREFIX_DEVICE_ID = 0
 LOCAL_PREFIXES = [get_prefix(LOCAL_HOST, PROD_PREFIX_DEVICE_ID)]
@@ -64,7 +64,7 @@ REMOTE_PREFIXES = [get_prefix(REMOTE_HOST, PROD_PREFIX_DEVICE_ID)]
 ALL_PROD_PREFIXES = LOCAL_PREFIXES + REMOTE_PREFIXES
 
 # The drained link carries lane 0 of the LOCAL host's GPU0.
-DRAIN_INTERFACE = "eth1/45/5"
+DRAIN_INTERFACE = "eth1/41/5"
 IMPACTED_PLANE = 0
 IMPACTED_PLANES_BY_HOST = {LOCAL_HOST: [IMPACTED_PLANE]}
 
