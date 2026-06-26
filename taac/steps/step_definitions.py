@@ -593,6 +593,115 @@ def create_fpf_rapid_flap_step_lldp(
     )
 
 
+def create_fpf_multi_gtsw_rapid_flap_step(
+    gtsws: t.List[str],
+    duration_sec: int,
+    neighbor_hosts: t.Optional[t.List[str]] = None,
+    neighbor_pattern: t.Optional[str] = None,
+    flap_down_time_sec: float = 7.0,
+    flap_up_time_sec: float = 7.0,
+    flap_interval_sec: int = 1,
+    churn_service: t.Optional[taac_types.Service] = None,
+    churn_action: str = "restart",
+    churn_every_sec: int = 120,
+    churn_devices: t.Optional[t.List[str]] = None,
+    uniform_interface_discovery: bool = False,
+    description: t.Optional[str] = None,
+) -> Step:
+    """Flap the links facing a GPU host across MANY GTSWs CONCURRENTLY.
+
+    Single CUSTOM_STEP that, for every GTSW in ``gtsws``, builds that GTSW's
+    driver, resolves (at run time, via LLDP) the local interfaces facing
+    ``neighbor_hosts`` (the chosen rtptest GPU host), and runs a wall-clock
+    bounded symmetric flap loop on them. All GTSWs flap in PARALLEL
+    (``asyncio.gather`` inside the handler) — the runner's per-Step device
+    fan-out is sequential, so cross-GTSW parallelism lives in the handler.
+
+    Optionally runs a CONCURRENT service-churn loop for the same window: when
+    ``churn_service`` is set, every ``churn_every_sec`` it ``restart``s
+    (graceful) or ``crash``es (SIGKILL) the service across ``churn_devices``
+    (defaults to ``gtsws``) in parallel. Models "flap all GTSWs AND restart
+    bgpd/fsdb/wedge_agent every 2 min in parallel".
+
+    Args:
+        gtsws: GTSW hostnames to flap (each gets its own driver).
+        duration_sec: total flap window in seconds (wall-clock bound).
+        neighbor_hosts: GPU host(s) whose facing links are flapped (exact match).
+        neighbor_pattern: fnmatch glob fallback when neighbor_hosts is empty.
+        flap_down_time_sec: per-cycle link-down hold (default 7).
+        flap_up_time_sec: per-cycle link-up hold (default 7).
+        flap_interval_sec: interval_to_link_up passed to the driver (default 1).
+        churn_service: optional service to churn in parallel; omit for pure flap.
+        churn_action: "restart" (default) or "crash".
+        churn_every_sec: seconds between churn rounds (default 120 = 2 min).
+        churn_devices: devices to churn (defaults to ``gtsws``).
+        description: Custom step description.
+    """
+    params: t.Dict[str, t.Any] = {
+        "custom_step_name": "fpf_multi_gtsw_rapid_flap",
+        "gtsws": gtsws,
+        "neighbor_hosts": neighbor_hosts,
+        "neighbor_pattern": neighbor_pattern,
+        "duration_sec": duration_sec,
+        "down_time_sec": flap_down_time_sec,
+        "up_time_sec": flap_up_time_sec,
+        "flap_interval_sec": flap_interval_sec,
+        "churn_every_sec": churn_every_sec,
+        "churn_action": churn_action,
+        "churn_devices": churn_devices,
+        "uniform_interface_discovery": uniform_interface_discovery,
+    }
+    if churn_service is not None:
+        params["churn_service"] = int(churn_service.value)
+    return Step(
+        name=StepName.CUSTOM_STEP,
+        description=description
+        or (
+            f"Concurrently flap {len(gtsws)} GTSW(s) facing "
+            f"{neighbor_hosts or neighbor_pattern} for {duration_sec}s"
+            + (
+                f" + {churn_action} {churn_service.name} every {churn_every_sec}s"
+                if churn_service is not None
+                else ""
+            )
+        ),
+        step_params=Params(json_params=json.dumps(params)),
+    )
+
+
+def create_fpf_multi_device_drain_step(
+    devices: t.List[str],
+    drain: bool,
+    description: t.Optional[str] = None,
+) -> Step:
+    """Drain or undrain MULTIPLE devices simultaneously (on-box soft-drain).
+
+    Single CUSTOM_STEP that builds each device's driver and issues the on-box
+    device soft-drain (or undrain) across all of them in PARALLEL via
+    ``asyncio.gather`` — so e.g. gtsw001 and gtsw005 drain "at the same time"
+    rather than the runner's sequential per-device Step fan-out.
+
+    Args:
+        devices: device hostnames to drain/undrain.
+        drain: True to drain, False to undrain.
+        description: Custom step description.
+    """
+    return Step(
+        name=StepName.CUSTOM_STEP,
+        description=description
+        or f"{'Drain' if drain else 'Undrain'} {len(devices)} device(s): {devices}",
+        step_params=Params(
+            json_params=json.dumps(
+                {
+                    "custom_step_name": "fpf_multi_device_drain",
+                    "devices": devices,
+                    "is_drain": drain,
+                }
+            )
+        ),
+    )
+
+
 def create_fpf_nic_mstreg_flap_step(
     host: str,
     dev: int,
@@ -658,6 +767,74 @@ def create_fpf_nic_mstreg_flap_step(
                     "lane": int(lane),
                     "iterations": int(iterations),
                     "interval_sec": float(interval_sec),
+                }
+            )
+        ),
+    )
+
+
+def create_fpf_restart_ib_traffic_step(
+    server: str,
+    clients: t.List[str],
+    description: t.Optional[str] = None,
+) -> Step:
+    """Kill + restart the long-lived ``ib_write_bw`` flow on server + clients.
+
+    Host-side CUSTOM_STEP (no switch DUT) that mirrors ``FpfStartIbTrafficTask``:
+    it pkills any existing ib_write_bw on every host, restarts the server then
+    each client, and confirms the processes are up. Use it at the HEAD of a
+    longevity playbook (before the soak) to recover from a flap-wedged per-lane
+    QP (e.g. beth0 egress stuck at 0) — a traffic-tooling artifact — so the
+    longevity host-spray check observes real egress. The command, GID discovery
+    and SSH transport are reused verbatim from the ib-traffic task, so the
+    restarted flow is byte-identical to the setup flow.
+
+    Args:
+        server: server host (e.g. ``"rtptest1544.mwg2"``).
+        clients: client host(s) (non-empty).
+        description: Custom step description.
+    """
+    return Step(
+        name=StepName.CUSTOM_STEP,
+        description=description
+        or f"Restart ib_write_bw: server={server} clients={clients}",
+        step_params=Params(
+            json_params=json.dumps(
+                {
+                    "custom_step_name": "fpf_restart_ib_traffic",
+                    "server": server,
+                    "clients": clients,
+                }
+            )
+        ),
+    )
+
+
+def create_fpf_restart_hrt_step(
+    hosts: t.List[str],
+    description: t.Optional[str] = None,
+) -> Step:
+    """Restart the HostReachTracker (HRT) service on the GPU/BE host(s).
+
+    Host-side CUSTOM_STEP (no switch DUT) that SSHes to each rtptest BE node and
+    runs ``systemctl restart metalos.wds.hostreachtracker``, then confirms the
+    unit is ``active``. HRT runs on the GPU host (not a FBOSS switch), so this
+    uses the host-SSH transport like the ib-traffic / NIC-flap steps rather than
+    the FbossSwitchInternal driver. Pair it with a longevity (settle) step so HRT
+    re-subscribes to FSDB and rebuilds its 32 sessions before postchecks run.
+
+    Args:
+        hosts: GPU/BE host(s) to restart HRT on (e.g. ``["rtptest1544.mwg2"]``).
+        description: Custom step description.
+    """
+    return Step(
+        name=StepName.CUSTOM_STEP,
+        description=description or f"Restart HostReachTracker on {hosts}",
+        step_params=Params(
+            json_params=json.dumps(
+                {
+                    "custom_step_name": "fpf_restart_hrt",
+                    "hosts": hosts,
                 }
             )
         ),
