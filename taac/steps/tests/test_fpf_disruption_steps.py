@@ -6,7 +6,10 @@ import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestTopology,
+)
 from taac.driver.driver_constants import SwitchLldpData
 from taac.internal.steps.custom_step import (
     _nic_mstreg_bdf,

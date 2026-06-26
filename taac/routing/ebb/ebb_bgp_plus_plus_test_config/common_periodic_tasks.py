@@ -9,7 +9,10 @@ Import directly from task_definitions.py for new code.
 
 import typing as t
 
-from neteng.test_infra.dne.taac.constants import ARISTA_7808_CPU_COUNT, Gigabyte
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    ARISTA_7808_CPU_COUNT,
+    Gigabyte,
+)
 from taac.task_definitions import (
     create_cpu_only_periodic_tasks as _create_cpu_only_periodic_tasks,
     create_longevity_periodic_tasks as _create_longevity_periodic_tasks,

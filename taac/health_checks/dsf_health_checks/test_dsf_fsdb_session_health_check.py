@@ -4,7 +4,10 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from neteng.fboss.ctrl.thrift_types import DsfSessionState, DsfSessionThrift
-from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestTopology,
+)
 from taac.health_checks.dsf_health_checks.dsf_fsdb_session_health_check import (
     DsfFsdbSessionHealthCheck,
 )

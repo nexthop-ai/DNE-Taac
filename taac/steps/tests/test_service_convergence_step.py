@@ -5,7 +5,10 @@ import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestTopology,
+)
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.steps.step_definitions import ServiceConvergenceStep
 from taac.test_as_a_config import types as taac_types

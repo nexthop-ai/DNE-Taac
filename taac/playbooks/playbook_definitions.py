@@ -246,7 +246,10 @@ def create_bag010_ash6_bgp_instability_attribute_churn_playbook(
         periodic tasks (CPU/memory @ 9 GiB, non-terminating), and one
         attribute-churn stage over prefix indices 0..500.
     """
-    from neteng.test_infra.dne.taac.constants import BgpPlusPlusProfile, Gigabyte
+    from taac.constants import (
+        BgpPlusPlusProfile,
+        Gigabyte,
+    )
     from taac.routing.ebb.ebb_bgp_plus_plus_test_config.common_health_checks import (
         create_standard_postchecks,
         create_standard_prechecks,
@@ -335,7 +338,10 @@ def create_bag010_ash6_bgp_instability_route_storm_playbook(
         withdraw on the IBGP plane 1 pool), a revert stage, and a 120s
         convergence-wait stage.
     """
-    from neteng.test_infra.dne.taac.constants import BgpPlusPlusProfile, Gigabyte
+    from taac.constants import (
+        BgpPlusPlusProfile,
+        Gigabyte,
+    )
     from taac.routing.ebb.ebb_bgp_plus_plus_test_config.common_health_checks import (
         create_standard_postchecks,
         create_standard_prechecks,

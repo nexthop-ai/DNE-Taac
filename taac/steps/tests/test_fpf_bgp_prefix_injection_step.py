@@ -6,7 +6,10 @@ import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from neteng.test_infra.dne.taac.constants import TestDevice, TestTopology
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestTopology,
+)
 from taac.libs.fpf.inject_bgp_prefixes import COMMUNITY_PRESETS
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.steps.fpf_bgp_prefix_injection_step import (

@@ -14,7 +14,11 @@ stage execution, dynamic stage generation, or custom retry strategies.
 import typing as t
 from abc import ABC, abstractmethod
 
-from neteng.test_infra.dne.taac.constants import TestDevice, TestResult, TestTopology
+from taac.constants import (  # oss-rewrite (force ShipIt re-export to taac.* root)
+    TestDevice,
+    TestResult,
+    TestTopology,
+)
 from taac.ixia.taac_ixia import TaacIxia
 from taac.libs.parameter_evaluator import ParameterEvaluator
 from taac.utils.oss_taac_lib_utils import (
