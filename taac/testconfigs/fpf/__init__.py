@@ -5,6 +5,9 @@
 from taac.testconfigs.fpf.fpf_stress_test_config import (
     TEST_CONFIG as FPF_STRESS_TEST_CONFIG,
 )
+from taac.testconfigs.fpf.fpf_tc04_wedge_agent_warmboot import (
+    TEST_CONFIG as FPF_TC04_WEDGE_AGENT_WARMBOOT,
+)
 from taac.testconfigs.fpf.fpf_tc05_bgp_gr_within_window import (
     TEST_CONFIG as FPF_TC05_BGP_GR_WITHIN_WINDOW,
 )
@@ -128,9 +131,16 @@ from taac.testconfigs.fpf.fpf_tc51_fsdb_kill_5s_10min import (
 from taac.testconfigs.fpf.fpf_tc52_hrt_restart import (
     TEST_CONFIG as FPF_TC52_HRT_RESTART,
 )
+from taac.testconfigs.fpf.fpf_tc54_stsw_device_drain import (
+    TEST_CONFIG as FPF_TC54_STSW_DEVICE_DRAIN,
+)
+from taac.testconfigs.fpf.fpf_tc55_gtsw_device_reboot import (
+    TEST_CONFIG as FPF_TC55_GTSW_DEVICE_REBOOT,
+)
 
 __all__ = [
     "FPF_STRESS_TEST_CONFIG",
+    "FPF_TC04_WEDGE_AGENT_WARMBOOT",
     "FPF_TC05_BGP_GR_WITHIN_WINDOW",
     "FPF_TC06_BGP_GR_BEYOND_WINDOW",
     "FPF_TC07_FSDB_GR_WITHIN_WINDOW",
@@ -172,4 +182,6 @@ __all__ = [
     "FPF_TC50_WEDGE_AGENT_KILL_5S_10MIN",
     "FPF_TC51_FSDB_KILL_5S_10MIN",
     "FPF_TC52_HRT_RESTART",
+    "FPF_TC54_STSW_DEVICE_DRAIN",
+    "FPF_TC55_GTSW_DEVICE_REBOOT",
 ]
