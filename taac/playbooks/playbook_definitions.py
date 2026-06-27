@@ -168,6 +168,8 @@ from taac.steps.step_definitions import (
     create_service_restart_steps,
     create_set_route_filter_step,
     create_start_stop_bgp_peers_step,
+    create_start_traffic_step,
+    create_stop_traffic_step,
     create_system_reboot_step,
     create_tcpdump_step,
     create_toggle_ixia_prefix_session_flap_churn_step,
@@ -24311,4 +24313,29 @@ def create_fpf_service_restart_playbook(
         postchecks=postchecks,
         snapshot_checks=snapshot_checks,
         stages=[create_steps_stage(stage_id="restart", steps=stage_steps)],
+    )
+
+
+def create_dlb_topology_smoke_playbook(
+    name: str = "dlb_topology_smoke_128_width",
+    duration_s: int = 120,
+) -> Playbook:
+    """First-iteration smoke playbook for IcePack GTSW DLB topology setup.
+
+    Validates the topology end-to-end (BGP up, NDP resolved, DLB
+    super-group programmed) without exercising disruption/churn loops.
+    Single stage: start traffic → longevity → stop traffic.
+    """
+    return Playbook(
+        name=name,
+        stages=[
+            create_steps_stage(
+                stage_id="smoke",
+                steps=[
+                    create_start_traffic_step(),
+                    create_longevity_step(duration=duration_s),
+                    create_stop_traffic_step(),
+                ],
+            ),
+        ],
     )

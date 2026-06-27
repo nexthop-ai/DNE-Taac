@@ -19,6 +19,10 @@ from taac.testconfigs.npi.cpu_queue_test_config import (
     NPI_51T_DVT_MP3_XSW_CPU_QUEUE_TEST_CONFIG,
     NPI_DVT_ICEPACK_GTSW__CPU_QUEUE_TEST_CONFIG,
 )
+from taac.testconfigs.npi.icepack_ecmp_resource_testing_config import (
+    NPI_DVT_ICEPACK_GTSW__ECMP_RESOURCE_TESTING,
+    test_config_for_icepack_ecmp_resource_testing,
+)
 from taac.testconfigs.npi.thrift_hardening_test_config import (
     create_npi_thrift_hardening_test_config,
     ICEPACK_GTSW_STSW_FLAP_PORTS,
@@ -30,9 +34,11 @@ __all__ = [
     "NPI_51T_DVT_KO3_SSW_CPU_QUEUE_TEST_CONFIG",
     "NPI_51T_DVT_MP3_XSW_CPU_QUEUE_TEST_CONFIG",
     "NPI_DVT_ICEPACK_GTSW__CPU_QUEUE_TEST_CONFIG",
+    "NPI_DVT_ICEPACK_GTSW__ECMP_RESOURCE_TESTING",
     "NPI_DVT_ICEPACK_GTSW__THRIFT_HARDENING_TEST_CONFIG",
     "create_dctypef_npi_cpu_queue_test_config",
     "create_npi_cpu_queue_test_config",
     "create_npi_thrift_hardening_test_config",
     "get_cpu_queue_constants",
+    "test_config_for_icepack_ecmp_resource_testing",
 ]

@@ -7426,16 +7426,31 @@ class Ixia:
         bgp_route_import_file_path: str,
         base_path: str = "taac/bgp_attribute_profiles",
     ) -> str:
-        """Import BGP attribute profile from configerator.
+        """Import BGP attribute profile from configerator (or local FS).
 
         Args:
-            bgp_route_import_file_path: The file path/name for the BGP route import file
+            bgp_route_import_file_path: Either a configerator-relative path
+                (resolved as ``{base_path}/{bgp_route_import_file_path}``)
+                OR an ABSOLUTE local filesystem path (anything starting
+                with ``/``) for ephemeral, runtime-generated CSV fixtures
+                that don't yet live in configerator. Added 2026-06-23 for
+                the IcePack DLB pilot work — `gen_dlb_csv.py` writes
+                temp CSVs to ``/tmp`` and the testconfig threads those
+                paths in directly, bypassing the configerator
+                round-trip. Once the CSV catalog stabilises the proper
+                landing is to drop the fixtures under
+                ``~/configerator/source/taac/bgp_attribute_profiles/dlb/``
+                and switch the testconfig back to the relative path.
             base_path: The base path in configerator where BGP attribute profiles are stored.
-                      Defaults to "taac/bgp_attribute_profiles"
+                      Defaults to "taac/bgp_attribute_profiles". Ignored
+                      when ``bgp_route_import_file_path`` is absolute.
 
         Returns:
             The config contents as a string
         """
+        if bgp_route_import_file_path.startswith("/"):
+            with open(bgp_route_import_file_path) as f:
+                return f.read()
         bgp_route_attribute_profile_path = f"{base_path}/{bgp_route_import_file_path}"
         bgp_routes_config = self.cfgr_client.get_config_contents(
             bgp_route_attribute_profile_path
@@ -7508,10 +7523,26 @@ class Ixia:
                 ixia_types.SET_NEXT_HOP_TYPE_MAP[set_next_hop_type]
             )
             bgp_ip_route_property.NextHopIPType.Single(ip_address_family.name.lower())
-            temp_file_path = import_bgp_routes_params.bgp_route_import_file_path.split(
-                "/"
-            )[-1]
-            bgp_routes_import_file_list = bgp_routes_import_file.split("\n")
+            # Write the (possibly chunked) CSV to a temp file under
+            # /tmp/ixia_bgp_imports/ rather than cwd-relative — the
+            # prior `split("/")[-1]` form polluted whatever directory
+            # `buck2 run` was launched from (e.g. fbsource root) and
+            # collided across concurrent runs.
+            _tmp_import_dir = "/tmp/ixia_bgp_imports"
+            os.makedirs(_tmp_import_dir, exist_ok=True)
+            temp_file_path = os.path.join(
+                _tmp_import_dir,
+                import_bgp_routes_params.bgp_route_import_file_path.split("/")[-1],
+            )
+            # Normalise both CRLF and LF so chunking is line-correct
+            # regardless of which writer produced the source CSV.
+            bgp_routes_import_file_list = bgp_routes_import_file.replace(
+                "\r\n", "\n"
+            ).split("\n")
+            # Drop a single trailing empty entry if the file ended in a
+            # newline (typical csv.writer output).
+            if bgp_routes_import_file_list and bgp_routes_import_file_list[-1] == "":
+                bgp_routes_import_file_list.pop()
             bgp_routes_import_file_list_in_chunks = split_list_into_chunks(
                 bgp_routes_import_file_list[1:], import_bgp_routes_params.multiplier
             )
@@ -7525,7 +7556,15 @@ class Ixia:
                     bgp_routes_import_file_list_in_chunks
                 ):
                     if chunk_idx >= chunk_start_idx and chunk_idx < chunk_end_idx:
-                        f.write("\n".join(chunk))
+                        # Trailing newline is REQUIRED — without it
+                        # consecutive chunks (or rows within a chunk)
+                        # get concatenated into one giant line and
+                        # IxNetwork's CSV importer silently falls back
+                        # to defaults (verified gtsw001.l1001.c085.ash6
+                        # 2026-06-24 — produced a 1-row file with all
+                        # 128 rows mashed into one, IxNetwork populated
+                        # only the default `3000:0:1:1::/64`).
+                        f.write("\n".join(chunk) + "\n")
             bgp_ip_route_property.ImportBgpRoutes(
                 Arg2=ixia_types.BGP_ROUTE_DISTRIBUTION_TYPE_MAP[
                     import_bgp_routes_params.bgp_route_distribution_type
