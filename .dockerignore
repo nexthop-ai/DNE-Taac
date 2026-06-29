@@ -23,6 +23,7 @@
 !requirements.txt
 !taac/
 !thrift/
+!examples/
 !docker/
 
 # Top-level files that ship with the source

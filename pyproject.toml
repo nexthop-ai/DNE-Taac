@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+# Discover tests under taac/, but skip the testconfigs directory
+# (those are test *configurations* for the test framework, not unit tests).
+testpaths = ["taac"]
+norecursedirs = ["testconfigs", "__pycache__", ".git"]
+# Ensure imports like `from taac.runner...` resolve from the repo root.
+pythonpath = ["."]
+# Default CLI flags: short traceback, verbose test names.
+#
+# --import-mode=importlib is critical. Pytest's default "prepend" mode adds
+# each test file's parent directory to sys.path. Because testpaths includes
+# taac/, that puts /workspace/taac on sys.path — which exposes taac/ixia/
+# as a top-level "ixia" package. The thrift-generated "ixia" namespace
+# package (installed in site-packages) then collides with it:
+#
+#   - Without __init__.py (current): Python merges both directories into
+#     one namespace package. taac/ixia/ixia.py tries to
+#     `from ixia.ixia import types` and hits itself → circular import.
+#   - With __init__.py: taac/ixia/ becomes a regular package and fully
+#     shadows the thrift one — the real ixia package is unreachable.
+#
+# importlib mode avoids this entirely by not adding directories to sys.path.
+# Only /workspace (via pythonpath above) is on the path, so `import ixia`
+# finds the thrift package and `import taac.ixia` finds the source code.
+addopts = "-v --tb=short --import-mode=importlib"
+# Standard naming conventions.
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+# TestCaseFailure in constants.py matches the Test* pattern but is an
+# exception class, not a test. Suppress the collection warning.
+filterwarnings = ["ignore::pytest.PytestCollectionWarning"]

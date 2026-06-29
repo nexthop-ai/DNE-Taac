@@ -22,6 +22,7 @@ from typing import (
     Any,
     AsyncContextManager,
     AsyncGenerator,
+    ContextManager,
     DefaultDict,
     Dict,
     List,
@@ -65,41 +66,8 @@ import pexpect
 
 TAAC_OSS = os.environ.get("TAAC_OSS", "").lower() in ("1", "true", "yes")
 
-# `t.TYPE_CHECKING or` keeps the real FbossAgentClient visible to Pyre so
-# `with self._get_fboss_agent_client() as client:` type-checks as a context
-# manager (the OSS stub below is a runtime-only fallback).
-if t.TYPE_CHECKING or not TAAC_OSS:
-    from fboss.fb_thrift_clients import FbossAgentClient, FbossAgentClientWrapper
-else:
-    # OSS stubs - fboss.fb_thrift_clients is Meta-internal
-    # Use FbossCtrl from OSS bindings as base
-    class FbossAgentClient:  # type: ignore
-        """OSS stub - using FbossCtrl from neteng.fboss.ctrl.clients"""
-
-        def __init__(self, hostname: str, port: int = 5909, timeout: int = 30):
-            from neteng.fboss.ctrl.clients import FbossCtrl
-
-            self.hostname = hostname
-            self.port = port
-            self.timeout = timeout
-            self._client = FbossCtrl
-
-    class FbossAgentClientWrapper:  # type: ignore
-        """OSS stub - context manager wrapper for FbossCtrl"""
-
-        def __init__(self, host: str, timeout: int = 30):
-            self.host = host
-            self.timeout = timeout
-            self._client = None
-
-        def __enter__(self):
-            from neteng.fboss.ctrl.clients import FbossCtrl
-
-            # In OSS, return the client class - actual instantiation happens elsewhere
-            return FbossCtrl
-
-        def __exit__(self, *args):
-            pass
+if not TAAC_OSS:
+    from fboss.fb_thrift_clients import FbossAgentClient
 
 
 from neteng.fboss.bgp_attr.types import TBgpAfi, TIpPrefix
@@ -149,6 +117,9 @@ from neteng.fboss.transceiver.thrift_types import ReadRequest, TransceiverIOPara
 from taac.driver.abstract_switch import (
     AbstractSwitch,
     TestingException,
+)
+from taac.utils.client_factory_interface import (
+    ThriftClientFactory,
 )
 from taac.driver.driver_constants import (
     _ONE_MBPS,
@@ -263,24 +234,49 @@ class MnpuNotEnabled(Exception):
 
 
 class FbossSwitch(AbstractSwitch):
-    def __init__(self, hostname: str, logger: logging.Logger, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        hostname: str,
+        logger: logging.Logger,
+        client_provider: Optional["ThriftClientFactory"] = None,
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__(hostname, logger)
+        self._client_provider = client_provider
 
-    # pyre-fixme[11]: Annotation `FbossAgentClient` is not defined as a type.
-    def _get_fboss_agent_client(self) -> FbossAgentClient:
-        client = FbossAgentClient(
+    def _get_fboss_agent_client(self) -> ContextManager[Any]:
+        """
+        Get FBOSS Agent client.
+
+        If a ThriftClientFactory was injected, it is used regardless of mode —
+        both OSSClientFactory and InternalClientFactory implement the same
+        protocol, so the caller doesn't need to know which environment it's in.
+        When no factory is present, falls back to FbossAgentClient (internal only).
+        """
+        if self._client_provider is not None:
+            return self._client_provider.get_agent_client(
+                hostname=self.hostname,
+                port=DEFAULT_AGENT_REMOTE_PORT,
+                timeout=DEFAULT_THRIFT_TIMEOUT,
+            )
+
+        if TAAC_OSS:
+            raise RuntimeError(
+                "client_provider is required in OSS mode. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        # Internal-only fallback: FbossAgentClient (from fboss.fb_thrift_clients)
+        # must support context-manager protocol (__enter__/__exit__) because callers
+        # use `with self._get_fboss_agent_client() as client:`.  In practice this
+        # path is only reached when FbossSwitch is constructed directly without a
+        # factory — production internal traffic goes through FbossSwitchInternal
+        # which overrides the relevant methods.
+        return FbossAgentClient(
             self.hostname,
             port=DEFAULT_AGENT_REMOTE_PORT,
             timeout=DEFAULT_THRIFT_TIMEOUT,
         )
-        if not client:
-            self.logger.info(
-                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
-            )
-            raise Exception(
-                f"Failed to connect to {self.hostname}. Please make sure that the agent on {self.hostname} is UP!"
-            )
-        return client
 
     async def async_get_fboss_build_info_show(self) -> str:
         raise NotImplementedError(
@@ -358,10 +354,16 @@ class FbossSwitch(AbstractSwitch):
         self.logger.info(f"Port counter values for {self.hostname}: {counter_fburl}")
         return port_counters
 
-    async def async_get_qsfp_client(self):
-        raise NotImplementedError(
-            "QsfpService client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+    async def async_get_qsfp_client(self) -> AsyncContextManager[Any]:
+        """Get QSFP Service client using the injected factory."""
+        if self._client_provider is None:
+            raise RuntimeError(
+                "client_provider is required for QSFP client access. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        return self._client_provider.get_qsfp_client(
+            hostname=self.hostname,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     async def async_qsfp_get_transceiver_inf_count(
@@ -455,9 +457,7 @@ class FbossSwitch(AbstractSwitch):
         Reloads the agent config and ensure the wedge_agent is stable and
         converged (CONFIGURED state)
         """
-        with FbossAgentClientWrapper(
-            host=self.hostname, timeout=DEFAULT_THRIFT_TIMEOUT
-        ) as agent_client:
+        with self._get_fboss_agent_client() as agent_client:
             agent_client.reloadConfig()
             self.logger.info(
                 f"Successfully reloaded the agent config on {self.hostname} "
@@ -472,9 +472,7 @@ class FbossSwitch(AbstractSwitch):
         to agent warmboot
         """
         try:
-            with FbossAgentClientWrapper(
-                host=self.hostname, timeout=DEFAULT_THRIFT_TIMEOUT
-            ) as agent_client:
+            with self._get_fboss_agent_client() as agent_client:
                 agent_client.reloadConfig()
                 self.logger.info(
                     f"Successfully reloaded the agent config on {self.hostname} "
@@ -1851,10 +1849,16 @@ class FbossSwitch(AbstractSwitch):
 
         self.logger.info(f"{tabulated_bgp_output}")
 
-    async def _get_bgp_client(self) -> TBgpService:
-        raise NotImplementedError(
-            "BGP client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+    async def _get_bgp_client(self) -> AsyncContextManager[Any]:
+        """Get BGP Service client using the injected factory."""
+        if self._client_provider is None:
+            raise RuntimeError(
+                "client_provider is required for BGP client access. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        return self._client_provider.get_bgp_client(
+            hostname=self.hostname,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     @async_retryable(
@@ -2453,50 +2457,54 @@ class FbossSwitch(AbstractSwitch):
                             f"{state} port {self.hostname}:{interface_name}"
                         )
 
-    async def get_sw_agent_client(self):
-        raise NotImplementedError(
-            "SW Agent client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
-        )
+    async def get_sw_agent_client(self) -> AsyncContextManager[Any]:
+        """Get SW Agent async client.
+
+        Routes through the injected factory when available, otherwise
+        falls back to thrift.py3 (internal-only — see async_agent_client).
+        """
+        if self._client_provider is None and TAAC_OSS:
+            raise RuntimeError(
+                "client_provider is required in OSS mode. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        return self.async_agent_client
+
+    async def _async_resolve_switch_index(self, interface: str) -> int:
+        """Resolve interface name to the switch index (NPU) that manages it."""
+        async with await self.get_sw_agent_client() as client:
+            result = await client.getSwitchIndicesForInterfaces([interface])
+        for switch_index, iface_list in result.items():
+            if interface in iface_list:
+                return switch_index
+        raise ValueError(f"Could not find switch index for interface {interface}")
 
     async def get_hw_agent_port(self, interface: str) -> int:
-        """
-        There could be more than one HW agent running in the device, in order to talk
-        to it, we need to figure out which instance is managing the given interface.
-        To do that we query SW Agent to find the switch index (aka NPU) that the interface
-        connects to, and from there we derive the HW Agent port.
-        """
-        async with await self.get_sw_agent_client() as fboss:
-            result = await fboss.getSwitchIndicesForInterfaces([interface])
-
-        thrift_port: int | None = None
-        for switch_index, interface_list in result.items():
-            if interface in interface_list:
-                thrift_port = HW_AGENT_BASE_PORT + switch_index
-                break
-
-        if thrift_port is None:
-            raise ValueError("Could not find hw agent port")
-
-        return thrift_port
+        """Derive the HW Agent thrift port for the NPU that manages *interface*."""
+        switch_index = await self._async_resolve_switch_index(interface)
+        return HW_AGENT_BASE_PORT + switch_index
 
     async def get_hw_agent_client(
         self, interface: Optional[str] = None, switch_index: Optional[int] = None
-    ) -> FbossHwCtrl:
-        raise NotImplementedError(
-            "HW Agent client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
-        )
+    ) -> AsyncContextManager[Any]:
+        """Get Hardware Agent client using the injected factory."""
+        if self._client_provider is None:
+            raise RuntimeError(
+                "client_provider is required for HW agent client access. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        if switch_index is None and interface:
+            switch_index = await self._async_resolve_switch_index(interface)
+        elif switch_index is None:
+            # Default to first NPU when neither interface nor switch_index is given.
+            # Callers that care about multi-NPU should pass explicit values.
+            switch_index = 0
 
-    @asynccontextmanager
-    async def _get_hw_agent_client(
-        self, switch_index: int
-    ) -> AsyncGenerator[FbossHwCtrl, None]:
-        raise NotImplementedError(
-            "HW Agent client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+        return self._client_provider.get_hw_agent_client(
+            hostname=self.hostname,
+            switch_index=switch_index,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
-        yield  # unreachable, needed to make this a generator
 
     async def async_clear_prbs_stats(self, interface: str) -> None:
         self.logger.info(f"Clearing PRBS stats for {interface}")
@@ -2513,7 +2521,7 @@ class FbossSwitch(AbstractSwitch):
             HwObjectType.ROUTE_ENTRY,
         ]
         if await self.async_is_mnpu():
-            async with self._get_hw_agent_client(0) as client:
+            async with await self.get_hw_agent_client(switch_index=0) as client:
                 hw_objects = await client.listHwObjects(
                     hw_object_type_list, cached=False
                 )
@@ -3015,11 +3023,18 @@ class FbossSwitch(AbstractSwitch):
         """
         Create FBOSS Agent async client.
 
-        Returns an async context manager (via thrift.py3.client.get_client)
-        that yields an FbossCtrl.Async client connected to the device's
-        agent thrift port. Used as 'async with self.async_agent_client as
-        client: ...' by methods like async_get_lldp_neighbors.
+        When a ThriftClientFactory is injected, delegates to it so all
+        agent connections (sync and async) are owned by the factory.
+        Otherwise falls back to thrift.py3.client (internal-only path).
         """
+        if self._client_provider is not None:
+            return self._client_provider.get_async_agent_client(
+                hostname=self.hostname,
+                port=DEFAULT_AGENT_REMOTE_PORT,
+                timeout=DEFAULT_THRIFT_TIMEOUT,
+            )
+
+
         from thrift.py3.client import get_client
 
         return get_client(
@@ -4621,11 +4636,8 @@ class FbossSwitch(AbstractSwitch):
             await asyncio.sleep(interval)
         raise Exception(f"Bgpd did not converge within {timeout} seconds")
 
-    async def async_get_bgp_client(self) -> TBgpService:
-        """
-        Public accessor for the BGP thrift client.
-        OSS: raises NotImplementedError (override in mixin for ServiceRouter).
-        """
+    async def async_get_bgp_client(self) -> AsyncContextManager[Any]:
+        """Public accessor for the BGP thrift client."""
         return await self._get_bgp_client()
 
     async def async_get_interfaces_operational_state(
@@ -4852,18 +4864,22 @@ class FbossSwitch(AbstractSwitch):
         async with await self.async_get_fsdb_client() as fsdb_client:
             return await fsdb_client.getAllOperSubscriberInfos()
 
-    async def async_get_fsdb_client(self, port: int = FSDB_PORT) -> FsdbService:
+    async def async_get_fsdb_client(self, port: int = FSDB_PORT) -> AsyncContextManager[Any]:
         """
-        Gets a FSDB service client for the given host
+        Gets a FSDB service client for the given host using the injected factory.
 
-        Arguments:
-            host: The hostname to make the connection to
-        Returns:
-            A FsdbService thrift client
+        Args:
+            port: The FSDB service port (default: FSDB_PORT)
         """
-        raise NotImplementedError(
-            "FsdbService client not available in OSS mode. "
-            "Use FbossSwitchInternal for ServiceRouter-based connection."
+        if self._client_provider is None:
+            raise RuntimeError(
+                "client_provider is required for FSDB client access. "
+                "Pass client_provider=OSSClientFactory() when constructing FbossSwitch."
+            )
+        return self._client_provider.get_fsdb_client(
+            hostname=self.hostname,
+            port=port,
+            timeout=DEFAULT_THRIFT_TIMEOUT,
         )
 
     async def async_get_dsf_nodes(self) -> t.Mapping[int, DsfNode]:

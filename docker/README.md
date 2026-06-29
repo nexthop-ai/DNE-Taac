@@ -8,7 +8,7 @@
 | `Dockerfile.taac` | Multi-stage dockerfile — builds fbthrift-python + fboss-thrift-defs + transitive deps + TAAC in a builder stage, then produces a slim CentOS Stream 9 runtime image. |
 | `taac-entrypoint.sh` | `ENTRYPOINT` for `fboss-taac`. Resolves the per-config install hash + native lib paths and exports `PYTHONPATH` / `LD_LIBRARY_PATH` / `TAAC_OSS` before exec'ing the user command. |
 | `taac-regen-thrift.sh` | Installed as `/usr/local/bin/taac-regen-thrift` inside the image. Regenerates Python thrift bindings from a bind-mounted workspace using the baked-in `thrift1` compiler. |
-| `run_taac_docker.sh` | Developer wrapper. Shells into the container with workspace bind-mounted and `PYTHONPATH` pre-configured. `--regen` regenerates thrift bindings on entry. |
+| `run_taac_docker.sh` | Runs commands or an interactive shell inside the container. The repo is always bind-mounted at `/workspace` and used as the working directory, so local edits override the baked-in `/taac` source. `--regen` regenerates thrift bindings on entry. |
 
 ## Build flow
 
@@ -66,20 +66,23 @@ The pinned rev in [`getdeps/manifests/fbthrift-python`](../getdeps/manifests/fbt
 After pulling the derived image, local edits to TAAC source or thrift schemas can be picked up by the running container without rebuilding the image. Use `run_taac_docker.sh`:
 
 ```bash
-# Shell in with local source on PYTHONPATH (Python edits only)
+# Interactive shell (local source on PYTHONPATH)
 ./docker/run_taac_docker.sh
 
-# Shell in + regenerate thrift bindings (for .thrift edits)
+# Interactive shell + regenerate thrift bindings (for .thrift edits)
 ./docker/run_taac_docker.sh --regen
 
 # Use a specific image
 ./docker/run_taac_docker.sh --image <image> --regen
 
-# Run a one-shot command
+# Mount a different directory as the workspace
+./docker/run_taac_docker.sh --workspace /path/to/other/checkout
+
+# Run a one-shot command (non-interactive, safe for CI)
 ./docker/run_taac_docker.sh run python3 -c 'import taac; print("ok")'
 ```
 
-The wrapper bind-mounts the repo at `/workspace`, sets up `PYTHONPATH` so local source overrides baked-in modules, and (with `--regen`) regenerates thrift bindings automatically.
+The repo (or `--workspace` path) is always bind-mounted at `/workspace` and used as the working directory. `PYTHONPATH` is configured so local source overrides baked-in modules, and `--regen` regenerates thrift bindings automatically.
 
 ### How the overlay works
 

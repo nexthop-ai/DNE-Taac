@@ -502,6 +502,7 @@ GALAXY_WEDGE_RE_PATTERN = re.compile(
     r"(^fsw[\d]{3})(-[fl]{1}c[\d]{3})(.p[\d]{3}.f[\d]{2}.[a-z]{3}[\d])", re.IGNORECASE
 )
 DEFAULT_AGENT_REMOTE_PORT = 5909
+DEFAULT_QSFP_PORT = 5910
 
 FBOSS_AGENT_TIER: str = "fboss.agent"
 

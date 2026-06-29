@@ -281,7 +281,7 @@ class TestEntryPointIntegration(TestCase):
         )
 
     @patch("taac.runner.oss_entry_point.OSSTestExecutor")
-    @patch("taac.libs.taac_runner.TaacRunner")
+    @patch("taac.runner.oss_entry_point.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_calls_execute_playbook_with_correct_parameter_names(
         self, mock_load_config, mock_taac_runner_class, mock_executor_class
@@ -372,7 +372,7 @@ class TestEntryPointIntegration(TestCase):
                 os.unlink(config_path)
 
     @patch("taac.runner.oss_entry_point.OSSTestExecutor")
-    @patch("taac.libs.taac_runner.TaacRunner")
+    @patch("taac.runner.oss_entry_point.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_executes_multiple_playbooks_and_duts(
         self, mock_load_config, mock_taac_runner_class, mock_executor_class
@@ -457,7 +457,7 @@ class TestEntryPointIntegration(TestCase):
                 os.unlink(config_path)
 
     @patch("taac.runner.oss_entry_point.OSSTestExecutor")
-    @patch("taac.libs.taac_runner.TaacRunner")
+    @patch("taac.runner.oss_entry_point.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_retry_loop_marks_original_retried_and_clears_transient(
         self,
@@ -559,7 +559,7 @@ class TestEntryPointIntegration(TestCase):
                 os.unlink(config_path)
 
     @patch("taac.runner.oss_entry_point.OSSTestExecutor")
-    @patch("taac.libs.taac_runner.TaacRunner")
+    @patch("taac.runner.oss_entry_point.TaacRunner")
     @patch("taac.runner.oss_entry_point.load_test_config")
     def test_main_setup_crash_marks_remaining_combos(
         self,

@@ -118,7 +118,7 @@ class TestOSSTestExecutor(unittest.IsolatedAsyncioTestCase):
             dut="device1",
             test_config="test_config",
         )
-        self.assertEqual(result.status, OSSTestStatus.ERROR)
+        self.assertEqual(result.status, OSSTestStatus.TESTBED_FAILED)
         self.assertIn("Device unreachable", result.message)
         self.assertEqual(result.exception_type, "OSSTestbedError")
         self.assertFalse(result.is_transient)

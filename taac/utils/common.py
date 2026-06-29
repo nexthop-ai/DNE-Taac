@@ -321,13 +321,28 @@ def pyjq_compile(script: str):
     return pyjq.compile(script)
 
 
+def _eval_jq_simple(jq_expr: str, jq_vars: t.Dict[str, t.Any]) -> t.Any:
+    """Minimal dot-path jq fallback for when pyjq is unavailable (Python 3.12+)."""
+    expr = jq_expr.strip()
+    if not expr.startswith("."):
+        raise ValueError(f"Simple jq fallback only supports dot-path expressions, got: {expr}")
+    parts = expr.lstrip(".").split(".")
+    result: t.Any = jq_vars
+    for part in parts:
+        if not part:
+            continue
+        if isinstance(result, dict):
+            if part not in result:
+                return None
+            result = result[part]
+        else:
+            raise ValueError(f"Cannot navigate into non-dict at '.{part}' in expression: {expr}")
+    return result
+
+
 def eval_jq(jq_expr: str, jq_vars: t.Dict[str, t.Any]) -> t.Any:
     if not HAS_PYJQ:
-        raise ImportError(
-            "pyjq is not available. This feature requires pyjq which is "
-            "incompatible with Python 3.12+. Install pyjq for Python 3.11 or "
-            "earlier, or use an alternative JQ implementation."
-        )
+        return _eval_jq_simple(jq_expr, jq_vars)
     jq_vals = pyjq_compile(jq_expr).apply(jq_vars)
     if not jq_vals:
         return None

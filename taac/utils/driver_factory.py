@@ -152,7 +152,21 @@ async def async_get_device_driver(
         )
     # pyrefly: ignore [bad-argument-type]
     driver_args_dict = json.loads(HOST_TO_DRIVER_ARGS_MAP.get(hostname, "{}"))
-    device_driver_class = driver_class(
-        hostname, logger=logger or LOGGER, **driver_args_dict
-    )
+
+    if device_os_type == taac_types.DeviceOsType.FBOSS and TAAC_OSS:
+        from taac.utils.oss_client_factory import (
+            OSSClientFactory,
+        )
+
+        client_factory = OSSClientFactory()
+        LOGGER.debug(f"Using OSSClientFactory for {hostname}")
+
+        device_driver_class = driver_class(
+            hostname, logger=logger or LOGGER, client_provider=client_factory, **driver_args_dict
+        )
+    else:
+        device_driver_class = driver_class(
+            hostname, logger=logger or LOGGER, **driver_args_dict
+        )
+
     return device_driver_class

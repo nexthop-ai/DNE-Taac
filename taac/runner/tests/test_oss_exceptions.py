@@ -75,11 +75,11 @@ class TestClassifyException(unittest.TestCase):
         self.assertFalse(is_transient)
 
     def test_testbed_error_not_transient(self):
-        """Test OSSTestbedError → (ERROR, False)."""
+        """Test OSSTestbedError → (TESTBED_FAILED, False)."""
         exc = OSSTestbedError("Device unreachable")
         status, is_transient = classify_exception(exc)
 
-        self.assertEqual(status, OSSTestStatus.ERROR)
+        self.assertEqual(status, OSSTestStatus.TESTBED_FAILED)
         self.assertFalse(is_transient)
 
     def test_transient_error_is_transient(self):

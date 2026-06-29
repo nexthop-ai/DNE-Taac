@@ -211,6 +211,15 @@ add_taac_thrift_python_library(
 )
 
 add_taac_thrift_python_library(
+    qsfp_py
+    "${FBOSS_THRIFT_DIR}/fboss/qsfp_service/if/qsfp.thrift"
+    NAMESPACE "neteng.fboss"
+    OPTIONS json
+    DEPENDS thrift_roots ctrl_py fboss_py transceiver_py switch_config_py
+        mka_structs_py hardware_stats_py phy_py prbs_py
+)
+
+add_taac_thrift_python_library(
     fsdb_py
     "${FBOSS_THRIFT_DIR}/fboss/fsdb/if/fsdb.thrift"
     NAMESPACE "neteng.fboss"
@@ -474,6 +483,7 @@ add_custom_target(all_thrift_bindings ALL DEPENDS
     prbs_py.py_sources_built
     link_py.py_sources_built
     transceiver_py.py_sources_built
+    qsfp_py.py_sources_built
     phy_py.py_sources_built
     fsdb_py.py_sources_built
     io_stats_py.py_sources_built

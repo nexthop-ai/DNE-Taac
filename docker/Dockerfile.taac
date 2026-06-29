@@ -121,6 +121,7 @@ COPY --from=builder /usr/local/lib64/python3.12/site-packages /usr/local/lib64/p
 # Selective COPYs of only necessary directories
 COPY taac/ /taac/taac/
 COPY thrift/ /taac/thrift/
+COPY examples/ /taac/examples/
 COPY docker/taac-entrypoint.sh /usr/local/bin/taac-entrypoint
 COPY docker/taac-regen-thrift.sh /usr/local/bin/taac-regen-thrift
 COPY README.md CODE_OF_CONDUCT.md CONTRIBUTING.md /taac/

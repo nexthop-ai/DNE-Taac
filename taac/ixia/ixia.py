@@ -3685,9 +3685,9 @@ class Ixia:
 
             self.configure_prefix_length(bgp_prefix_config, ip_prefix_pool_obj)
             route_prop_obj: "BgpIPRouteProperty" = (
-                (ip_prefix_pool_obj.BgpIPRouteProperty.add())
+                (ip_prefix_pool_obj.BgpIPRouteProperty.find())
                 if ip_address_family == ixia_types.IpAddressFamily.IPV4
-                else (ip_prefix_pool_obj.BgpV6IPRouteProperty.add())
+                else (ip_prefix_pool_obj.BgpV6IPRouteProperty.find())
             )
 
             if bgp_prefix_config.prefix_flap_config:

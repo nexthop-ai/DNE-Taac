@@ -77,14 +77,13 @@ from taac.libs.test_setup_orchestrator import (
 if not TAAC_OSS:
     from taac.stages.stage_definitions import create_steps_stage
 else:
-    # OSS stub - taac.stages package isn't vendored in this slice
-    # (new in upstream main and Meta-internal-only). Stub raises
-    # NotImplementedError so any OSS code path that constructs a
-    # steps-stage fails clearly.
-    def create_steps_stage(*args, **kwargs):  # type: ignore
-        raise NotImplementedError(
-            "create_steps_stage requires Meta-internal taac.stages.stage_definitions; "
-            "not shipped under OSS."
+    def create_steps_stage(
+        steps, stage_id=None, description=None, **kwargs
+    ):  # type: ignore
+        return taac_types.Stage(
+            steps=steps,
+            id=stage_id,
+            description=description,
         )
 
 
