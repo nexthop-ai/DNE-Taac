@@ -9177,28 +9177,27 @@ def create_bgp_ebgp_route_oscillations_playbook(
     if postcheck_thresholds is None:
         postcheck_thresholds = get_postcheck_thresholds()
 
-    return Playbook(
-        name="bgp_ebgp_route_oscillations",
-        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
-        prechecks=create_standard_prechecks(
+    osc_checks = get_profile_checks(
+        CheckProfile.OSCILLATION,
+        ProfileContext(
             peergroup_ibgp_v6=peergroup_ibgp_v6,
             peergroup_ibgp_v4=peergroup_ibgp_v4,
             precheck_thresholds=precheck_thresholds,
+            postcheck_thresholds=postcheck_thresholds,
             expected_established_sessions=expected_established_sessions,
             cpu_baseline=cpu_baseline,
             check_ibgp_pnh=(profile == BgpPlusPlusProfile.BGP_PLUS_PLUS_WITH_OPEN_R),
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        postchecks=create_standard_postchecks(
-            postcheck_thresholds=postcheck_thresholds,
-            check_bgp_convergence=False,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        snapshot_checks=create_standard_snapshot_checks(
-            skip_uptime_check=True,
             expected_peer_identity=expected_peer_identity,
             exclude_bgp_mon=exclude_bgp_mon,
+            snapshot_skip_uptime=True,
         ),
+    )
+    return Playbook(
+        name="bgp_ebgp_route_oscillations",
+        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
+        prechecks=osc_checks.prechecks,
+        postchecks=osc_checks.postchecks,
+        snapshot_checks=osc_checks.snapshot_checks,
         periodic_tasks=create_standard_periodic_tasks(
             device_name=device_name,
             memory_threshold=memory_threshold,
@@ -9265,27 +9264,26 @@ def create_bgp_ibgp_route_oscillations_playbook(
     if postcheck_thresholds is None:
         postcheck_thresholds = get_postcheck_thresholds()
 
-    return Playbook(
-        name="bgp_ibgp_route_oscillations",
-        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
-        prechecks=create_standard_prechecks(
+    osc_checks = get_profile_checks(
+        CheckProfile.OSCILLATION,
+        ProfileContext(
             peergroup_ibgp_v6=peergroup_ibgp_v6,
             peergroup_ibgp_v4=peergroup_ibgp_v4,
             precheck_thresholds=precheck_thresholds,
+            postcheck_thresholds=postcheck_thresholds,
             expected_established_sessions=expected_established_sessions,
             cpu_baseline=cpu_baseline,
             check_ibgp_pnh=(profile == BgpPlusPlusProfile.BGP_PLUS_PLUS_WITH_OPEN_R),
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        postchecks=create_standard_postchecks(
-            postcheck_thresholds=postcheck_thresholds,
-            check_bgp_convergence=False,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        snapshot_checks=create_standard_snapshot_checks(
             expected_peer_identity=expected_peer_identity,
             exclude_bgp_mon=exclude_bgp_mon,
         ),
+    )
+    return Playbook(
+        name="bgp_ibgp_route_oscillations",
+        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
+        prechecks=osc_checks.prechecks,
+        postchecks=osc_checks.postchecks,
+        snapshot_checks=osc_checks.snapshot_checks,
         periodic_tasks=create_standard_periodic_tasks(
             device_name=device_name,
             memory_threshold=memory_threshold,
@@ -9745,30 +9743,29 @@ def create_bgp_ebgp_session_oscillations_playbook(
     if postcheck_thresholds is None:
         postcheck_thresholds = get_postcheck_thresholds()
 
-    return Playbook(
-        name="bgp_ebgp_session_oscillations_test_playbook",
-        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
-        prechecks=create_standard_prechecks(
+    osc_checks = get_profile_checks(
+        CheckProfile.OSCILLATION,
+        ProfileContext(
             peergroup_ibgp_v6=peergroup_ibgp_v6,
             peergroup_ibgp_v4=peergroup_ibgp_v4,
             precheck_thresholds=precheck_thresholds,
+            postcheck_thresholds=postcheck_thresholds,
             expected_established_sessions=expected_established_sessions,
             cpu_baseline=cpu_baseline,
             check_ibgp_pnh=(profile == BgpPlusPlusProfile.BGP_PLUS_PLUS_WITH_OPEN_R),
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        postchecks=create_standard_postchecks(
-            postcheck_thresholds=postcheck_thresholds,
-            check_bgp_convergence=False,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        snapshot_checks=create_standard_snapshot_checks(
-            skip_flap_check=True,
-            skip_uptime_check=True,
             expected_peer_identity=expected_peer_identity,
             parent_prefixes_to_ignore=parent_prefixes_to_ignore,
             exclude_bgp_mon=exclude_bgp_mon,
+            snapshot_skip_flap=True,
+            snapshot_skip_uptime=True,
         ),
+    )
+    return Playbook(
+        name="bgp_ebgp_session_oscillations_test_playbook",
+        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
+        prechecks=osc_checks.prechecks,
+        postchecks=osc_checks.postchecks,
+        snapshot_checks=osc_checks.snapshot_checks,
         periodic_tasks=create_standard_periodic_tasks(
             device_name=device_name,
             memory_threshold=memory_threshold,
@@ -9859,30 +9856,29 @@ def create_bgp_ibgp_tornado_plane_oscillations_playbook(
     if postcheck_thresholds is None:
         postcheck_thresholds = get_postcheck_thresholds()
 
-    return Playbook(
-        name="bgp_ibgp_tornado_plane_oscillations_test_playbook",
-        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
-        prechecks=create_standard_prechecks(
+    osc_checks = get_profile_checks(
+        CheckProfile.OSCILLATION,
+        ProfileContext(
             peergroup_ibgp_v6=peergroup_ibgp_v6,
             peergroup_ibgp_v4=peergroup_ibgp_v4,
             precheck_thresholds=precheck_thresholds,
+            postcheck_thresholds=postcheck_thresholds,
             expected_established_sessions=expected_established_sessions,
             cpu_baseline=cpu_baseline,
             check_ibgp_pnh=(profile == BgpPlusPlusProfile.BGP_PLUS_PLUS_WITH_OPEN_R),
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        postchecks=create_standard_postchecks(
-            postcheck_thresholds=postcheck_thresholds,
-            check_bgp_convergence=False,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        snapshot_checks=create_standard_snapshot_checks(
-            skip_flap_check=True,
-            skip_uptime_check=True,
             expected_peer_identity=expected_peer_identity,
             parent_prefixes_to_ignore=parent_prefixes_to_ignore,
             exclude_bgp_mon=exclude_bgp_mon,
+            snapshot_skip_flap=True,
+            snapshot_skip_uptime=True,
         ),
+    )
+    return Playbook(
+        name="bgp_ibgp_tornado_plane_oscillations_test_playbook",
+        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
+        prechecks=osc_checks.prechecks,
+        postchecks=osc_checks.postchecks,
+        snapshot_checks=osc_checks.snapshot_checks,
         periodic_tasks=create_standard_periodic_tasks(
             device_name=device_name,
             memory_threshold=memory_threshold,
@@ -10089,28 +10085,27 @@ def create_bgp_multipath_group_oscillation_playbook(
     if postcheck_thresholds is None:
         postcheck_thresholds = get_postcheck_thresholds()
 
-    return Playbook(
-        name="bgp_multipath_group_oscillation_playbook",
-        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
-        prechecks=create_standard_prechecks(
+    osc_checks = get_profile_checks(
+        CheckProfile.OSCILLATION,
+        ProfileContext(
             peergroup_ibgp_v6=peergroup_ibgp_v6,
             peergroup_ibgp_v4=peergroup_ibgp_v4,
             precheck_thresholds=precheck_thresholds,
+            postcheck_thresholds=postcheck_thresholds,
             expected_established_sessions=expected_established_sessions,
             cpu_baseline=cpu_baseline,
             check_ibgp_pnh=(profile == BgpPlusPlusProfile.BGP_PLUS_PLUS_WITH_OPEN_R),
             exclude_bgp_mon=exclude_bgp_mon,
+            snapshot_skip_flap=True,
+            snapshot_skip_uptime=True,
         ),
-        postchecks=create_standard_postchecks(
-            postcheck_thresholds=postcheck_thresholds,
-            check_bgp_convergence=False,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
-        snapshot_checks=create_standard_snapshot_checks(
-            skip_flap_check=True,
-            skip_uptime_check=True,
-            exclude_bgp_mon=exclude_bgp_mon,
-        ),
+    )
+    return Playbook(
+        name="bgp_multipath_group_oscillation_playbook",
+        setup_steps=create_bgp_instability_setup_steps(device_name=device_name),
+        prechecks=osc_checks.prechecks,
+        postchecks=osc_checks.postchecks,
+        snapshot_checks=osc_checks.snapshot_checks,
         periodic_tasks=create_standard_periodic_tasks(
             device_name=device_name,
             memory_threshold=memory_threshold,

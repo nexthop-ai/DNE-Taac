@@ -190,3 +190,70 @@ class CheckProfileRegistryTest(unittest.TestCase):
                 exclude_bgp_mon=True,
             ),
         )
+
+    def test_oscillation_with_skips_matches_factory(self):
+        """OSCILLATION with both snapshot skips reproduces the session/tornado
+        oscillation playbooks' create_standard_* calls (conv OFF)."""
+        ctx = ProfileContext(
+            peergroup_ibgp_v6="PG_IBGP_V6",
+            peergroup_ibgp_v4="PG_IBGP_V4",
+            expected_established_sessions=42,
+            cpu_baseline=8.0,
+            check_ibgp_pnh=False,
+            expected_peer_identity={"2401:db00::a": "2401:db00::b"},
+            parent_prefixes_to_ignore=["10.0.0.0/24"],
+            exclude_bgp_mon=True,
+            snapshot_skip_flap=True,
+            snapshot_skip_uptime=True,
+        )
+        checks = get_profile_checks(CheckProfile.OSCILLATION, ctx)
+
+        self.assertEqual(
+            checks.prechecks,
+            create_standard_prechecks(
+                peergroup_ibgp_v6="PG_IBGP_V6",
+                peergroup_ibgp_v4="PG_IBGP_V4",
+                precheck_thresholds=None,
+                expected_established_sessions=42,
+                cpu_baseline=8.0,
+                check_ibgp_pnh=False,
+                exclude_bgp_mon=True,
+            ),
+        )
+        self.assertEqual(
+            checks.postchecks,
+            create_standard_postchecks(
+                postcheck_thresholds=None,
+                check_bgp_convergence=False,
+                exclude_bgp_mon=True,
+            ),
+        )
+        self.assertEqual(
+            checks.snapshot_checks,
+            create_standard_snapshot_checks(
+                skip_flap_check=True,
+                skip_uptime_check=True,
+                expected_peer_identity={"2401:db00::a": "2401:db00::b"},
+                parent_prefixes_to_ignore=["10.0.0.0/24"],
+                exclude_bgp_mon=True,
+            ),
+        )
+
+    def test_oscillation_no_skips_matches_factory(self):
+        """OSCILLATION with no snapshot skips reproduces the ibgp_route
+        oscillation playbook's snapshot."""
+        ctx = ProfileContext(
+            peergroup_ibgp_v6="PG_IBGP_V6",
+            peergroup_ibgp_v4="PG_IBGP_V4",
+            cpu_baseline=8.0,
+            exclude_bgp_mon=True,
+        )
+        checks = get_profile_checks(CheckProfile.OSCILLATION, ctx)
+
+        self.assertEqual(
+            checks.snapshot_checks,
+            create_standard_snapshot_checks(
+                expected_peer_identity=None,
+                exclude_bgp_mon=True,
+            ),
+        )

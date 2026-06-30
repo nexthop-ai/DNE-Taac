@@ -69,6 +69,9 @@ class CheckProfile(enum.Enum):
     DAEMON_RESTART = "daemon_restart"
     # Full cold start, convergence ON, EOR tolerated, full snapshot.
     COLD_START = "cold_start"
+    # BGP route/session oscillation & multipath churn: convergence OFF; which
+    # snapshot sub-checks to skip varies by sub-shape (carried in the context).
+    OSCILLATION = "oscillation"
 
     # Minimal-shape (accept the context for a uniform API, but ignore it):
     # bag012 perf-scaling, bounded-ECMP-sets (case9).
@@ -106,6 +109,11 @@ class ProfileContext:
     exclude_bgp_mon: bool = True
     # Cold-start tolerates an expired EOR timer by default.
     fail_on_eor_expired: bool = False
+    # Oscillation: expected established session count at precheck, and which
+    # snapshot sub-checks to skip (sessions intentionally flap during the test).
+    expected_established_sessions: int = 0
+    snapshot_skip_flap: bool = False
+    snapshot_skip_uptime: bool = False
 
 
 class ProfileChecks(t.NamedTuple):
@@ -172,6 +180,36 @@ def _cold_start(ctx: ProfileContext) -> ProfileChecks:
     )
 
 
+def _oscillation(ctx: ProfileContext) -> ProfileChecks:
+    """BGP route/session oscillation & multipath churn: standard prechecks,
+    postchecks with convergence OFF (routes/sessions intentionally churn), and a
+    snapshot whose flap/uptime skips are set per sub-shape via the context.
+    """
+    return ProfileChecks(
+        prechecks=create_standard_prechecks(
+            peergroup_ibgp_v6=ctx.peergroup_ibgp_v6,
+            peergroup_ibgp_v4=ctx.peergroup_ibgp_v4,
+            precheck_thresholds=ctx.precheck_thresholds,
+            expected_established_sessions=ctx.expected_established_sessions,
+            cpu_baseline=ctx.cpu_baseline,
+            check_ibgp_pnh=ctx.check_ibgp_pnh,
+            exclude_bgp_mon=ctx.exclude_bgp_mon,
+        ),
+        postchecks=create_standard_postchecks(
+            postcheck_thresholds=ctx.postcheck_thresholds,
+            check_bgp_convergence=False,
+            exclude_bgp_mon=ctx.exclude_bgp_mon,
+        ),
+        snapshot_checks=create_standard_snapshot_checks(
+            skip_flap_check=ctx.snapshot_skip_flap,
+            skip_uptime_check=ctx.snapshot_skip_uptime,
+            expected_peer_identity=ctx.expected_peer_identity,
+            parent_prefixes_to_ignore=ctx.parent_prefixes_to_ignore,
+            exclude_bgp_mon=ctx.exclude_bgp_mon,
+        ),
+    )
+
+
 def _perf_scaling_bounded_ecmp(ctx: ProfileContext) -> ProfileChecks:
     """Profile for the bag012 bounded-ECMP-sets (case9) playbook.
 
@@ -216,6 +254,7 @@ def _perf_scaling_bounded_ecmp(ctx: ProfileContext) -> ProfileChecks:
 _PROFILE_BUILDERS: t.Dict[CheckProfile, t.Callable[[ProfileContext], ProfileChecks]] = {
     CheckProfile.DAEMON_RESTART: _daemon_restart,
     CheckProfile.COLD_START: _cold_start,
+    CheckProfile.OSCILLATION: _oscillation,
     CheckProfile.PERF_SCALING_BOUNDED_ECMP: _perf_scaling_bounded_ecmp,
 }
 
