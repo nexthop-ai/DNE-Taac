@@ -2759,6 +2759,9 @@ def create_multipath_group_oscillation_stage(
     min_peers_to_stop: int = 1,
     max_peers_to_stop: int = 11,
     prefix_subnets: list[str] | None = None,
+    expected_min_baseline_width: int | None = None,
+    expected_max_baseline_width: int | None = None,
+    min_multipath_width: int | None = None,
 ) -> Stage:
     """
     Create a test stage to verify BGP stability during multipath group oscillations.
@@ -2778,19 +2781,24 @@ def create_multipath_group_oscillation_stage(
         - IAR is enabled
 
     Test Steps:
-        1. Discover baseline: Query BGP RIB to find all prefixes with full multipath group
+        1. Discover baseline: Measure the live eBGP multipath group width and
+           remember the prefix set at that width. Optional sanity bounds catch
+           an implausibly-small or implausibly-large measurement.
         2. For one hour, every minute fluctuate BGP multipath group for eBGP routes:
            a. Stop N (where N varies from 1 to max_peers_to_stop) of the eBGP sessions
               to reduce the multipath group
-           b. Verify multipath group for discovered prefixes is reduced proportionally
+           b. Verify multipath group for discovered prefixes is reduced by exactly N
+              (derived from the discovered baseline width — testbed-portable)
            c. Restart the stopped sessions to restore the multipath group
-           d. Verify multipath group for discovered prefixes is restored
+           d. Verify multipath group for discovered prefixes is back to the baseline width
 
     Args:
         ipv4_peer_regex: Regex pattern to match IPv4 eBGP peers (default: ".*IPV4_EBGP$")
         ipv6_peer_regex: Regex pattern to match IPv6 eBGP peers (default: ".*IPV6_EBGP$")
-        ipv4_session_count: Total number of IPv4 eBGP sessions (default: 100)
-        ipv6_session_count: Total number of IPv6 eBGP sessions (default: 100)
+        ipv4_session_count: Total number of IPv4 eBGP sessions on the IXIA side —
+            used only for peer-stop indexing. The DUT-side multipath width is
+            measured at runtime, NOT assumed to equal this value.
+        ipv6_session_count: Total number of IPv6 eBGP sessions on the IXIA side.
         test_duration_seconds: Total test duration in seconds (default: 3600 / 1 hour)
         oscillation_interval_seconds: Interval between oscillations (default: 60 / 1 minute)
         min_peers_to_stop: Minimum number of peers to stop per cycle (default: 1)
@@ -2798,32 +2806,31 @@ def create_multipath_group_oscillation_stage(
         prefix_subnets: Optional list of prefix subnets to check for multipath groups.
                         If None, baseline discovery will find prefixes automatically.
                         Example: ["10.200.0.0/16", "2001:db8:200::/48"]
+        expected_min_baseline_width: Optional lower sanity bound on the measured
+            DUT-side multipath width. Discovery fails if the measurement is below.
+        expected_max_baseline_width: Optional upper sanity bound. Discovery fails
+            if the measurement is above.
+        min_multipath_width: Floor for the distribution scan (single-NH prefixes
+            below this are excluded; default 2).
 
     Returns:
         Stage object for BGP multipath group oscillation test
-
-    Example:
-        stage = create_multipath_group_oscillation_stage(
-            ipv4_peer_regex=".*IPV4_EBGP$",
-            ipv6_peer_regex=".*IPV6_EBGP$",
-            ipv4_session_count=12,
-            ipv6_session_count=12,
-            test_duration_seconds=3600,
-            oscillation_interval_seconds=60,
-        )
     """
     steps = []
 
-    # Step 0: Baseline discovery - find prefixes with full multipath group
-    # This queries the BGP RIB and discovers all prefixes that currently have
-    # ipv4_session_count next-hops (full multipath group). These prefixes
-    # are stored and used for validation throughout the oscillation test.
+    # Step 0: Baseline discovery — measure the live multipath group width and
+    # remember the prefix set at that width. The validation steps below read
+    # the measurement back via use_discovered_width=True instead of hard-coding
+    # an expected value from ipv4_session_count (which counts IXIA peers, not
+    # DUT-installed multipath next-hops).
     steps.append(
         create_multipath_nexthop_count_health_check_step(
             prefix_subnets=prefix_subnets,
             discover_baseline=True,
-            baseline_nexthop_count=ipv4_session_count,
-            description=f"Baseline: Discover prefixes with full {ipv4_session_count}-way multipath group",
+            expected_min_baseline_width=expected_min_baseline_width,
+            expected_max_baseline_width=expected_max_baseline_width,
+            min_multipath_width=min_multipath_width,
+            description="Baseline: Discover live multipath group width from eBGP RIB",
         )
     )
 
@@ -2869,16 +2876,18 @@ def create_multipath_group_oscillation_stage(
             )
         )
 
-        # Step 3a: Health check
-
-        # Step 3a: Health check to verify multipath group reduced after stopping sessions
-        # Uses discovered baseline prefixes for validation
-        expected_after_stop = ipv4_session_count - n_peers_to_stop
+        # Step 3a: Health check — width-relative reduce assertion.
+        # The expected count is discovered_width - n_peers_to_stop, computed
+        # inside the HC from the stored measurement (not from ipv4_session_count).
         steps.append(
             create_multipath_nexthop_count_health_check_step(
                 use_discovered_prefixes=True,
-                expected_nexthop_count=expected_after_stop,
-                description=f"Cycle {cycle_num}/{num_cycles}: Verify multipath group reduced to {expected_after_stop} next-hops",
+                use_discovered_width=True,
+                peers_stopped_delta=n_peers_to_stop,
+                description=(
+                    f"Cycle {cycle_num}/{num_cycles}: Verify multipath group "
+                    f"reduced by {n_peers_to_stop} (width-relative)"
+                ),
             )
         )
 
@@ -2913,15 +2922,16 @@ def create_multipath_group_oscillation_stage(
             )
         )
 
-        # Step 6a: Health check
-
-        # Step 6a: Health check to verify multipath group restored after restarting sessions
-        # Uses discovered baseline prefixes for validation
+        # Step 6a: Health check — restore assertion (peers_stopped_delta=0).
         steps.append(
             create_multipath_nexthop_count_health_check_step(
                 use_discovered_prefixes=True,
-                expected_nexthop_count=ipv4_session_count,
-                description=f"Cycle {cycle_num}/{num_cycles}: Verify multipath group restored to {ipv4_session_count} next-hops",
+                use_discovered_width=True,
+                peers_stopped_delta=0,
+                description=(
+                    f"Cycle {cycle_num}/{num_cycles}: Verify multipath group "
+                    "restored to baseline width"
+                ),
             )
         )
 

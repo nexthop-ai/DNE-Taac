@@ -10008,6 +10008,9 @@ def create_bgp_multipath_group_oscillation_playbook(
     oscillation_interval_seconds: int = 280,
     min_peers_to_stop: int = 1,
     max_peers_to_stop: int = 11,
+    expected_min_baseline_width: t.Optional[int] = None,
+    expected_max_baseline_width: t.Optional[int] = None,
+    min_multipath_width: t.Optional[int] = None,
     precheck_thresholds: t.Optional[HardwareCapacityThresholds] = None,
     postcheck_thresholds: t.Optional[HardwareCapacityThresholds] = None,
     exclude_bgp_mon: bool = True,
@@ -10020,9 +10023,10 @@ def create_bgp_multipath_group_oscillation_playbook(
     This playbook tests BGP stability during multipath group oscillations by:
     1. Setting up BGP instability prerequisites
     2. Running standard prechecks
-    3. Fluctuating BGP multipath groups by stopping/starting eBGP sessions
-    4. Verifying multipath groups reduce/restore proportionally
-    5. Running standard postchecks (no convergence check)
+    3. Measuring the live multipath group width as the baseline
+    4. Fluctuating BGP multipath groups by stopping/starting eBGP sessions
+    5. Verifying multipath groups reduce/restore relative to the measured baseline
+    6. Running standard postchecks (no convergence check)
 
     Args:
         device_name: Name of the device under test
@@ -10036,12 +10040,18 @@ def create_bgp_multipath_group_oscillation_playbook(
         memory_terminate_on_error: Terminate test on memory threshold breach
         ipv4_peer_regex: Regex to match IPv4 eBGP peers (default: ".*IPV4_EBGP$")
         ipv6_peer_regex: Regex to match IPv6 eBGP peers (default: ".*IPV6_EBGP$")
-        ipv4_session_count: Baseline IPv4 multipath group size (default: 140)
-        ipv6_session_count: Baseline IPv6 multipath group size (default: 140)
+        ipv4_session_count: Number of IPv4 eBGP sessions on the IXIA side
+            (default: 140). Used only for peer-stop indexing — NOT assumed to
+            equal the DUT-side multipath group width, which is measured live.
+        ipv6_session_count: Number of IPv6 eBGP sessions on the IXIA side.
         test_duration_seconds: Total oscillation test duration (default: 1800s)
         oscillation_interval_seconds: Interval between oscillations (default: 280s)
         min_peers_to_stop: Minimum peers to stop per cycle (default: 1)
         max_peers_to_stop: Maximum peers to stop per cycle (default: 11)
+        expected_min_baseline_width: Optional sanity lower bound on the measured
+            multipath width. Discovery fails if the measurement is below.
+        expected_max_baseline_width: Optional sanity upper bound.
+        min_multipath_width: Floor for distribution scan (default 2).
         precheck_thresholds: Custom precheck thresholds (uses defaults if None)
         postcheck_thresholds: Custom postcheck thresholds (uses defaults if None)
 
@@ -10091,6 +10101,9 @@ def create_bgp_multipath_group_oscillation_playbook(
                 oscillation_interval_seconds=oscillation_interval_seconds,
                 min_peers_to_stop=min_peers_to_stop,
                 max_peers_to_stop=max_peers_to_stop,
+                expected_min_baseline_width=expected_min_baseline_width,
+                expected_max_baseline_width=expected_max_baseline_width,
+                min_multipath_width=min_multipath_width,
             ),
         ],
     )

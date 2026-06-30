@@ -2062,7 +2062,12 @@ def create_port_speed_snapshot_check(
 def create_next_hop_count_check(
     discover_baseline: bool = False,
     baseline_nexthop_count: t.Optional[int] = None,
+    expected_min_baseline_width: t.Optional[int] = None,
+    expected_max_baseline_width: t.Optional[int] = None,
+    min_multipath_width: t.Optional[int] = None,
     use_discovered_prefixes: bool = False,
+    use_discovered_width: bool = False,
+    peers_stopped_delta: t.Optional[int] = None,
     prefix_subnets: t.Optional[t.List[str]] = None,
     expected_nexthop_count: t.Optional[int] = None,
     min_nexthop_count: t.Optional[int] = None,
@@ -2073,13 +2078,25 @@ def create_next_hop_count_check(
 
     Validates the number of next-hops (multipath routes) for BGP prefixes.
     Two modes:
-      * Discovery: find prefixes with ``baseline_nexthop_count`` next-hops.
-      * Validation: verify discovered prefixes have ``expected_nexthop_count``.
+      * Discovery: measure the modal eBGP next-hop count and store the prefix
+        set at that width. Optional sanity bounds fail if the measurement is
+        implausible.
+      * Validation: verify discovered prefixes have the expected next-hop count.
+        With ``use_discovered_width=True``, the expected count is derived as
+        ``discovered_width - peers_stopped_delta`` instead of a literal.
 
     Args:
         discover_baseline: If True, run in discovery mode.
-        baseline_nexthop_count: Number of next-hops to look for during discovery.
+        baseline_nexthop_count: DEPRECATED — legacy exact-match selector kept as
+            an optional sanity bound. Prefer ``expected_min/max_baseline_width``.
+        expected_min_baseline_width: Optional lower bound for the measured width.
+        expected_max_baseline_width: Optional upper bound for the measured width.
+        min_multipath_width: Floor for the distribution scan (single-NH prefixes
+            below this are excluded; default 2).
         use_discovered_prefixes: Validate against previously-discovered prefixes.
+        use_discovered_width: Derive expected_nexthop_count from the measured
+            baseline width minus ``peers_stopped_delta``.
+        peers_stopped_delta: Peers currently stopped (default 0 / restore phase).
         prefix_subnets: Subnets to constrain the check to.
         expected_nexthop_count: Exact number of next-hops to require.
         min_nexthop_count: Minimum acceptable next-hops.
@@ -2087,20 +2104,26 @@ def create_next_hop_count_check(
         check_id: Optional unique identifier for the check.
     """
     check_params: t.Dict[str, t.Any] = {}
+
+    def _set_if_present(key: str, value: t.Any) -> None:
+        if value is not None:
+            check_params[key] = value
+
     if discover_baseline:
         check_params["discover_baseline"] = True
-        if baseline_nexthop_count is not None:
-            check_params["baseline_nexthop_count"] = baseline_nexthop_count
+        _set_if_present("baseline_nexthop_count", baseline_nexthop_count)
+        _set_if_present("expected_min_baseline_width", expected_min_baseline_width)
+        _set_if_present("expected_max_baseline_width", expected_max_baseline_width)
+        _set_if_present("min_multipath_width", min_multipath_width)
     if use_discovered_prefixes:
         check_params["use_discovered_prefixes"] = True
-    if prefix_subnets is not None:
-        check_params["prefix_subnets"] = prefix_subnets
-    if expected_nexthop_count is not None:
-        check_params["expected_nexthop_count"] = expected_nexthop_count
-    if min_nexthop_count is not None:
-        check_params["min_nexthop_count"] = min_nexthop_count
-    if max_nexthop_count is not None:
-        check_params["max_nexthop_count"] = max_nexthop_count
+    if use_discovered_width:
+        check_params["use_discovered_width"] = True
+        _set_if_present("peers_stopped_delta", peers_stopped_delta)
+    _set_if_present("prefix_subnets", prefix_subnets)
+    _set_if_present("expected_nexthop_count", expected_nexthop_count)
+    _set_if_present("min_nexthop_count", min_nexthop_count)
+    _set_if_present("max_nexthop_count", max_nexthop_count)
     return PointInTimeHealthCheck(
         name=hc_types.CheckName.NEXT_HOP_COUNT_CHECK,
         check_params=(

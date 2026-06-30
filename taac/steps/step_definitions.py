@@ -3072,7 +3072,12 @@ def create_multipath_nexthop_count_health_check_step(
     max_nexthop_count: t.Optional[int] = None,
     discover_baseline: bool = False,
     baseline_nexthop_count: t.Optional[int] = None,
+    expected_min_baseline_width: t.Optional[int] = None,
+    expected_max_baseline_width: t.Optional[int] = None,
+    min_multipath_width: t.Optional[int] = None,
     use_discovered_prefixes: bool = False,
+    use_discovered_width: bool = False,
+    peers_stopped_delta: t.Optional[int] = None,
     description: t.Optional[str] = None,
 ) -> Step:
     """
@@ -3083,46 +3088,62 @@ def create_multipath_nexthop_count_health_check_step(
     for verifying that BGP session oscillations correctly affect the multipath group size.
 
     Supports two modes:
-        1. Discovery mode (discover_baseline=True): Queries the BGP RIB and discovers
-           all prefixes that have the expected baseline next-hop count. The discovered
-           prefixes are stored for use in subsequent validation.
+        1. Discovery mode (discover_baseline=True): Measures the modal eBGP NH-count
+           distribution and stores the prefix set + width as the baseline. Optional
+           sanity bounds (expected_min/max_baseline_width) fail loudly if the
+           measurement is implausible for the testbed.
         2. Validation mode (default): Validates that prefixes have the expected
-           number of next-hops. Can use discovered prefixes (use_discovered_prefixes=True)
-           or filter by prefix_subnets.
+           number of next-hops. With ``use_discovered_width=True``, the expected
+           count is derived from the stored width minus ``peers_stopped_delta``.
 
     Args:
         prefix_subnets: Optional list of prefix subnets to check (e.g., ["10.0.0.0/8", "2001:db8::/32"])
         expected_nexthop_count: Optional exact number of next-hops expected
         min_nexthop_count: Optional minimum number of next-hops expected
         max_nexthop_count: Optional maximum number of next-hops expected
-        discover_baseline: If True, run in discovery mode to find prefixes with baseline next-hop count
-        baseline_nexthop_count: Required when discover_baseline=True - the expected baseline next-hop count
-        use_discovered_prefixes: If True, validate against previously discovered baseline prefixes
+        discover_baseline: If True, run in discovery mode (measure baseline width)
+        baseline_nexthop_count: DEPRECATED legacy exact-match selector. If supplied,
+            measured width must match (sanity bound). Prefer the *_baseline_width args.
+        expected_min_baseline_width: Optional lower bound for the measured width
+        expected_max_baseline_width: Optional upper bound for the measured width
+        min_multipath_width: Floor for distribution scan (default 2)
+        use_discovered_prefixes: If True, validate against discovered baseline prefixes
+        use_discovered_width: If True, derive expected_nexthop_count from the
+            stored baseline width minus peers_stopped_delta
+        peers_stopped_delta: Peers currently stopped (default 0 / restore phase)
         description: Custom description for the step
 
     Returns:
         Step object for running the BGP multipath next-hop count health check
 
     Example:
-        # Step 1: Before oscillations, discover prefixes with 12 next-hops (full multipath group)
+        # Step 1: Discover the live ECMP baseline width — testbed-portable
         discovery_step = create_multipath_nexthop_count_health_check_step(
             discover_baseline=True,
-            baseline_nexthop_count=12,
-            description="Discover prefixes with full 12-way multipath group",
+            expected_min_baseline_width=2,    # sanity: must be multipath
+            expected_max_baseline_width=200,  # sanity: not an unbounded leak
+            description="Discover baseline multipath group width",
         )
 
-        # Step 2: After stopping 3 sessions, verify discovered prefixes have 9 next-hops
+        # Step 2: After stopping 3 sessions, verify width drops by 3
         validation_step = create_multipath_nexthop_count_health_check_step(
             use_discovered_prefixes=True,
-            expected_nexthop_count=9,
-            description="Verify multipath group reduced to 9 next-hops",
+            use_discovered_width=True,
+            peers_stopped_delta=3,
+            description="Verify multipath group reduced by 3",
         )
     """
     if description is None:
         if discover_baseline:
-            description = (
-                f"Discover prefixes with {baseline_nexthop_count} next-hops (baseline)"
-            )
+            description = "Discover baseline multipath group width"
+        elif use_discovered_width:
+            if peers_stopped_delta:
+                description = (
+                    f"Verify multipath group reduced by {peers_stopped_delta} "
+                    "(width-relative)"
+                )
+            else:
+                description = "Verify multipath group restored to baseline width"
         elif expected_nexthop_count is not None:
             description = (
                 f"Verify multipath group has exactly {expected_nexthop_count} next-hops"
@@ -3152,7 +3173,12 @@ def create_multipath_nexthop_count_health_check_step(
                     create_next_hop_count_check(
                         discover_baseline=discover_baseline,
                         baseline_nexthop_count=baseline_nexthop_count,
+                        expected_min_baseline_width=expected_min_baseline_width,
+                        expected_max_baseline_width=expected_max_baseline_width,
+                        min_multipath_width=min_multipath_width,
                         use_discovered_prefixes=use_discovered_prefixes,
+                        use_discovered_width=use_discovered_width,
+                        peers_stopped_delta=peers_stopped_delta,
                         prefix_subnets=prefix_subnets,
                         expected_nexthop_count=expected_nexthop_count,
                         min_nexthop_count=min_nexthop_count,
