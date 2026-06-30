@@ -47,12 +47,12 @@ class MakeSyncManagerTest(unittest.TestCase):
 
         with (
             patch(
-                "neteng.test_infra.dne.taac.libs.periodic_task_worker"
+                "taac.libs.periodic_task_worker"
                 ".multiprocessing.Manager",
                 side_effect=fake_manager_factory,
             ),
             patch(
-                "neteng.test_infra.dne.taac.libs.periodic_task_worker.time.sleep"
+                "taac.libs.periodic_task_worker.time.sleep"
             ) as mock_sleep,
         ):
             result = _make_sync_manager(logger)
@@ -72,11 +72,11 @@ class MakeSyncManagerTest(unittest.TestCase):
 
         with (
             patch(
-                "neteng.test_infra.dne.taac.libs.periodic_task_worker"
+                "taac.libs.periodic_task_worker"
                 ".multiprocessing.Manager",
                 side_effect=EOFError("persistent failure"),
             ),
-            patch("neteng.test_infra.dne.taac.libs.periodic_task_worker.time.sleep"),
+            patch("taac.libs.periodic_task_worker.time.sleep"),
         ):
             with self.assertRaises(EOFError):
                 _make_sync_manager(logger)
@@ -104,11 +104,11 @@ class MakeSyncManagerTest(unittest.TestCase):
 
         with (
             patch(
-                "neteng.test_infra.dne.taac.libs.periodic_task_worker"
+                "taac.libs.periodic_task_worker"
                 ".multiprocessing.Manager",
                 side_effect=factory,
             ),
-            patch("neteng.test_infra.dne.taac.libs.periodic_task_worker.time.sleep"),
+            patch("taac.libs.periodic_task_worker.time.sleep"),
         ):
             result = _make_sync_manager(logger)
 
