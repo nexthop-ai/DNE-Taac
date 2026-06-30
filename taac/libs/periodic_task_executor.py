@@ -50,6 +50,18 @@ class PeriodicTaskExecutor:
             if thread.is_alive():
                 thread.join(timeout=5)
 
+        # Shut down each worker's SyncManager server. Without this, the
+        # manager processes leak across playbooks and the next playbook's
+        # PeriodicTaskWorker.__init__ races the new Manager() spawn handshake
+        # under accumulated FD/process pressure (EOFError on connection.recv).
+        for worker in self.periodic_task_workers:
+            try:
+                worker.shutdown_manager()
+            except Exception as e:
+                self.logger.warning(
+                    f"shutdown_manager failed for {worker.periodic_task.name}: {e!r}"
+                )
+
     def create_periodic_tasks(self) -> None:
         for periodic_task in self.periodic_tasks:
             worker = PeriodicTaskWorker(
