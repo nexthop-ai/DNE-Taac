@@ -2,6 +2,9 @@
 
 # pyre-unsafe
 
+from taac.testconfigs.fpf.fpf_shared_injection_suite import (
+    TEST_CONFIG as FPF_SHARED_INJECTION_SUITE,
+)
 from taac.testconfigs.fpf.fpf_stress_test_config import (
     TEST_CONFIG as FPF_STRESS_TEST_CONFIG,
 )
@@ -31,9 +34,6 @@ from taac.testconfigs.fpf.fpf_tc17_link_drain import (
 )
 from taac.testconfigs.fpf.fpf_tc19_device_drain import (
     TEST_CONFIG as FPF_TC19_DEVICE_DRAIN,
-)
-from taac.testconfigs.fpf.fpf_tc20_device_undrain import (
-    TEST_CONFIG as FPF_TC20_DEVICE_UNDRAIN,
 )
 from taac.testconfigs.fpf.fpf_tc21_prod_prefix_drain_link import (
     TEST_CONFIG as FPF_TC21_PROD_PREFIX_DRAIN_LINK,
@@ -73,9 +73,6 @@ from taac.testconfigs.fpf.fpf_tc32_downlink_flaps import (
 )
 from taac.testconfigs.fpf.fpf_tc33_gtsw_stsw_links_down import (
     TEST_CONFIG as FPF_TC33_GTSW_STSW_LINKS_DOWN,
-)
-from taac.testconfigs.fpf.fpf_tc34_stsw_drain_reinject import (
-    TEST_CONFIG as FPF_TC34_STSW_DRAIN_REINJECT,
 )
 from taac.testconfigs.fpf.fpf_tc35_stsw_undrain_reinject import (
     TEST_CONFIG as FPF_TC35_STSW_UNDRAIN_REINJECT,
@@ -139,6 +136,7 @@ from taac.testconfigs.fpf.fpf_tc55_gtsw_device_reboot import (
 )
 
 __all__ = [
+    "FPF_SHARED_INJECTION_SUITE",
     "FPF_STRESS_TEST_CONFIG",
     "FPF_TC04_WEDGE_AGENT_WARMBOOT",
     "FPF_TC05_BGP_GR_WITHIN_WINDOW",
@@ -149,7 +147,6 @@ __all__ = [
     "FPF_TC16_INTERFACE_ENABLE",
     "FPF_TC17_LINK_DRAIN",
     "FPF_TC19_DEVICE_DRAIN",
-    "FPF_TC20_DEVICE_UNDRAIN",
     "FPF_TC21_PROD_PREFIX_DRAIN_LINK",
     "FPF_TC22_PROD_PREFIX_DRAIN_DEVICE",
     "FPF_TC23_BGP_RESTART",
@@ -163,7 +160,6 @@ __all__ = [
     "FPF_TC31_FSDB_ENABLE_RECOVER",
     "FPF_TC32_DOWNLINK_FLAPS",
     "FPF_TC33_GTSW_STSW_LINKS_DOWN",
-    "FPF_TC34_STSW_DRAIN_REINJECT",
     "FPF_TC35_STSW_UNDRAIN_REINJECT",
     "FPF_TC36_STSW_ALL_CONNECTIONS_DOWN",
     "FPF_TC37_NIC_SIDE_LINK_FLAP",

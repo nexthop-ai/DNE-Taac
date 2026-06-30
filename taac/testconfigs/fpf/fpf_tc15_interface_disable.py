@@ -259,6 +259,12 @@ def create_fpf_tc15_test_config() -> TestConfig:
         # (The disrupt half is a port DISABLE — the plane goes DOWN, not DRAINED —
         # so no plane-status postcheck is added there.)
         plane_status_check=True,
+        # Recovery half: the re-enabled plane comes back mid-window (a brief
+        # plane UNKNOWN can latch while HRT re-subscribes), so the convergence /
+        # remote-failure / prod-prefix / plane-status checks judge only that the
+        # LAST in-window sample reached the golden/UP state — the recovery
+        # transient is tolerated (mid-window blips ignored).
+        convergence_blip_mode="last_sample",
     )
 
     setup_tasks = []

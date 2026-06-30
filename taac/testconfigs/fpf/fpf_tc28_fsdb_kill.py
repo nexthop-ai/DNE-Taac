@@ -146,6 +146,7 @@ def create_fpf_tc28_test_config() -> TestConfig:
     disrupt_playbook = create_fpf_disrupt_window_playbook(
         playbook_name="fpf_tc28_fsdb_kill_disrupt",
         disruption_steps=disrupt_steps,
+        spray_hosts=spray,
         postchecks=[
             create_fpf_hrt_session_stat_check(
                 mode="disruption",
@@ -179,6 +180,13 @@ def create_fpf_tc28_test_config() -> TestConfig:
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,
         lanes=INJECTED_LANES,
+        # fsdb kill is DISRUPTIVE: metrics blip mid-window during the kill and
+        # reconverge by end. MODE A (last_sample) asserts only the last in-window
+        # sample holds the golden value.
+        convergence_blip_mode="last_sample",
+        # Expected mid-disruption STSW packet loss to purged lane-0 dests —
+        # informational, not a hard fail (user-confirmed).
+        ods_discard_informational=True,
     )
 
     return TestConfig(

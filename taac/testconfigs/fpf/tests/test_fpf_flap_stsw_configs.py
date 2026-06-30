@@ -1,7 +1,7 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 # pyre-unsafe
-"""Unit tests for the FPF flap + STSW disruption test configs (TC32-TC35).
+"""Unit tests for the FPF flap + STSW disruption test configs (TC32, TC33, TC35).
 
 These configs build at import time with no device access, so the tests assert
 the static TestConfig structure: the two-playbook (disruption-only +
@@ -24,11 +24,6 @@ from taac.testconfigs.fpf.fpf_tc33_gtsw_stsw_links_down import (
     LONGEVITY_SEC as TC33_LONGEVITY_SEC,
     TEST_CONFIG as TC33,
     UPLINK_NEIGHBOR_PATTERN,
-)
-from taac.testconfigs.fpf.fpf_tc34_stsw_drain_reinject import (
-    DRAIN_COMMUNITY,
-    LONGEVITY_SEC as TC34_LONGEVITY_SEC,
-    TEST_CONFIG as TC34,
 )
 from taac.testconfigs.fpf.fpf_tc35_stsw_undrain_reinject import (
     LONGEVITY_SEC as TC35_LONGEVITY_SEC,
@@ -176,28 +171,6 @@ class TestRapidFlapConfigs(unittest.TestCase):
 
 
 class TestStswDrainReinjectConfigs(unittest.TestCase):
-    def test_tc34_drain_step_ordering_and_reinject(self):
-        self.assertEqual(TC34.name, "fpf_tc34_stsw_drain_reinject")
-        self.assertIn("fpf", TC34.tags or [])
-        self.assertEqual(len(TC34.playbooks), 2)
-        _disrupt_playbook_has_no_checks(TC34, self)
-        _longevity_playbook_has_checks(TC34, self)
-        _longevity_carries_v2_stable_check_set(TC34, self, vf_grouped=True)
-        self.assertEqual(TC34_LONGEVITY_SEC, 300)
-
-        steps = _steps(TC34.playbooks[0])
-        # drain, reinject, longevity.
-        self.assertEqual(len(steps), 3)
-        self.assertEqual(steps[0].name, StepName.DRAIN_UNDRAIN_STEP)
-        self.assertEqual(steps[1].name, StepName.FPF_BGP_PREFIX_INJECTION_STEP)
-        self.assertEqual(steps[2].name, StepName.LONGEVITY_STEP)
-        self.assertEqual(_params(steps[2])["duration"], 300)
-
-        # Drain appends the drain-marker community to the reinjected prefixes.
-        inj = _params(steps[1])
-        self.assertIn(DRAIN_COMMUNITY, inj["community_list"])
-        self.assertEqual(inj["count"], 1000)
-
     def test_tc35_undrain_step_ordering_and_base_community(self):
         self.assertEqual(TC35.name, "fpf_tc35_stsw_undrain_reinject")
         self.assertIn("fpf", TC35.tags or [])

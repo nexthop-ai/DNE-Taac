@@ -121,6 +121,7 @@ class FpfFsdbRibmapConvergenceHealthCheck(
         signal3_duration = check_params.get(
             "signal3_stability_duration_sec", DEFAULT_SIGNAL3_STABILITY_DURATION_SEC
         )
+        stability_mode = check_params.get("stability_mode", "strict")
 
         per_lane_results = collector.evaluate_per_device_window(
             window_start=window_start,
@@ -139,6 +140,7 @@ class FpfFsdbRibmapConvergenceHealthCheck(
                 signal1_e2e_max_sec=signal1_max,
                 signal2_local_max_sec=signal2_max,
                 signal3_stability_duration_sec=signal3_duration,
+                stability_mode=stability_mode,
             )
 
         for r in per_lane_results:

@@ -61,6 +61,11 @@ PREFIX_COUNT = VF_GROUP_PREFIX_COUNT
 INJECT_SETTLE_SEC = 300
 INJECTED_LANES = ALL_LANES
 STABILIZATION_DELAY_SEC = 300
+# BGP re-enable converges routes in ~1min, but the lane-0 RDMA (beth0) traffic
+# re-ramps slower (observed 2-7min). Settle this long after recovery so the
+# host-spray's avg(1m),latest reads the recovered state — the generic floor then
+# positively asserts lane-0 data-plane recovery. Bump if beth0 is still ramping.
+POST_RECOVERY_SETTLE_SEC = 300
 
 PROD_PREFIX_HOST = GPU_HOSTS[0]
 PROD_PREFIX_DEVICE_ID = 0
@@ -92,6 +97,14 @@ def create_fpf_tc06_test_config() -> TestConfig:
             timeout=600,
             description="Wait for BGP convergence after GR expiry recovery",
         ),
+        create_longevity_step(
+            duration=POST_RECOVERY_SETTLE_SEC,
+            description=(
+                f"Settle {POST_RECOVERY_SETTLE_SEC}s after BGP recovery for "
+                "lane-0 data-plane (beth0) re-ramp before host-spray asserts "
+                "the floor"
+            ),
+        ),
     ]
 
     playbook = create_fpf_hardening_playbook_v2(
@@ -109,6 +122,13 @@ def create_fpf_tc06_test_config() -> TestConfig:
         hrt_memory_hosts=HRT_MEMORY_HOSTS,
         hrt_driver_hosts=HRT_MEMORY_HOSTS,
         spray_hosts=spray,
+        # CONTRACT: a BGP disruption on the DUT GTSW impacts BOTH the local and the
+        # remote DUT host (unlike fsdb, which is local-only): BGP-GR-beyond purges
+        # lane-0 routes fabric-wide → beth0 drains on BOTH GPU hosts, then recovers.
+        # Rather than exempt beth0 from the generic floor, the POST_RECOVERY_SETTLE
+        # step above lets the host-spray's avg(1m),latest read AFTER the beth0
+        # re-ramp, so the floor positively ASSERTS lane-0 data-plane recovery on all
+        # 4 lanes of both hosts (recovery is monotonic — the last minute is safe).
         # 8-plane: prefixes injected once by the setup task; check all 8 lanes.
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,
@@ -123,10 +143,15 @@ def create_fpf_tc06_test_config() -> TestConfig:
         # fsdb/HRT are coupled: a brief HRT FSDB-session census dip is expected
         # across a GR; skip the postcheck (precheck still asserts 32/32 baseline).
         skip_fsdb_session_postcheck=True,
-        # HRT negative-route count blips during the GR-beyond purge and clears
-        # afterwards (~36s, last=0); assert only the last sample (reconverged),
-        # not zero-across-the-whole-window.
-        remote_failure_last_sample=True,
+        # GR-beyond (DISRUPTIVE: routes purge past the GR window): the metric
+        # legitimately shows failure values mid-window. MODE A (last_sample)
+        # asserts only that the LAST in-window sample reconverged to the golden
+        # value; mid-window drops are ignored — applied to the convergence
+        # Signal-3, HRT remote-failure, and prod-prefix checks.
+        convergence_blip_mode="last_sample",
+        # Expected mid-disruption STSW packet loss to purged lane-0 dests —
+        # informational, not a hard fail (user-confirmed).
+        ods_discard_informational=True,
     )
 
     return TestConfig(

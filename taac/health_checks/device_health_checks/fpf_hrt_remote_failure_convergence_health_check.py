@@ -66,7 +66,7 @@ class FpfHrtRemoteFailureConvergenceHealthCheck(
         # lanes already impaired at precheck when the config opted in — a
         # remote-failure on a known-degraded lab lane is PRE-EXISTING.
         if (
-            direction in ("stable", "stable_last_sample")
+            direction in ("stable", "stable_last_sample", "stable_skip_null_strict")
             and get_allow_baseline_failures()
         ):
             baseline = baseline_impaired_lane_union()
@@ -125,7 +125,7 @@ class FpfHrtRemoteFailureConvergenceHealthCheck(
         # injection artifact as a drain-time regression. Falls back to tc_start
         # when no disruption time was recorded (disruption_time defaults to 0.0).
         default_start = tc_start if tc_start else window_end - lookback_sec
-        if direction in ("stable", "stable_last_sample"):
+        if direction in ("stable", "stable_last_sample", "stable_skip_null_strict"):
             disruption_ts = get_disruption_time()
             if disruption_ts > 0:
                 default_start = disruption_ts
@@ -263,8 +263,8 @@ class FpfHrtRemoteFailureConvergenceHealthCheck(
         direction: str,
         max_convergence_sec: int,
     ) -> t.Tuple[int, bool, int, t.Optional[float], str]:
-        if direction == "stable":
-            return self._evaluate_stable_from_rows(lane_id, rows)
+        if direction in ("stable", "stable_last_sample", "stable_skip_null_strict"):
+            return self._evaluate_stable_from_rows(lane_id, rows, direction)
         if direction == "drain":
             return self._evaluate_drain_from_rows(
                 lane_id, expected, rows, max_convergence_sec
@@ -277,27 +277,48 @@ class FpfHrtRemoteFailureConvergenceHealthCheck(
         self,
         lane_id: int,
         rows: t.List[t.Dict[str, t.Any]],
+        direction: str = "stable",
     ) -> t.Tuple[int, bool, int, t.Optional[float], str]:
+        # A remote-failure count of 0 = healthy/golden; nonzero = failure. The
+        # ``direction`` selects the per-sample blip contract via the shared
+        # evaluate_blip_series helper (golden value 0). A row that lacks this
+        # lane's count is a null/missing sample (a collection blip).
+        from taac.libs.fpf.fpf_stress_checks import (
+            BLIP_MODE_LAST_SAMPLE,
+            BLIP_MODE_SKIP_NULL_STRICT,
+            BLIP_MODE_STRICT,
+            evaluate_blip_series,
+        )
+
+        mode = {
+            "stable": BLIP_MODE_STRICT,
+            "stable_last_sample": BLIP_MODE_LAST_SAMPLE,
+            "stable_skip_null_strict": BLIP_MODE_SKIP_NULL_STRICT,
+        }.get(direction, BLIP_MODE_STRICT)
+
+        series: t.List[t.Optional[int]] = []
         max_seen = 0
-        nonzero_count = 0
-        total_rows = 0
         for r in rows:
             lane_counts = r.get("lane_counts", [])
             if lane_id >= len(lane_counts):
+                # Strict mode skips missing-lane rows entirely (legacy behaviour);
+                # the blip-aware modes record them as null/missing samples.
+                if mode != BLIP_MODE_STRICT:
+                    series.append(None)
                 continue
-            total_rows += 1
             count = lane_counts[lane_id]
             if count > max_seen:
                 max_seen = count
-            if count != 0:
-                nonzero_count += 1
-        passed = nonzero_count == 0
-        detail = (
-            f"stable at 0 across {total_rows} samples"
-            if passed
-            else f"saw nonzero in {nonzero_count}/{total_rows} samples (max={max_seen})"
+            series.append(count)
+
+        passed, detail = evaluate_blip_series(series, 0, mode)
+        return (
+            lane_id,
+            passed,
+            max_seen,
+            None,
+            f"[{direction}] {detail} (max={max_seen})",
         )
-        return (lane_id, passed, max_seen, None, detail)
 
     def _evaluate_drain_from_rows(
         self,

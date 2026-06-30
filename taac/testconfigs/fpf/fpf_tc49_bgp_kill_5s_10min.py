@@ -131,6 +131,7 @@ def create_fpf_tc49_test_config() -> TestConfig:
     disrupt_playbook = create_fpf_disrupt_window_playbook(
         playbook_name="fpf_tc49_bgp_kill_5s_10min_disrupt",
         disruption_steps=disrupt_steps,
+        spray_hosts=spray,
         postchecks=build_kill_disrupt_postchecks(
             killed_service=KILLED_SERVICE,
             observer_gtsws=OBSERVER_GTSWS,
@@ -164,6 +165,12 @@ def create_fpf_tc49_test_config() -> TestConfig:
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,
         lanes=INJECTED_LANES,
+        # bgp kill is DISRUPTIVE: metrics blip mid-window and reconverge by end.
+        # MODE A (last_sample) asserts only the last in-window sample holds golden.
+        convergence_blip_mode="last_sample",
+        # Expected mid-disruption STSW packet loss to purged lane-0 dests —
+        # informational, not a hard fail (user-confirmed).
+        ods_discard_informational=True,
     )
 
     return TestConfig(

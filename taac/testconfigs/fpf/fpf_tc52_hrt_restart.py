@@ -129,6 +129,9 @@ def create_fpf_tc52_test_config() -> TestConfig:
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,
         lanes=INJECTED_LANES,
+        # Expected mid-disruption STSW packet loss to purged lane-0 dests —
+        # informational, not a hard fail (user-confirmed).
+        ods_discard_informational=True,
     )
 
     # Playbook 2: no-churn stable-state soak — confirms the recovered state holds.

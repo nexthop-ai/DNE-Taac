@@ -2373,6 +2373,7 @@ def create_fpf_fsdb_ribmap_convergence_check(
     signal3_stability_duration_sec: t.Optional[float] = None,
     mode: t.Optional[str] = None,
     reconverge_sla_sec: t.Optional[float] = None,
+    stability_mode: str = "strict",
     check_id: t.Optional[str] = None,
 ) -> PointInTimeHealthCheck:
     """FPF_FSDB_RIBMAP_CONVERGENCE_CHECK — FSDB ribMap convergence per lane.
@@ -2380,6 +2381,13 @@ def create_fpf_fsdb_ribmap_convergence_check(
     mode="restart": tolerate null/unresponsive polls during an FSDB restart and
     assert each device's ribMap returns to expected_matched within
     ``reconverge_sla_sec`` of the recorded restart moment.
+
+    ``stability_mode`` selects the Signal-3 (post-convergence stability) blip
+    contract: "strict" (default, every sample held at expected — byte-identical
+    to the legacy behaviour), "last_sample" (MODE A — only the last sample must
+    equal expected, mid-window drops ignored), or "skip_null_strict" (MODE B —
+    tolerate null/missing samples but every non-null sample, and the last, must
+    equal expected).
     """
     params: t.Dict[str, t.Any] = {
         "lane_map": lane_map or {},
@@ -2403,6 +2411,8 @@ def create_fpf_fsdb_ribmap_convergence_check(
         params["mode"] = mode
     if reconverge_sla_sec is not None:
         params["reconverge_sla_sec"] = reconverge_sla_sec
+    if stability_mode != "strict":
+        params["stability_mode"] = stability_mode
     return PointInTimeHealthCheck(
         name=hc_types.CheckName.FPF_FSDB_RIBMAP_CONVERGENCE_CHECK,
         check_params=Params(json_params=json.dumps(params)),
@@ -2423,6 +2433,7 @@ def create_fpf_bgp_rib_convergence_check(
     signal3_stability_duration_sec: t.Optional[float] = None,
     mode: t.Optional[str] = None,
     reconverge_sla_sec: t.Optional[float] = None,
+    stability_mode: str = "strict",
     check_id: t.Optional[str] = None,
 ) -> PointInTimeHealthCheck:
     """FPF_BGP_RIB_CONVERGENCE_CHECK — BGP RIB convergence per lane.
@@ -2430,6 +2441,12 @@ def create_fpf_bgp_rib_convergence_check(
     mode="restart": tolerate null/unresponsive polls during a bgpd (or
     wedge_agent warmboot) restart and assert each device's BGP RIB returns to
     expected_matched within ``reconverge_sla_sec`` of the recorded restart moment.
+
+    ``stability_mode`` selects the Signal-3 (post-convergence stability) blip
+    contract: "strict" (default, byte-identical to legacy), "last_sample"
+    (MODE A — only the last sample must equal expected), or "skip_null_strict"
+    (MODE B — tolerate null samples; every non-null sample, and the last, must
+    equal expected).
     """
     params: t.Dict[str, t.Any] = {
         "lane_map": lane_map or {},
@@ -2453,6 +2470,8 @@ def create_fpf_bgp_rib_convergence_check(
         params["mode"] = mode
     if reconverge_sla_sec is not None:
         params["reconverge_sla_sec"] = reconverge_sla_sec
+    if stability_mode != "strict":
+        params["stability_mode"] = stability_mode
     return PointInTimeHealthCheck(
         name=hc_types.CheckName.FPF_BGP_RIB_CONVERGENCE_CHECK,
         check_params=Params(json_params=json.dumps(params)),
@@ -2475,6 +2494,7 @@ def create_fpf_hrt_bulk_convergence_check(
     signal1_e2e_max_sec: t.Optional[float] = None,
     signal2_local_max_sec: t.Optional[float] = None,
     signal3_stability_duration_sec: t.Optional[float] = None,
+    stability_mode: str = "strict",
     check_id: t.Optional[str] = None,
 ) -> PointInTimeHealthCheck:
     """FPF_HRT_BULK_CONVERGENCE_CHECK — HRT bulk convergence per lane.
@@ -2487,6 +2507,12 @@ def create_fpf_hrt_bulk_convergence_check(
     ``only_hosts`` restricts evaluation to those GPU host(s) — for a link event
     only the impacted host's lane withdraws, so the unimpacted remote host must
     be excluded or it is a false FAIL.
+
+    ``stability_mode`` selects the Signal-3 (post-convergence stability) blip
+    contract for the unimpacted injected lanes: "strict" (default, byte-identical
+    to legacy), "last_sample" (MODE A — only the last sample must equal expected),
+    or "skip_null_strict" (MODE B — tolerate null samples; every non-null sample,
+    and the last, must equal expected).
     """
     params: t.Dict[str, t.Any] = {
         "lanes": lanes or [],
@@ -2514,6 +2540,8 @@ def create_fpf_hrt_bulk_convergence_check(
         params["signal2_local_max_sec"] = signal2_local_max_sec
     if signal3_stability_duration_sec is not None:
         params["signal3_stability_duration_sec"] = signal3_stability_duration_sec
+    if stability_mode != "strict":
+        params["stability_mode"] = stability_mode
     return PointInTimeHealthCheck(
         name=hc_types.CheckName.FPF_HRT_BULK_CONVERGENCE_CHECK,
         check_params=Params(json_params=json.dumps(params)),
@@ -2589,6 +2617,7 @@ def create_fpf_prod_hrt_prefix_stability_check(
     settle_sec: t.Optional[float] = None,
     window_start: t.Optional[float] = None,
     window_end: t.Optional[float] = None,
+    stability_mode: str = "strict",
     check_id: t.Optional[str] = None,
 ) -> PointInTimeHealthCheck:
     """FPF_PROD_HRT_PREFIX_STABILITY_CHECK — production HRT prefix reachability.
@@ -2638,6 +2667,8 @@ def create_fpf_prod_hrt_prefix_stability_check(
         params["window_start"] = window_start
     if window_end is not None:
         params["window_end"] = window_end
+    if stability_mode != "strict":
+        params["stability_mode"] = stability_mode
     return PointInTimeHealthCheck(
         name=hc_types.CheckName.FPF_PROD_HRT_PREFIX_STABILITY_CHECK,
         check_params=Params(json_params=json.dumps(params)),
@@ -2651,6 +2682,7 @@ def create_fpf_hrt_plane_status_check(
     expected_planes: t.Optional[t.List[int]] = None,
     lookback_sec: int = 900,
     settle_sec: t.Optional[float] = None,
+    stability_mode: str = "strict",
     window_start: t.Optional[float] = None,
     window_end: t.Optional[float] = None,
     check_id: t.Optional[str] = None,
@@ -2668,6 +2700,12 @@ def create_fpf_hrt_plane_status_check(
     every other plane stays UP. Use for link drain / device drain. The window
     auto-anchors at the recorded disruption time; SKIPs if the disruption was
     verified ineffective.
+
+    ``stability_mode`` selects the all_up blip contract: "strict" (default,
+    unchanged), "last_sample" (MODE A — disruptive coldboot/kill/reboot: only the
+    last sample must be UP; a mid-window transient that recovers is tolerated), or
+    "skip_null_strict" (MODE B — graceful: every non-null sample UP, nulls
+    tolerated). Ignored by mode="drain".
     """
     params: t.Dict[str, t.Any] = {"mode": mode, "lookback_sec": lookback_sec}
     if impacted_planes is not None:
@@ -2676,6 +2714,8 @@ def create_fpf_hrt_plane_status_check(
         params["expected_planes"] = expected_planes
     if settle_sec is not None:
         params["settle_sec"] = settle_sec
+    if stability_mode != "strict":
+        params["stability_mode"] = stability_mode
     if window_start is not None:
         params["window_start"] = window_start
     if window_end is not None:

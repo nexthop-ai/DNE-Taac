@@ -18,6 +18,11 @@ from taac.libs.fpf.fpf_collector_registry import (
     get_test_case_start_time,
 )
 from taac.libs.fpf.fpf_prod_hrt_prefix import normalize_prefix
+from taac.libs.fpf.fpf_stress_checks import (
+    BLIP_MODE_LAST_SAMPLE,
+    BLIP_MODE_SKIP_NULL_STRICT,
+    evaluate_blip_series,
+)
 from taac.health_check.health_check import types as hc_types
 
 # Fallback expected steady-state reachability (validated MWG2 FPF lab: VF1
@@ -128,6 +133,64 @@ class _HostResult:
         self.impacts: t.List[t.Dict[str, t.Any]] = []
 
 
+def _sample_null_fields(rb: t.Any) -> t.List[str]:
+    """Plane fields on ``rb`` that are null/non-list (a collection blip)."""
+    bad: t.List[str] = []
+    for fld in _LIST_FIELDS:
+        val = getattr(rb, fld, None)
+        if val is None or not isinstance(val, list):
+            bad.append(fld)
+    return bad
+
+
+def _sample_matches_baseline(rb: t.Any, baseline: t.Dict[str, t.List[int]]) -> bool:
+    """Every plane-set field of ``rb`` equals the golden baseline set."""
+    for fld in _LIST_FIELDS:
+        if sorted(getattr(rb, fld)) != baseline[fld]:
+            return False
+    return True
+
+
+def _rb_tuple(rb: t.Any) -> t.Tuple[t.Tuple[int, ...], ...]:
+    """Comparable plane-set tuple for one (non-null) sample."""
+    return tuple(tuple(sorted(getattr(rb, fld))) for fld in _LIST_FIELDS)
+
+
+def _baseline_tuple(
+    baseline: t.Dict[str, t.List[int]],
+) -> t.Tuple[t.Tuple[int, ...], ...]:
+    """Comparable plane-set tuple for the golden baseline."""
+    return tuple(tuple(baseline[fld]) for fld in _LIST_FIELDS)
+
+
+def _first_regressing_impact(
+    display: str,
+    samples: t.List[t.Any],
+    baseline: t.Dict[str, t.List[int]],
+    stability_mode: str,
+) -> t.Optional[t.Dict[str, t.Any]]:
+    """Locate the regressing non-null sample to report as the per-prefix impact.
+
+    For MODE A (last_sample) the regressing sample is the last non-null one (only
+    it is asserted); for MODE B (skip_null_strict) it is the first non-null
+    sample that fails to match the baseline.
+    """
+    non_null = [
+        (ts_str, rb) for _ts, ts_str, rb in samples if not _sample_null_fields(rb)
+    ]
+    if not non_null:
+        return None
+    if stability_mode == BLIP_MODE_LAST_SAMPLE:
+        ts_str, rb = non_null[-1]
+        if _sample_matches_baseline(rb, baseline):
+            return None
+        return _make_impact(display, ts_str, rb, baseline)
+    for ts_str, rb in non_null:
+        if not _sample_matches_baseline(rb, baseline):
+            return _make_impact(display, ts_str, rb, baseline)
+    return None
+
+
 def _evaluate_host(
     host: str,
     collector: t.Any,
@@ -135,8 +198,20 @@ def _evaluate_host(
     window_end: float,
     target_norms: t.Optional[t.Set[str]],
     fixed_expected: t.Optional[t.Dict[str, t.List[int]]],
+    stability_mode: str = "strict",
 ) -> _HostResult:
-    """Per-prefix, baseline-relative compliance + integrity for one host."""
+    """Per-prefix, baseline-relative compliance + integrity for one host.
+
+    ``stability_mode`` selects the per-sample blip contract on each prefix's
+    plane-set series (reachable/drained/unreachable/plane_up):
+      "strict" (default) — every non-null sample must match the baseline and no
+        sample may have a null plane field (byte-identical legacy behaviour).
+      "last_sample" (MODE A) — mid-window mismatches are ignored; only the LAST
+        non-null sample's plane-sets must equal the baseline.
+      "skip_null_strict" (MODE B) — null/missing samples are TOLERATED (not an
+        integrity failure); every NON-NULL sample's plane-sets must equal the
+        baseline, and the last non-null must too.
+    """
     res = _HostResult(host)
     rows = collector.get_rows_in_window(window_start, window_end)
     timeline = _prefix_samples(rows, target_norms)
@@ -144,9 +219,11 @@ def _evaluate_host(
         res.status = "SKIP"
         return res
 
-    # Signal 2 (integrity): poll timeouts → null data points.
+    # Signal 2 (integrity): poll timeouts → null data points. Under MODE B
+    # (skip_null_strict) collection blips are tolerated, so a poll timeout is not
+    # counted as an integrity failure.
     timeout_count = collector.timeout_count_in_window(window_start, window_end)
-    if timeout_count > 0:
+    if timeout_count > 0 and stability_mode != "skip_null_strict":
         res.null_issues.append(
             f"{timeout_count} poll timeout(s) recorded null data (>2min)"
         )
@@ -159,38 +236,9 @@ def _evaluate_host(
         # Each prefix uses its OWN baseline (first in-window sample) unless a
         # fixed expected set was supplied via check_params.
         baseline = fixed_expected or _baseline_of(samples[0][2])
-        first_impact: t.Optional[t.Dict[str, t.Any]] = None
-        for _ts, ts_str, rb in samples:
-            # Integrity: every plane field must be a real integer list.
-            null_field = False
-            for fld in _LIST_FIELDS:
-                val = getattr(rb, fld, None)
-                if val is None or not isinstance(val, list):
-                    res.null_issues.append(f"{display}.{fld} null at {ts_str}")
-                    null_field = True
-            if null_field:
-                continue
-            res.n_samples += 1
-            # Compliance: every field must match the baseline set.
-            mismatch = False
-            for fld in _LIST_FIELDS:
-                if sorted(getattr(rb, fld)) != baseline[fld]:
-                    mismatch = True
-            if mismatch and first_impact is None:
-                base_r = set(baseline["reachable_planes"])
-                cur_r = set(rb.reachable_planes)
-                first_impact = {
-                    "ts_str": ts_str,
-                    "lost": sorted(base_r - cur_r),
-                    "gained": sorted(cur_r - base_r),
-                    "baseline": baseline,
-                    "rb": rb,
-                }
-                res.compliance_issues.append(
-                    f"{display} regressed at {ts_str}: reachable "
-                    f"{_fmt(baseline['reachable_planes'])}->"
-                    f"{_fmt(sorted(rb.reachable_planes))}"
-                )
+        first_impact = _evaluate_prefix_series(
+            res, display, samples, baseline, stability_mode
+        )
         if first_impact is not None:
             first_impact["display"] = display
             first_impact["device_ids"] = sorted(samples[0][2].device_ids)
@@ -203,6 +251,84 @@ def _evaluate_host(
     else:
         res.status = "PASS"
     return res
+
+
+def _evaluate_prefix_series(
+    res: _HostResult,
+    display: str,
+    samples: t.List[t.Any],
+    baseline: t.Dict[str, t.List[int]],
+    stability_mode: str,
+) -> t.Optional[t.Dict[str, t.Any]]:
+    """Evaluate one prefix's plane-set series under ``stability_mode``.
+
+    Appends to ``res.null_issues`` / ``res.compliance_issues`` as needed and
+    returns the first impact dict (or None) for the per-host report.
+    """
+    if stability_mode in (BLIP_MODE_LAST_SAMPLE, BLIP_MODE_SKIP_NULL_STRICT):
+        # Drive the pass/fail verdict through the shared blip-handling helper:
+        # each sample becomes a comparable plane-set tuple (or None for a null
+        # collection blip) and ``expected`` is the golden baseline tuple. The
+        # per-prefix impact reporting (first regressing non-null sample) is kept
+        # for the human-readable per-host report.
+        expected_tuple = _baseline_tuple(baseline)
+        value_series = [
+            None if _sample_null_fields(rb) else _rb_tuple(rb)
+            for _ts, _ts_str, rb in samples
+        ]
+        res.n_samples += sum(1 for v in value_series if v is not None)
+        passed, detail = evaluate_blip_series(
+            value_series, expected_tuple, stability_mode
+        )
+        if passed:
+            return None
+        impact = _first_regressing_impact(display, samples, baseline, stability_mode)
+        if impact is not None:
+            res.compliance_issues.append(
+                f"{display} regressed at {impact['ts_str']}: reachable "
+                f"{_fmt(baseline['reachable_planes'])}->"
+                f"{_fmt(sorted(impact['rb'].reachable_planes))} "
+                f"([{stability_mode}] {detail})"
+            )
+        else:
+            res.compliance_issues.append(f"{display}: [{stability_mode}] {detail}")
+        return impact
+
+    # strict (default): null plane field → integrity failure; first mismatch →
+    # compliance failure.
+    first_impact: t.Optional[t.Dict[str, t.Any]] = None
+    for _ts, ts_str, rb in samples:
+        null_fields = _sample_null_fields(rb)
+        if null_fields:
+            for fld in null_fields:
+                res.null_issues.append(f"{display}.{fld} null at {ts_str}")
+            continue
+        res.n_samples += 1
+        if not _sample_matches_baseline(rb, baseline) and first_impact is None:
+            first_impact = _make_impact(display, ts_str, rb, baseline)
+            res.compliance_issues.append(
+                f"{display} regressed at {ts_str}: reachable "
+                f"{_fmt(baseline['reachable_planes'])}->"
+                f"{_fmt(sorted(rb.reachable_planes))}"
+            )
+    return first_impact
+
+
+def _make_impact(
+    display: str,
+    ts_str: str,
+    rb: t.Any,
+    baseline: t.Dict[str, t.List[int]],
+) -> t.Dict[str, t.Any]:
+    base_r = set(baseline["reachable_planes"])
+    cur_r = set(rb.reachable_planes)
+    return {
+        "ts_str": ts_str,
+        "lost": sorted(base_r - cur_r),
+        "gained": sorted(cur_r - base_r),
+        "baseline": baseline,
+        "rb": rb,
+    }
 
 
 def _evaluate_host_transition(
@@ -579,6 +705,11 @@ class FpfProdHrtPrefixStabilityHealthCheck(
         )
 
         mode = check_params.get("mode", "stability")
+        # Blip-handling contract for the stability assertion (mode="stability"):
+        # "strict" (default), "last_sample" (MODE A — disruptive), or
+        # "skip_null_strict" (MODE B — graceful within-window). Ignored by the
+        # transition / local_drain / local_undrain modes.
+        stability_mode = check_params.get("stability_mode", "strict")
         # settle_sec: skip the first settle_sec of the window before evaluating
         # stability. Used by the restore/recovery phase: the per-prefix baseline
         # is the first IN-WINDOW sample, so without this the baseline captures the
@@ -692,6 +823,7 @@ class FpfProdHrtPrefixStabilityHealthCheck(
                     window_end,
                     target_norms,
                     fixed_expected,
+                    stability_mode=stability_mode,
                 )
             host_results.append(res)
             self.logger.info(

@@ -22385,9 +22385,13 @@ def _build_fpf_generic_checks(
     use_bgp_snapshot: bool = False,
     skip_fsdb_session_precheck: bool = False,
     skip_fsdb_session_postcheck: bool = False,
+    skip_port_state_precheck: bool = False,
     ods_discard_informational: bool = False,
     host_spray_label: str = "",
     host_spray_excluded_lanes_by_host: dict[str, list[str]] | None = None,
+    spray_impacted_by_host: dict | None = None,
+    spray_impacted_max_gbps: float | None = None,
+    spray_excluded_by_host: dict | None = None,
     assert_bgp_reconvergence: bool = False,
     reconvergence_service: str = "bgpd",
     reconvergence_sla_sec: float = 60.0,
@@ -22418,6 +22422,12 @@ def _build_fpf_generic_checks(
     checks AND the ODS discard/congestion counters are dropped, but the
     ODS-only HRT-mem / HRT-driver / host-spray and the prod-prefix / HRT-mem /
     HRT-driver prechecks are KEPT (they only need ODS/collector access).
+
+    ``spray_impacted_by_host`` (host -> ["beth0", ...]) + ``spray_impacted_max_gbps``
+    POSITIVELY assert those NIC lanes are drained (egress < the max) on the
+    host-spray check while the floor/spread are asserted only over the remaining
+    (genuinely unimpacted) lanes. Both default to None -> the host-spray check is
+    built exactly as before (byte-identical for callers that pass neither).
     """
     from taac.health_checks.healthcheck_definitions import (
         create_bgp_session_establish_check,
@@ -22450,7 +22460,12 @@ def _build_fpf_generic_checks(
                 if use_bgp_snapshot
                 else [create_bgp_session_establish_check(min_established_pct=0.5)]
             ),
-            create_port_state_check(),
+            # Port-state precheck. Skipped on a restore half that re-enables ports
+            # in-stage (skip_port_state_precheck): the preceding disrupt left the
+            # impacted uplinks DOWN, so a precheck (which runs before the re-enable
+            # step) would see the still-/just-re-enabled ports un-settled and FAIL.
+            # The postcheck re-asserts full port/plane recovery after the settle.
+            *([] if skip_port_state_precheck else [create_port_state_check()]),
             create_systemctl_active_state_check(services_json=services),
             create_unclean_exit_check(),
             create_device_core_dumps_check(),
@@ -22492,11 +22507,13 @@ def _build_fpf_generic_checks(
 
     # --- ODS discard/congestion counter postchecks (SSH-independent but
     # dropped in minimal mode alongside the generic SSH checks). ---
-    # The two DISCARD counters can be marked informational
-    # (``ods_discard_informational``) so a disruptive restart/coldboot — where
-    # transient in-flight packet loss is expected with live traffic — reports
-    # the breach (values + ODS link) without failing the test. The congestion
-    # counters stay hard checks (a restart should not cause congestion).
+    # All FOUR discard/congestion counters (in_dst_null_discard, in_discard,
+    # in_congestion, out_congestion) can be marked informational
+    # (``ods_discard_informational``) so a disruptive restart/coldboot/reboot —
+    # where transient in-flight packet loss AND congestion are expected with live
+    # traffic to purged/blackholed lane-0 dests — reports the breach (values + ODS
+    # link) without failing the test (per the user's bucket-#1 decision). Default
+    # False keeps GR-within / non-disruptive callers hard + byte-identical.
     ods_entity_desc = ",".join(ods_entities or (gtsws + trigger_stsws))
     ods_reduce = r"groupby(entity, (\S+?\.\S+?)\..*, %1),sum"
     ods_postchecks = [
@@ -22527,6 +22544,7 @@ def _build_fpf_generic_checks(
             reduce_desc=ods_reduce,
             counter_name="in_congestion",
             shorten_pass_url=True,
+            informational=ods_discard_informational,
             check_id="ods_in_congestion",
         ),
         create_fpf_ods_counter_check(
@@ -22536,6 +22554,7 @@ def _build_fpf_generic_checks(
             reduce_desc=ods_reduce,
             counter_name="out_congestion",
             shorten_pass_url=True,
+            informational=ods_discard_informational,
             check_id="ods_out_congestion",
         ),
     ]
@@ -22566,7 +22585,21 @@ def _build_fpf_generic_checks(
                 hosts=spray_hosts,
                 min_egress_gbps=FPF_ACTIVE_THRESHOLDS.host_spray_min_egress_gbps,
                 max_spread_gbps=FPF_ACTIVE_THRESHOLDS.host_spray_max_spread_gbps,
-                excluded_lanes_by_host=host_spray_excluded_lanes_by_host,
+                # Drain contract: the impacted NIC lanes (e.g. beth0) are asserted
+                # ~0 (egress < spray_impacted_max_gbps) while the floor/spread are
+                # judged only over the remaining lanes. None for both => unchanged.
+                impacted_lanes_by_host=spray_impacted_by_host or None,
+                impacted_max_gbps=(
+                    spray_impacted_max_gbps if spray_impacted_by_host else None
+                ),
+                # Excluded/recovering lanes are dropped from floor+spread entirely
+                # (NOT asserted drained). Two callers feed this: the STSW-drain
+                # ``host_spray_excluded_lanes_by_host`` and the GR-beyond/kill
+                # ``spray_excluded_by_host`` (disrupted lane that re-ramps). Only one
+                # is set per call. None for both => unchanged.
+                excluded_lanes_by_host=(
+                    host_spray_excluded_lanes_by_host or spray_excluded_by_host or None
+                ),
                 label=host_spray_label or None,
                 check_id="fpf_host_spray",
             )
@@ -22888,6 +22921,7 @@ def create_fpf_hardening_playbook_v2(
     fsdb_expected_total: int | None = None,
     skip_fsdb_session_precheck: bool = False,
     skip_fsdb_session_postcheck: bool = False,
+    skip_port_state_precheck: bool = False,
     hrt_memory_hosts: list[str] | None = None,
     hrt_driver_hosts: list[str] | None = None,
     spray_hosts: list[str] | None = None,
@@ -22897,6 +22931,9 @@ def create_fpf_hardening_playbook_v2(
     prod_prefix_recovery: bool = False,
     local_prod_prefixes: list[str] | None = None,
     impacted_planes_by_host: dict | None = None,
+    impacted_lanes_drained: list[int] | None = None,
+    impacted_spray_max_gbps: float = 10.0,
+    spray_recovering_by_host: dict | None = None,
     skip_injection: bool = False,
     rf_vf_groups: list | None = None,
     restart_ib_traffic_server: str | None = None,
@@ -22906,8 +22943,28 @@ def create_fpf_hardening_playbook_v2(
     reconvergence_sla_sec: float = 60.0,
     reconvergence_hosts: list[str] | None = None,
     remote_failure_last_sample: bool = False,
+    convergence_blip_mode: str = "strict",
+    ods_discard_informational: bool = False,
 ) -> Playbook:
     """FPF hardening playbook for use with long-lived collectors.
+
+    ``convergence_blip_mode`` selects the two-mode "blip handling" contract for
+    ALL convergence (BGP RIB / FSDB ribMap / HRT bulk Signal-3), HRT
+    remote-failure, and prod-prefix stability checks this playbook builds:
+
+      "strict" (default) — unchanged; every sample must hold at the golden value
+        (byte-identical to before for untouched callers).
+      "last_sample" (MODE A, DISRUPTIVE triggers: kill / agent coldboot / reboot
+        / GR-beyond / GR-out) — only the LAST in-window sample must equal the
+        golden value; mid-window failure values are tolerated.
+      "skip_null_strict" (MODE B, GRACEFUL within-window triggers: GR / GR-in for
+        fsdb/bgp/wedge_agent) — tolerate null/missing samples (collection blips)
+        but every non-null sample (and the last) must equal the golden value.
+
+    It supersedes ``remote_failure_last_sample`` for the remote-failure check
+    (when ``convergence_blip_mode != "strict"`` the remote-failure direction is
+    derived from it: "last_sample"->stable_last_sample, "skip_null_strict"->
+    stable_skip_null_strict).
 
     ``rf_vf_groups`` (8-STSW split-per-VF injection): list of
     ``{"suffix", "subnet", "lanes"}``. When given, the single broad HRT
@@ -22928,7 +22985,12 @@ def create_fpf_hardening_playbook_v2(
     the observer subset). ``skip_fsdb_session_precheck``
     drops the FSDB-session precheck (restore phase: the lab may still be in
     graceful-restart hold from the disrupt, which is informational, not a
-    restore failure). ``convergence_settle_sec`` advances the convergence
+    restore failure). ``skip_port_state_precheck`` similarly drops the PORT_STATE
+    precheck on a restore half that re-enables ports in-stage: the preceding
+    disrupt left the impacted uplinks DOWN, so the precheck (which runs before the
+    in-stage re-enable + settle) would FAIL on the still-/just-re-enabled ports;
+    the postcheck still re-asserts full port/plane recovery after the settle.
+    ``convergence_settle_sec`` advances the convergence
     postchecks' window past the recovery (restore phase) so the impacted lane's
     re-converge transient isn't flagged as post-convergence instability.
 
@@ -22953,6 +23015,28 @@ def create_fpf_hardening_playbook_v2(
     the lane-0 spine down), so only the surviving lanes are held to the floor.
     None means no exclusion — no change for existing callers.
 
+    ``impacted_lanes_drained`` (default None) marks the given fabric lanes as
+    DRAINED/impacted for a drain-longevity config where the drain STAYS in effect
+    through the whole soak (e.g. tc34/tc54: stsw001.s001 -> lane 0). When set
+    (non-empty) the impacted lanes are treated CONSISTENTLY as drained across:
+      - plane-status: ``mode="drain"`` (those planes must be/stay DRAINED while
+        every other plane stays UP) instead of the ``all_up`` recovery contract.
+      - host-spray: the impacted NIC lanes (beth{lane}) are POSITIVELY asserted
+        ~0 (egress < ``impacted_spray_max_gbps``) on every spray host while the
+        floor/spread are judged only over the remaining lanes.
+      - convergence (FSDB ribMap / BGP RIB per-GTSW, HRT bulk per-lane): the
+        impacted lane is EXEMPTED — it is not asserted to converge to
+        ``prefix_count`` (the drained plane legitimately drops on that lane);
+        every other lane keeps the full convergence assertion.
+      - HRT remote-failure: the impacted lanes are EXEMPTED from the "stable"
+        (must-stay-0) assertion (a drain may surface negative routes on the
+        impacted lane); the unimpacted lanes keep the stable/last-sample contract.
+    The HRT FSDB-SESSION precheck/postcheck is deliberately NOT affected — an
+    STSW-side drain does not touch the GPU<->GTSW HRT subscription, so that check
+    stays STRICT (32/32). ``impacted_spray_max_gbps`` (default 10.0) is the
+    drained-lane egress ceiling. None/empty keeps every check byte-identical to a
+    non-drained caller (so tc35 undrain / tc36 restore stay all_up + golden).
+
     Assumes collectors are already running (via FpfStartCollectorsTask in
     setup_tasks). This playbook:
       1. Injects prefixes on STSW devices (test_case_start_time aligns here)
@@ -22973,7 +23057,7 @@ def create_fpf_hardening_playbook_v2(
     )
     from taac.steps.step_definitions import (
         create_fpf_bgp_prefix_injection_step,
-        create_fpf_restart_ib_traffic_step,
+        create_fpf_ensure_traffic_step,
         create_longevity_step,
     )
 
@@ -22993,6 +23077,21 @@ def create_fpf_hardening_playbook_v2(
     # non-32 value (e.g. disruption configs expecting impacted lanes).
     fsdb_sessions_per_host = (
         fsdb_expected_total if fsdb_expected_total is not None else 32
+    )
+
+    # Drain-longevity impacted-lane handling (opt-in via impacted_lanes_drained):
+    # the drain STAYS in effect through the soak, so the impacted fabric lanes
+    # (plane == lane on the monitored GPU) are treated consistently as drained
+    # across plane-status / host-spray / convergence / remote-failure below. Empty
+    # => every check is byte-identical to a non-drained caller.
+    drained_lanes = sorted(set(impacted_lanes_drained or []))
+    # host -> ["beth{lane}", ...] for the host-spray ~0 assertion on the impacted
+    # NIC lanes (draining a fabric lane stops egress on that lane's beth on EVERY
+    # spray host attached to the plane, not just the drained circuit's host).
+    spray_impacted_by_host = (
+        {h: [f"beth{lane}" for lane in drained_lanes] for h in spray_hosts}
+        if drained_lanes and spray_hosts
+        else None
     )
 
     # Generic (non-convergence) check set — SSH/device-shell generic checks +
@@ -23015,8 +23114,18 @@ def create_fpf_hardening_playbook_v2(
         use_bgp_snapshot=use_bgp_snapshot,
         skip_fsdb_session_precheck=skip_fsdb_session_precheck,
         skip_fsdb_session_postcheck=skip_fsdb_session_postcheck,
+        skip_port_state_precheck=skip_port_state_precheck,
+        ods_discard_informational=ods_discard_informational,
         host_spray_label=host_spray_label,
         host_spray_excluded_lanes_by_host=host_spray_excluded_lanes_by_host,
+        spray_impacted_by_host=spray_impacted_by_host,
+        spray_impacted_max_gbps=impacted_spray_max_gbps,
+        # Disrupted-lane (drain-then-recover) exemption for the GENERIC host-spray
+        # floor on GR-beyond / kill configs (e.g. tc06/tc08): the disrupted lane's
+        # beth is exempted from the all-lanes floor (route recovery is covered by
+        # the convergence checks). Per-host dict so tc08 (only the DUT-cabled host
+        # drains) differs from tc06 (both hosts' lane-0 purge). None => unchanged.
+        spray_excluded_by_host=spray_recovering_by_host,
         assert_bgp_reconvergence=assert_bgp_reconvergence,
         reconvergence_service=reconvergence_service,
         reconvergence_sla_sec=reconvergence_sla_sec,
@@ -23047,15 +23156,14 @@ def create_fpf_hardening_playbook_v2(
                 ),
             ]
         )
-    # Restart ib_write_bw before the soak so a disruption-killed or wedged flow
-    # (e.g. a wedge_agent coldboot wiping forwarding, or a flap leaving beth0
-    # egress stuck at 0 — i.e. ZERO traffic on all 4 planes because a prior
-    # step/playbook trigger killed it) is recovered and the longevity host-spray
-    # check observes real egress. Hosts default to spray_hosts (the traffic
-    # endpoints: server = spray_hosts[0], clients = the rest) unless explicitly
-    # overridden, so EVERY traffic-bearing config gets the recovery. Naturally a
-    # no-op when skip_ssh (spray_hosts is None). Inserted after inject+stabilize
-    # and before the disruption/soak.
+    # STRICT traffic precheck at the head of every playbook: verify all 4 RDMA
+    # planes (beth0-3) carry traffic; if overall traffic has collapsed to ~0 (all
+    # 4 lanes dead — e.g. a prior playbook's disruption killed ib_write_bw)
+    # restart it and re-verify; FAIL HARD if a plane still can't carry traffic
+    # (a real fabric/plane wedge a restart can't fix — fail fast rather than run a
+    # contaminated test). A single dead lane is logged but NOT auto-restarted.
+    # Hosts default to spray_hosts (server = spray_hosts[0], clients = the rest);
+    # no-op when skip_ssh (spray_hosts is None). Runs before the disruption/soak.
     _ib_server = restart_ib_traffic_server
     _ib_clients = restart_ib_traffic_clients
     if _ib_server is None and spray_hosts and len(spray_hosts) >= 2:
@@ -23063,12 +23171,12 @@ def create_fpf_hardening_playbook_v2(
         _ib_clients = list(spray_hosts[1:])
     if _ib_server and _ib_clients:
         stage_steps.append(
-            create_fpf_restart_ib_traffic_step(
+            create_fpf_ensure_traffic_step(
                 server=_ib_server,
                 clients=_ib_clients,
                 description=(
-                    "Restart ib_write_bw before soak (recover "
-                    "disruption-killed/wedged traffic)"
+                    "Strict traffic precheck: ensure all 4 planes carry traffic "
+                    "(restart ib_write_bw if collapsed; fail hard on a plane wedge)"
                 ),
             )
         )
@@ -23084,6 +23192,12 @@ def create_fpf_hardening_playbook_v2(
 
     convergence_postchecks = []
     for lane_id, gtsw in enumerate(gtsws):
+        # Drain exemption: the impacted lane's GTSW serves the drained plane
+        # (gtsw00{i} -> lane{i-1}), whose prefixes legitimately drop on that lane,
+        # so we do NOT assert it converges to prefix_count. Every other lane keeps
+        # the full FSDB ribMap + BGP RIB convergence assertion.
+        if lane_id in drained_lanes:
+            continue
         lane_map = {str(lane_id): gtsw}
         convergence_postchecks.append(
             create_fpf_fsdb_ribmap_convergence_check(
@@ -23094,6 +23208,7 @@ def create_fpf_hardening_playbook_v2(
                 signal2_local_max_sec=FPF_ACTIVE_THRESHOLDS.convergence_signal2_local_max_sec,
                 signal3_stability_duration_sec=FPF_ACTIVE_THRESHOLDS.convergence_signal3_stability_duration_sec,
                 settle_sec=convergence_settle_sec or None,
+                stability_mode=convergence_blip_mode,
                 check_id=f"fpf_fsdb_convergence_lane{lane_id}",
             )
         )
@@ -23106,10 +23221,15 @@ def create_fpf_hardening_playbook_v2(
                 signal2_local_max_sec=FPF_ACTIVE_THRESHOLDS.convergence_signal2_local_max_sec,
                 signal3_stability_duration_sec=FPF_ACTIVE_THRESHOLDS.convergence_signal3_stability_duration_sec,
                 settle_sec=convergence_settle_sec or None,
+                stability_mode=convergence_blip_mode,
                 check_id=f"fpf_bgp_convergence_lane{lane_id}",
             )
         )
     for lane_id in resolved_lanes:
+        # Drain exemption: the drained plane's HRT bulk count drops on the
+        # impacted lane, so it is not asserted to converge to prefix_count.
+        if lane_id in drained_lanes:
+            continue
         convergence_postchecks.append(
             create_fpf_hrt_bulk_convergence_check(
                 lanes=[lane_id],
@@ -23121,20 +23241,37 @@ def create_fpf_hardening_playbook_v2(
                 # settle past the recovery (restore phase) so the impacted lane's
                 # re-converge transient isn't flagged as post-convergence churn.
                 settle_sec=convergence_settle_sec or None,
+                stability_mode=convergence_blip_mode,
                 check_id=f"fpf_hrt_convergence_lane{lane_id}",
             )
         )
     # For process-disruption configs the HRT remote-failure (negative-route)
     # count legitimately blips during the disruption and fully clears afterwards
-    # (e.g. GR-beyond/coldboot clear in ~36-57s, last=0). remote_failure_last_sample
-    # asserts only the LAST in-window sample is 0 (reconverged by test-case end)
-    # instead of zero-across-the-whole-window, so the recovery transient isn't a FAIL.
-    _rf_direction = "stable_last_sample" if remote_failure_last_sample else "stable"
+    # (e.g. GR-beyond/coldboot clear in ~36-57s, last=0). The remote-failure
+    # "stable" direction is selected by ``convergence_blip_mode`` (preferred) or
+    # the legacy ``remote_failure_last_sample`` flag:
+    #   "last_sample"      -> stable_last_sample (MODE A: only last sample == 0)
+    #   "skip_null_strict" -> stable_skip_null_strict (MODE B: every non-null == 0)
+    #   "strict"/default   -> stable (every sample == 0)
+    if convergence_blip_mode == "last_sample":
+        _rf_direction = "stable_last_sample"
+    elif convergence_blip_mode == "skip_null_strict":
+        _rf_direction = "stable_skip_null_strict"
+    elif remote_failure_last_sample:
+        _rf_direction = "stable_last_sample"
+    else:
+        _rf_direction = "stable"
+    # Drain exemption: the impacted lane may surface negative routes while the
+    # plane is drained, so it is dropped from the "stable" (must-stay-0)
+    # assertion; every unimpacted lane keeps the stable/last-sample contract.
     if rf_vf_groups:
         for _g in rf_vf_groups:
+            _glanes = [lane for lane in _g["lanes"] if lane not in drained_lanes]
+            if not _glanes:
+                continue
             convergence_postchecks.append(
                 create_fpf_hrt_remote_failure_convergence_check(
-                    lanes=_g["lanes"],
+                    lanes=_glanes,
                     direction=_rf_direction,
                     use_live_collectors=True,
                     collector_name=f"hrt_remote_failure_{_g['suffix']}",
@@ -23142,18 +23279,35 @@ def create_fpf_hardening_playbook_v2(
                 )
             )
     else:
-        convergence_postchecks.append(
-            create_fpf_hrt_remote_failure_convergence_check(
-                lanes=resolved_lanes,
-                direction=_rf_direction,
-                use_live_collectors=True,
-                check_id="fpf_remote_failure_stable",
+        _stable_lanes = [lane for lane in resolved_lanes if lane not in drained_lanes]
+        if _stable_lanes:
+            convergence_postchecks.append(
+                create_fpf_hrt_remote_failure_convergence_check(
+                    lanes=_stable_lanes,
+                    direction=_rf_direction,
+                    use_live_collectors=True,
+                    check_id="fpf_remote_failure_stable",
+                )
             )
-        )
     # Fifth collector ↔ fifth validating check: production HRT prefix
     # reachability stability. Only added when the prod_hrt_prefix collector
     # was started (prod_prefixes supplied to FpfStartCollectorsTask).
-    if prod_prefixes and prod_prefix_recovery and local_prod_prefixes:
+    if prod_prefixes and drained_lanes:
+        # Drain-longevity: the impacted plane stays DRAINED for the whole soak, so
+        # the prod-prefix recovery (local_undrain) contract — which expects the
+        # lane to come BACK reachable — does NOT apply. The longevity window opens
+        # after the drain already settled, so the per-prefix stability baseline
+        # (first in-window sample) already excludes the drained plane; the plain
+        # stability check then asserts lane 0 STAYS drained (no further regression
+        # of the remaining reachable planes).
+        convergence_postchecks.append(
+            create_fpf_prod_hrt_prefix_stability_check(
+                settle_sec=prod_prefix_settle_sec or None,
+                stability_mode=convergence_blip_mode,
+                check_id="fpf_prod_hrt_prefix_stability",
+            )
+        )
+    elif prod_prefixes and prod_prefix_recovery and local_prod_prefixes:
         # Recovery-anchored restore check: instead of a settle-and-baseline
         # stability assertion (which flags the recovery transient if the lane
         # comes back after the settle window), measure the LOCAL prefix's
@@ -23177,21 +23331,37 @@ def create_fpf_hardening_playbook_v2(
                 # mid-window, so take the per-prefix baseline after it settles
                 # rather than flagging the recovery as a regression.
                 settle_sec=prod_prefix_settle_sec or None,
+                stability_mode=convergence_blip_mode,
                 check_id="fpf_prod_hrt_prefix_stability",
             )
         )
-    # HRT plane-status (hrtctl show plane-status): every plane must be UP. Used by
-    # the restore halves (link/device undrain) and stable configs (interface
-    # enable) to assert full plane recovery. convergence_settle_sec advances the
+    # HRT plane-status (hrtctl show plane-status). For a drain-longevity config
+    # (impacted_lanes_drained set) the impacted plane(s) must be/stay DRAINED
+    # while every other plane stays UP (mode="drain", window auto-anchored at the
+    # disruption time). Otherwise every plane must be UP (mode="all_up") — the
+    # restore/undrain + stable-state contract; convergence_settle_sec advances the
     # window past the recovery transient so the re-up isn't flagged.
     if plane_status_check and prod_prefixes:
-        convergence_postchecks.append(
-            create_fpf_hrt_plane_status_check(
-                mode="all_up",
-                settle_sec=convergence_settle_sec or None,
-                check_id="fpf_hrt_plane_status_all_up",
+        if drained_lanes:
+            convergence_postchecks.append(
+                create_fpf_hrt_plane_status_check(
+                    mode="drain",
+                    impacted_planes=drained_lanes,
+                    check_id="fpf_hrt_plane_status_drain",
+                )
             )
-        )
+        else:
+            convergence_postchecks.append(
+                create_fpf_hrt_plane_status_check(
+                    mode="all_up",
+                    settle_sec=convergence_settle_sec or None,
+                    # Disruptive configs (convergence_blip_mode="last_sample") tolerate
+                    # a mid-window plane UNKNOWN that recovers to UP (e.g. latched while
+                    # HRT re-subscribes mid-coldboot); only the last sample must be UP.
+                    stability_mode=convergence_blip_mode,
+                    check_id="fpf_hrt_plane_status_all_up",
+                )
+            )
 
     # The old p50-based BGP convergence-timing postcheck (max_session_uptime_sec)
     # was removed: it fanned out to every endpoint device (observer GTSW + 8 STSW
@@ -23336,6 +23506,7 @@ def create_fpf_link_event_disrupt_playbook(
     from taac.stages.stage_definitions import create_steps_stage
     from taac.steps.step_definitions import (
         create_fpf_bgp_prefix_injection_step,
+        create_fpf_ensure_traffic_step,
         create_fpf_record_disruption_time_step,
         create_longevity_step,
     )
@@ -23395,6 +23566,20 @@ def create_fpf_link_event_disrupt_playbook(
     # When skip_injection, prefixes are injected once by a setup task; the stage
     # starts at the disruption-time stamp.
     stage_steps = []
+    # STRICT traffic precheck at the stage HEAD: verify all 4 RDMA planes carry
+    # traffic (restart ib_write_bw if collapsed; fail hard on a plane wedge).
+    # No-op when skip_ssh (spray_hosts is None / < 2 hosts).
+    if spray_hosts and len(spray_hosts) >= 2:
+        stage_steps.append(
+            create_fpf_ensure_traffic_step(
+                server=spray_hosts[0],
+                clients=list(spray_hosts[1:]),
+                description=(
+                    "Strict traffic precheck: ensure all 4 planes carry traffic "
+                    "(restart ib_write_bw if collapsed; fail hard on a plane wedge)"
+                ),
+            )
+        )
     if not skip_injection:
         stage_steps.extend(
             [
@@ -23884,6 +24069,7 @@ def create_fpf_disrupt_window_playbook(
     disruption_steps: list,
     postchecks: list,
     stage_id: str = "disruption",
+    spray_hosts: list[str] | None = None,
 ) -> Playbook:
     """FPF disruption playbook with disruption-window-scoped postchecks.
 
@@ -23905,18 +24091,41 @@ def create_fpf_disrupt_window_playbook(
             typically a single ``create_fpf_hrt_session_stat_check`` plus any
             additional disruption-window-anchored checks (e.g. host-spray).
         stage_id: Stage id (default ``"disruption"``).
+        spray_hosts: When given (>= 2 hosts), a STRICT traffic precheck is
+            prepended at the stage HEAD (server = spray_hosts[0], clients = the
+            rest) to verify all 4 RDMA planes carry traffic before the
+            disruption. No-op when None / < 2 hosts (e.g. skip_ssh).
 
     Returns:
         A ``Playbook`` with empty prechecks/snapshot_checks, the supplied
         postchecks, and a single ``create_steps_stage`` wrapping
-        ``disruption_steps``.
+        ``disruption_steps`` (optionally prepended with the traffic precheck).
     """
+    from taac.steps.step_definitions import (
+        create_fpf_ensure_traffic_step,
+    )
+
+    ensure_traffic = (
+        [
+            create_fpf_ensure_traffic_step(
+                server=spray_hosts[0],
+                clients=list(spray_hosts[1:]),
+                description=(
+                    "Strict traffic precheck: ensure all 4 planes carry traffic "
+                    "(restart ib_write_bw if collapsed; fail hard on a plane wedge)"
+                ),
+            )
+        ]
+        if spray_hosts and len(spray_hosts) >= 2
+        else []
+    )
+    steps = ensure_traffic + list(disruption_steps)
     return Playbook(
         name=playbook_name,
         prechecks=[],
         postchecks=list(postchecks),
         snapshot_checks=[],
-        stages=[create_steps_stage(stage_id=stage_id, steps=list(disruption_steps))],
+        stages=[create_steps_stage(stage_id=stage_id, steps=steps)],
     )
 
 
@@ -24013,8 +24222,17 @@ def create_fpf_service_restart_playbook(
     assert_bgp_reconvergence: bool = False,
     reconvergence_sla_sec: float = 60.0,
     skip_fsdb_session_postcheck: bool = False,
+    convergence_blip_mode: str = "strict",
 ) -> Playbook:
     """FPF service-restart / coldboot playbook (single playbook, self-recovering).
+
+    ``convergence_blip_mode`` selects the two-mode blip-handling contract for the
+    UNAFFECTED-rib stable convergence (Signal-3), the HRT bulk / remote-failure /
+    prod-prefix stable checks: "strict" (default, unchanged), "last_sample"
+    (MODE A — disruptive coldboot/kill; only the last sample must hold golden), or
+    "skip_null_strict" (MODE B — graceful; tolerate null samples but every
+    non-null, and the last, must hold golden). The AFFECTED rib keeps its
+    null-tolerant mode="restart" reconverge contract regardless.
 
     ``rf_vf_groups`` (8-STSW split-per-VF injection): a list of
     ``{"suffix", "subnet", "lanes"}`` dicts. When given, the single broad HRT
@@ -24068,6 +24286,7 @@ def create_fpf_service_restart_playbook(
     from taac.stages.stage_definitions import create_steps_stage
     from taac.steps.step_definitions import (
         create_fpf_bgp_prefix_injection_step,
+        create_fpf_ensure_traffic_step,
         create_fpf_record_disruption_time_step,
         create_longevity_step,
         create_service_interruption_step,
@@ -24123,9 +24342,34 @@ def create_fpf_service_restart_playbook(
     )
     settle = stable_settle_sec or None
 
+    # Remote-failure "stable" direction selected by ``convergence_blip_mode``:
+    #   "last_sample"      -> stable_last_sample (MODE A)
+    #   "skip_null_strict" -> stable_skip_null_strict (MODE B)
+    #   "strict"/default   -> stable
+    if convergence_blip_mode == "last_sample":
+        _rf_direction = "stable_last_sample"
+    elif convergence_blip_mode == "skip_null_strict":
+        _rf_direction = "stable_skip_null_strict"
+    else:
+        _rf_direction = "stable"
+
     # When skip_injection, prefixes are injected once by a setup task; the stage
     # starts at the restart-time stamp.
     stage_steps = []
+    # STRICT traffic precheck at the stage HEAD: verify all 4 RDMA planes carry
+    # traffic (restart ib_write_bw if collapsed; fail hard on a plane wedge).
+    # No-op when skip_ssh (spray_hosts is None / < 2 hosts).
+    if spray_hosts and len(spray_hosts) >= 2:
+        stage_steps.append(
+            create_fpf_ensure_traffic_step(
+                server=spray_hosts[0],
+                clients=list(spray_hosts[1:]),
+                description=(
+                    "Strict traffic precheck: ensure all 4 planes carry traffic "
+                    "(restart ib_write_bw if collapsed; fail hard on a plane wedge)"
+                ),
+            )
+        )
     if not skip_injection:
         stage_steps.extend(
             [
@@ -24184,6 +24428,7 @@ def create_fpf_service_restart_playbook(
                     expected_matched=prefix_count,
                     use_live_collectors=True,
                     settle_sec=settle,
+                    stability_mode=convergence_blip_mode,
                     check_id=f"fpf_fsdb_stable_lane{lane_id}",
                 )
             )
@@ -24204,6 +24449,7 @@ def create_fpf_service_restart_playbook(
                     expected_matched=prefix_count,
                     use_live_collectors=True,
                     settle_sec=settle,
+                    stability_mode=convergence_blip_mode,
                     check_id=f"fpf_bgp_stable_lane{lane_id}",
                 )
             )
@@ -24215,6 +24461,7 @@ def create_fpf_service_restart_playbook(
                     expected_matched=prefix_count,
                     use_live_collectors=True,
                     settle_sec=settle,
+                    stability_mode=convergence_blip_mode,
                     check_id=f"fpf_fsdb_stable_lane{lane_id}",
                 )
             )
@@ -24224,6 +24471,7 @@ def create_fpf_service_restart_playbook(
                     expected_matched=prefix_count,
                     use_live_collectors=True,
                     settle_sec=settle,
+                    stability_mode=convergence_blip_mode,
                     check_id=f"fpf_bgp_stable_lane{lane_id}",
                 )
             )
@@ -24237,6 +24485,7 @@ def create_fpf_service_restart_playbook(
             expected_per_lane={str(lane): prefix_count for lane in injected_lanes},
             use_live_collectors=True,
             settle_sec=settle,
+            stability_mode=convergence_blip_mode,
             check_id="fpf_hrt_bulk_stable",
         )
     )
@@ -24248,7 +24497,7 @@ def create_fpf_service_restart_playbook(
             postchecks.append(
                 create_fpf_hrt_remote_failure_convergence_check(
                     lanes=_g["lanes"],
-                    direction="stable",
+                    direction=_rf_direction,
                     use_live_collectors=True,
                     collector_name=f"hrt_remote_failure_{_g['suffix']}",
                     check_id=f"fpf_hrt_remote_failure_stable_{_g['suffix']}",
@@ -24258,7 +24507,7 @@ def create_fpf_service_restart_playbook(
         postchecks.append(
             create_fpf_hrt_remote_failure_convergence_check(
                 lanes=injected_lanes,
-                direction="stable",
+                direction=_rf_direction,
                 use_live_collectors=True,
                 check_id="fpf_hrt_remote_failure_stable",
             )
@@ -24267,6 +24516,7 @@ def create_fpf_service_restart_playbook(
         postchecks.append(
             create_fpf_prod_hrt_prefix_stability_check(
                 settle_sec=settle,
+                stability_mode=convergence_blip_mode,
                 check_id="fpf_prod_hrt_prefix_stable",
             )
         )
@@ -24280,6 +24530,10 @@ def create_fpf_service_restart_playbook(
                 # failure checks above.
                 expected_planes=injected_lanes,
                 settle_sec=settle,
+                # Disruptive coldboot/restart (convergence_blip_mode="last_sample")
+                # tolerates a mid-window plane UNKNOWN that recovers to UP (latched
+                # while HRT re-subscribes); only the last sample must be UP.
+                stability_mode=convergence_blip_mode,
                 check_id="fpf_hrt_plane_status_all_up",
             )
         )

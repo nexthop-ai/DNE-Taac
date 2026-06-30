@@ -87,6 +87,11 @@ GR_WINDOW_SEC = 120
 STOP_DURATION_SEC = GR_WINDOW_SEC + 120  # 240s
 SPRAY_FLOOR_GBPS = 75.0
 SPRAY_IMPACTED_MAX_GBPS = 10.0
+# FSDB re-enable converges routes quickly, but the lane-0 RDMA (beth0) traffic
+# re-ramps slower (observed 2-7min). Settle this long after recovery so the
+# generic host-spray's avg(1m),latest reads the recovered state and positively
+# asserts lane-0 data-plane recovery. Bump if beth0 is still ramping on rerun.
+POST_RECOVERY_SETTLE_SEC = 300
 
 
 def create_fpf_tc08_test_config() -> TestConfig:
@@ -120,26 +125,37 @@ def create_fpf_tc08_test_config() -> TestConfig:
             timeout=600,
             description="Wait for FSDB convergence after GR expiry recovery",
         ),
+        create_longevity_step(
+            duration=POST_RECOVERY_SETTLE_SEC,
+            description=(
+                f"Settle {POST_RECOVERY_SETTLE_SEC}s after FSDB recovery for "
+                "lane-0 data-plane (beth0) re-ramp before host-spray asserts "
+                "the floor"
+            ),
+        ),
     ]
 
     postchecks = []
     if spray:
-        # Over the POST-GR tail [disruption+120, disruption+240] (fsdb still
-        # stopped), assert lane 0 (beth0) is DRAINED (<10 Gbps) on every spray
-        # host while beth1-3 stay sprayed (>75 Gbps). window_offset_sec skips the
-        # GR-hold transient; the default transform is avg(1m),latest so the
-        # "latest 1m" reads the fully-drained state.
+        # CONTRACT: an fsdb disruption on the DUT GTSW impacts ONLY the LOCAL DUT
+        # host cabled to it (gtsw001 -> GPU_HOSTS[0]); the remote DUT host's beth0
+        # rides a different plane-0 GTSW and keeps spraying. So over the POST-GR
+        # tail [disruption+120, disruption+240] (fsdb still stopped), assert lane 0
+        # (beth0) is DRAINED (<10 Gbps) on the LOCAL host ONLY, while every other
+        # lane/host stays sprayed (>75 Gbps). window_offset_sec skips the GR-hold
+        # transient; the default avg(1m),latest reads the fully-drained state.
         postchecks.append(
             create_fpf_host_spray_check(
                 hosts=SPRAY_HOSTS,
                 min_egress_gbps=SPRAY_FLOOR_GBPS,
-                impacted_lanes_by_host={h: ["beth0"] for h in SPRAY_HOSTS},
+                impacted_lanes_by_host={GPU_HOSTS[0]: ["beth0"]},
                 impacted_max_gbps=SPRAY_IMPACTED_MAX_GBPS,
                 window_from_disruption_time=True,
                 window_offset_sec=GR_WINDOW_SEC,
                 window_duration_sec=STOP_DURATION_SEC - GR_WINDOW_SEC,
                 label=(
-                    "[fsdb-stop >GR] lane0(beth0) drained <10G; lanes1-3 spray >75G"
+                    "[fsdb-stop >GR] local-host lane0(beth0) drained <10G; "
+                    "all other lanes/hosts spray >75G (fsdb=local-only)"
                 ),
                 check_id="fpf_tc08_host_spray_lane0_drained",
             )
@@ -161,6 +177,13 @@ def create_fpf_tc08_test_config() -> TestConfig:
         hrt_memory_hosts=HRT_MEMORY_HOSTS,
         hrt_driver_hosts=HRT_MEMORY_HOSTS,
         spray_hosts=spray,
+        # CONTRACT: fsdb is LOCAL-only — only the DUT-cabled host's (GPU_HOSTS[0])
+        # beth0 drains then recovers. Rather than exempt beth0 from the generic
+        # floor, the POST_RECOVERY_SETTLE step above lets the host-spray's
+        # avg(1m),latest read AFTER the beth0 re-ramp, so the generic floor
+        # positively ASSERTS lane-0 recovery on all 4 lanes (recovery is monotonic).
+        # The dedicated fpf_tc08_host_spray_lane0_drained check still asserts beth0
+        # DRAINED during the stop window [+120,+240] (the during-disruption signal).
         # 8-plane: prefixes injected once by the setup task; check all 8 lanes.
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,
@@ -176,10 +199,15 @@ def create_fpf_tc08_test_config() -> TestConfig:
         # re-subscribes after the GR — expected, not a fault. Skip the postcheck
         # (precheck still asserts the 32/32 baseline).
         skip_fsdb_session_postcheck=True,
-        # HRT negative-route count blips during the GR-beyond purge and clears
-        # afterwards; assert only the last sample (reconverged by end), not
-        # zero-across-the-whole-window.
-        remote_failure_last_sample=True,
+        # GR-beyond (DISRUPTIVE: routes purge past the GR window): the metric
+        # legitimately shows failure values mid-window. MODE A (last_sample)
+        # asserts only that the LAST in-window sample reconverged to the golden
+        # value; mid-window drops are ignored — applied to the convergence
+        # Signal-3, HRT remote-failure, and prod-prefix checks.
+        convergence_blip_mode="last_sample",
+        # Expected mid-disruption STSW packet loss to purged lane-0 dests —
+        # informational, not a hard fail (user-confirmed).
+        ods_discard_informational=True,
     )
 
     return TestConfig(

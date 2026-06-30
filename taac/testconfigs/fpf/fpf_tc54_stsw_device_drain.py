@@ -157,9 +157,12 @@ def create_fpf_tc54_test_config() -> TestConfig:
         prod_prefix_recovery=True,
         local_prod_prefixes=PROD_PREFIXES,
         impacted_planes_by_host=IMPACTED_PLANES_BY_HOST,
-        host_spray_excluded_lanes_by_host=(
-            {h: ["beth0"] for h in spray} if spray else None
-        ),
+        # Lane 0 (stsw001.s001 = plane 0 = beth0) STAYS drained for the whole
+        # longevity. plane-status asserts lane0=DRAINED/others UP, host-spray
+        # beth0~0, and rib/fsdb/bulk/remote-failure EXEMPT lane 0; every other
+        # lane AND the HRT FSDB-session census stay STRICT (32/32) — the STSW-side
+        # drain does not touch the GPU<->GTSW HRT subscription.
+        impacted_lanes_drained=[0],
         # 8-plane: prefixes injected once by the setup task; check all 8 lanes.
         skip_injection=True,
         rf_vf_groups=RF_VF_GROUPS,

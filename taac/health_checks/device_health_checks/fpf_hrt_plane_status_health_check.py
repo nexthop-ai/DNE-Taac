@@ -63,6 +63,12 @@ class FpfHrtPlaneStatusHealthCheck(
             )
 
         mode = check_params.get("mode", "all_up")
+        # Blip-handling contract for the all_up assertion: "strict" (default),
+        # "last_sample" (MODE A — disruptive coldboot/kill/reboot: only the last
+        # sample must be UP; a mid-window transient that recovers is tolerated),
+        # or "skip_null_strict" (MODE B — graceful: every non-null sample UP,
+        # nulls tolerated). Ignored by the "drain" mode.
+        stability_mode = check_params.get("stability_mode", "strict")
         expected_planes: t.Optional[t.List[int]] = check_params.get("expected_planes")
         impacted_planes: t.List[int] = [
             int(p) for p in (check_params.get("impacted_planes") or [])
@@ -110,6 +116,8 @@ class FpfHrtPlaneStatusHealthCheck(
                 window_start=window_start,
                 window_end=window_end,
                 expected_planes=expected_planes,
+                last_sample_only=(stability_mode == "last_sample"),
+                skip_null_strict=(stability_mode == "skip_null_strict"),
             )
 
         for r in results:

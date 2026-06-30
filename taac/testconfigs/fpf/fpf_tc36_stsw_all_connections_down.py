@@ -299,6 +299,12 @@ def create_fpf_tc36_test_config() -> TestConfig:
         convergence_settle_sec=120,
         fsdb_expected_total=EXPECTED_FSDB_SESSION_COUNT,
         skip_fsdb_session_precheck=True,
+        # The disrupt half left the gtsw001->stsw001 uplink bundle DOWN; this
+        # restore re-enables it in-stage and settles 180s. Skip the PORT_STATE
+        # precheck (it runs BEFORE the re-enable, so it would FAIL on the
+        # still-down / just-re-enabled-but-unsettled ports). The postcheck still
+        # re-asserts full port/plane recovery after the settle.
+        skip_port_state_precheck=True,
         hrt_memory_hosts=HRT_MEMORY_HOSTS,
         hrt_driver_hosts=HRT_MEMORY_HOSTS,
         spray_hosts=spray,

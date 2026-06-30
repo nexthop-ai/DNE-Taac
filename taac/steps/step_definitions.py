@@ -810,6 +810,44 @@ def create_fpf_restart_ib_traffic_step(
     )
 
 
+def create_fpf_ensure_traffic_step(
+    server: str,
+    clients: t.List[str],
+    traffic_floor_gbps: t.Optional[float] = None,
+    description: t.Optional[str] = None,
+) -> Step:
+    """STRICT per-playbook traffic precheck (host-side CUSTOM_STEP).
+
+    Verifies all 4 RDMA traffic planes (beth0-3) carry traffic on server+clients
+    by sampling ``/sys/class/net/bethN/statistics/tx_bytes`` directly (no ODS).
+    If any plane is below the floor it restarts ib_write_bw and re-checks; if a
+    plane STILL can't carry traffic it raises (fail fast) — converting a silent
+    plane wedge (e.g. the DUT not learning that plane's prefixes) into an early,
+    loud failure instead of a contaminated run. Place at the HEAD of each playbook
+    stage so every test case starts from verified-healthy traffic.
+
+    Args:
+        server: server host (e.g. ``"rtptest1544.mwg2"``).
+        clients: client host(s) (non-empty).
+        traffic_floor_gbps: per-plane egress floor in Gbps (default 50.0 in the
+            handler — catches a dead/0 plane while tolerating normal variation).
+        description: Custom step description.
+    """
+    payload: t.Dict[str, t.Any] = {
+        "custom_step_name": "fpf_ensure_traffic",
+        "server": server,
+        "clients": clients,
+    }
+    if traffic_floor_gbps is not None:
+        payload["traffic_floor_gbps"] = traffic_floor_gbps
+    return Step(
+        name=StepName.CUSTOM_STEP,
+        description=description
+        or f"Ensure traffic on all 4 planes: server={server} clients={clients}",
+        step_params=Params(json_params=json.dumps(payload)),
+    )
+
+
 def create_fpf_restart_hrt_step(
     hosts: t.List[str],
     description: t.Optional[str] = None,

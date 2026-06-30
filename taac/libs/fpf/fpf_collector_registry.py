@@ -39,6 +39,10 @@ import typing as t
 
 from taac.libs.fpf.fpf_stress_checks import (
     _parse_ts,
+    BLIP_MODE_LAST_SAMPLE,
+    BLIP_MODE_SKIP_NULL_STRICT,
+    BLIP_MODE_STRICT,
+    evaluate_blip_series,
     PerLaneResult,
 )
 
@@ -411,12 +415,30 @@ def _eval_signal3_stability(
     window_end: float,
     expected: int,
     duration_sec: float,
+    stability_mode: str = BLIP_MODE_STRICT,
 ) -> None:
     result.signal3_stability_duration_sec = duration_sec
     if t2 is None:
         result.signal3_stability_ok = False
         result.signal3_stability_detail = (
             "SKIP — threshold never reached, stability not assessed"
+        )
+        return
+    # MODE A ("last_sample") / MODE B ("skip_null_strict"): the post-convergence
+    # count legitimately blips during a disruptive (kill/coldboot/reboot/GR-beyond)
+    # or graceful within-window (GR / GR-in) trigger. Delegate to the shared
+    # blip-handling helper on the post-T2 value series rather than the strict
+    # "no drops" rule. Null/missing samples are already excluded from ``samples``
+    # by ``_collect_sorted_samples`` (so tolerated for skip_null_strict).
+    if stability_mode in (BLIP_MODE_LAST_SAMPLE, BLIP_MODE_SKIP_NULL_STRICT):
+        stability_end = t2 + duration_sec
+        post_t2 = [v for ts, v in samples if t2 <= ts <= stability_end]
+        passed, detail = evaluate_blip_series(post_t2, expected, stability_mode)
+        result.signal3_stability_ok = passed
+        result.signal3_stability_detail = (
+            f"[{stability_mode}] {detail}"
+            if passed
+            else f"FAIL — [{stability_mode}] {detail}"
         )
         return
     stability_end = t2 + duration_sec
@@ -468,6 +490,7 @@ def evaluate_three_signals(
     signal3_stability_duration_sec: float = DEFAULT_SIGNAL3_STABILITY_DURATION_SEC,
     match_field: str = "matched",
     lane_id: t.Optional[int] = None,
+    stability_mode: str = BLIP_MODE_STRICT,
 ) -> PerLaneResult:
     """Decorate ``result`` with three independent signal evaluations.
 
@@ -480,10 +503,16 @@ def evaluate_three_signals(
         T2 = first sample where value >= ``expected``.
 
     Signal 3 — Post-convergence stability (T2 → T2 + duration):
-        Every sample in that window must show value >= ``expected``.
-        If the data window ends before the full duration elapses, accept if
-        at least ``DEFAULT_STABILITY_PARTIAL_CREDIT_FRACTION`` of the
-        required duration was observed without drops.
+        ``stability_mode="strict"`` (default): every sample in that window must
+        show value >= ``expected``. If the data window ends before the full
+        duration elapses, accept if at least
+        ``DEFAULT_STABILITY_PARTIAL_CREDIT_FRACTION`` of the required duration
+        was observed without drops.
+        ``stability_mode="last_sample"`` (MODE A, disruptive triggers): ignore
+        mid-window drops; only the LAST post-T2 sample must == ``expected``.
+        ``stability_mode="skip_null_strict"`` (MODE B, graceful within-window
+        triggers): tolerate null/missing samples, but every non-null post-T2
+        sample (and the last) must == ``expected``.
 
     Mutates and returns ``result`` with its ``signal*`` fields populated,
     ``passed`` set to (signal1_ok AND signal2_ok AND signal3_ok), and
@@ -495,7 +524,13 @@ def evaluate_three_signals(
     _eval_signal1_e2e(result, t2, window_start, expected, signal1_e2e_max_sec)
     _eval_signal2_local(result, t1, t2, window_start, expected, signal2_local_max_sec)
     _eval_signal3_stability(
-        result, t2, samples, window_end, expected, signal3_stability_duration_sec
+        result,
+        t2,
+        samples,
+        window_end,
+        expected,
+        signal3_stability_duration_sec,
+        stability_mode=stability_mode,
     )
     all_ok = (
         result.signal1_e2e_ok is True

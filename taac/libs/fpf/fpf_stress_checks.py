@@ -66,6 +66,106 @@ def _parse_ts(ts_str: str) -> datetime:
 
 
 # ---------------------------------------------------------------------------
+# Shared per-sample "blip handling" contract
+# ---------------------------------------------------------------------------
+
+# Two-mode blip-handling contract shared by the FPF HRT/data-plane convergence
+# collector checks. ``samples`` is a chronologically-ordered list where each
+# element is the in-window value of a metric, or ``None`` for a null/missing
+# sample (a collection blip — e.g. a poll timeout or absent data). Values are
+# compared to ``expected`` with ``==`` (so the helper is generic over ints,
+# lists, sets, ...).
+#
+#   "strict"            — every non-null sample must equal ``expected`` (current
+#                         default; null samples are NOT tolerated and count as a
+#                         failure, matching the legacy "no drops" behaviour).
+#   "last_sample"       — MODE A (disruptive triggers: kill / agent coldboot /
+#                         reboot / GR-beyond): ignore all mid-window samples; only
+#                         the LAST non-null sample must equal ``expected``.
+#   "skip_null_strict"  — MODE B (graceful within-window triggers: GR / GR-in for
+#                         fsdb/bgp/wedge_agent): TOLERATE null/missing samples, but
+#                         every NON-NULL sample must equal ``expected`` and the
+#                         last non-null sample must equal ``expected``.
+BLIP_MODE_STRICT: str = "strict"
+BLIP_MODE_LAST_SAMPLE: str = "last_sample"
+BLIP_MODE_SKIP_NULL_STRICT: str = "skip_null_strict"
+
+
+def evaluate_blip_series(
+    samples: List[Any],
+    expected: Any,
+    mode: str = BLIP_MODE_STRICT,
+) -> Tuple[bool, str]:
+    """Evaluate a value-or-null sample series against ``expected`` under ``mode``.
+
+    Returns ``(passed, detail)``. See the BLIP_MODE_* docstring above for the
+    per-mode contract. ``None`` elements of ``samples`` are null/missing samples
+    (collection blips). A series with no samples at all (or, for the modes that
+    require a non-null tail, no non-null samples) fails.
+    """
+    total = len(samples)
+    non_null = [v for v in samples if v is not None]
+    null_count = total - len(non_null)
+
+    if total == 0:
+        return (False, "no samples in window")
+
+    if mode == BLIP_MODE_LAST_SAMPLE:
+        if not non_null:
+            return (
+                False,
+                f"no non-null samples in window ({null_count} null)",
+            )
+        last = non_null[-1]
+        passed = last == expected
+        if passed:
+            return (
+                True,
+                f"last sample == {expected} "
+                f"({len(non_null)}/{total} non-null; mid-window samples ignored)",
+            )
+        return (
+            False,
+            f"last sample {last} != expected {expected} "
+            f"({len(non_null)}/{total} non-null)",
+        )
+
+    if mode == BLIP_MODE_SKIP_NULL_STRICT:
+        if not non_null:
+            return (
+                False,
+                f"no non-null samples in window ({null_count} null)",
+            )
+        bad = [v for v in non_null if v != expected]
+        if bad:
+            return (
+                False,
+                f"{len(bad)}/{len(non_null)} non-null sample(s) != expected "
+                f"{expected} (e.g. {bad[0]}); {null_count} null tolerated",
+            )
+        if non_null[-1] != expected:
+            return (
+                False,
+                f"last non-null sample {non_null[-1]} != expected {expected}",
+            )
+        return (
+            True,
+            f"all {len(non_null)} non-null sample(s) == {expected} "
+            f"({null_count} null tolerated)",
+        )
+
+    # BLIP_MODE_STRICT (default): every sample must be non-null and == expected.
+    bad = [v for v in samples if v != expected]
+    if bad:
+        return (
+            False,
+            f"{len(bad)}/{total} sample(s) != expected {expected} "
+            f"(e.g. {bad[0]}; {null_count} null)",
+        )
+    return (True, f"all {total} sample(s) == {expected}")
+
+
+# ---------------------------------------------------------------------------
 # Lane mapping: lane N → STSW stsw001.s00{N+1}, GTSW gtsw00{N+1}.l1002
 # ---------------------------------------------------------------------------
 
@@ -1225,15 +1325,22 @@ class HrtRemoteFailureCollector(BaseCollector):
         self,
         lanes: List[int],
         last_sample_only: bool = False,
+        skip_null_strict: bool = False,
     ) -> List[PerLaneResult]:
         """Stable-state: assert count stays 0 for every row in the window.
 
-        With ``last_sample_only=True``, assert only that the LAST sample before
-        the window end is 0 — i.e. the metric fully reconverged by test-case end,
-        tolerating a bounded transient during the disruption. Use for
-        process-disruption configs where the HRT layer legitimately shows a
-        recovery transient (e.g. GR-beyond / coldboot negative-route clearing in
-        ~36-57s) that fully clears by the end (last=0).
+        With ``last_sample_only=True`` (MODE A), assert only that the LAST sample
+        before the window end is 0 — i.e. the metric fully reconverged by
+        test-case end, tolerating a bounded transient during the disruption. Use
+        for DISRUPTIVE process-disruption configs where the HRT layer legitimately
+        shows a recovery transient (e.g. GR-beyond / coldboot negative-route
+        clearing in ~36-57s) that fully clears by the end (last=0).
+
+        With ``skip_null_strict=True`` (MODE B), TOLERATE null/missing samples
+        (collection blips) but require every NON-NULL sample to be 0 and the last
+        non-null sample to be 0. Use for GRACEFUL within-window triggers (GR /
+        GR-in) where a graceful restart must NOT produce any remote-failure blip
+        on the impacted lane — any non-null nonzero is a real degradation.
         """
         results = []
         for lane_id in sorted(lanes):
@@ -1241,11 +1348,15 @@ class HrtRemoteFailureCollector(BaseCollector):
             nonzero_count = 0
             total_rows = 0
             last_count = 0
+            samples: List[Any] = []
             for row in self.rows:
                 if lane_id >= len(row.lane_counts):
+                    # Missing lane data — a null/blip sample for this lane.
+                    samples.append(None)
                     continue
                 total_rows += 1
                 count = row.lane_counts[lane_id]
+                samples.append(count)
                 if count > max_seen:
                     max_seen = count
                 if count != 0:
@@ -1262,9 +1373,10 @@ class HrtRemoteFailureCollector(BaseCollector):
             # window a device/link drain produces NO negative-route blip on the
             # impacted lane, so any nonzero is a real regression.
             if last_sample_only:
-                # Reconverged-by-end: only the last in-window sample must be 0;
-                # a bounded transient during the disruption is tolerated.
-                passed = last_count == 0
+                # MODE A — reconverged-by-end: only the last in-window sample must
+                # be 0; a bounded transient during the disruption is tolerated.
+                _passed, _ = evaluate_blip_series(samples, 0, BLIP_MODE_LAST_SAMPLE)
+                passed = _passed
                 if passed:
                     detail = (
                         f"reconverged by window end (last=0; transient nonzero in "
@@ -1275,6 +1387,12 @@ class HrtRemoteFailureCollector(BaseCollector):
                         f"NOT reconverged by window end (last={last_count} != 0; "
                         f"nonzero in {nonzero_count}/{total_rows} samples, max={max_seen})"
                     )
+            elif skip_null_strict:
+                # MODE B — graceful within-window: every non-null sample must be 0
+                # (and the last non-null), tolerating null/missing samples.
+                passed, detail = evaluate_blip_series(
+                    samples, 0, BLIP_MODE_SKIP_NULL_STRICT
+                )
             else:
                 passed = nonzero_count == 0
                 if passed:
@@ -1326,6 +1444,8 @@ class HrtRemoteFailureCollector(BaseCollector):
                 return self.evaluate_per_lane_stable(lanes=lanes)
             if direction == "stable_last_sample":
                 return self.evaluate_per_lane_stable(lanes=lanes, last_sample_only=True)
+            if direction == "stable_skip_null_strict":
+                return self.evaluate_per_lane_stable(lanes=lanes, skip_null_strict=True)
             if direction == "recovery":
                 return self.evaluate_per_lane_recovery(
                     trigger_time=trigger_time,
@@ -1646,8 +1766,22 @@ class HrtPlaneStatusCollector(BaseCollector):
         window_start: float,
         window_end: float,
         expected_planes: Optional[List[int]] = None,
+        last_sample_only: bool = False,
+        skip_null_strict: bool = False,
     ) -> List[PlaneStatusResult]:
-        """Every plane must be UP in every in-window sample."""
+        """Every plane must be UP across the in-window samples.
+
+        Strict (default): every in-window sample must be UP (latches the first
+        non-UP state; byte-identical legacy behaviour).
+
+        With ``last_sample_only=True`` (MODE A — disruptive coldboot/kill/reboot),
+        only the LAST in-window sample must be UP; a bounded transient (e.g. an
+        UNKNOWN latched mid-coldboot while HRT re-subscribes, then recovered) is
+        tolerated. With ``skip_null_strict=True`` (MODE B — graceful), TOLERATE
+        null/missing plane samples but require every NON-NULL sample (and the
+        last non-null) to be UP. ``"UP"`` is the golden value; any other state
+        (UNKNOWN/DOWN/...) is a failure; a missing plane state is a null sample.
+        """
         windowed = self.get_rows_in_window(window_start, window_end)
         results: List[PlaneStatusResult] = []
         for plane in self._planes(expected_planes):
@@ -1655,20 +1789,43 @@ class HrtPlaneStatusCollector(BaseCollector):
             bad_state: Optional[str] = None
             bad_ts: Optional[str] = None
             last_state = "MISSING"
+            series: List[Optional[str]] = []
+            non_up_count = 0
             for r in windowed:
                 samples += 1
                 st = r.plane_states.get(plane)
                 last_state = st if st is not None else "MISSING"
+                series.append(st)
+                if st != "UP":
+                    non_up_count += 1
                 if st != "UP" and bad_state is None:
                     bad_state = last_state
                     bad_ts = r.timestamp
-            passed = bad_state is None and samples > 0
-            if samples == 0:
-                detail = "no in-window samples"
-            elif passed:
-                detail = f"UP across {samples} samples"
+
+            if last_sample_only or skip_null_strict:
+                mode = (
+                    BLIP_MODE_LAST_SAMPLE
+                    if last_sample_only
+                    else BLIP_MODE_SKIP_NULL_STRICT
+                )
+                passed, blip_detail = evaluate_blip_series(series, "UP", mode)
+                if samples == 0:
+                    detail = "no in-window samples"
+                elif passed:
+                    detail = (
+                        f"[{mode}] {blip_detail} (tolerated transient non-UP in "
+                        f"{non_up_count}/{samples} samples, last={last_state})"
+                    )
+                else:
+                    detail = f"[{mode}] {blip_detail} (last={last_state})"
             else:
-                detail = f"not UP — saw {bad_state} at {bad_ts} (last={last_state})"
+                passed = bad_state is None and samples > 0
+                if samples == 0:
+                    detail = "no in-window samples"
+                elif passed:
+                    detail = f"UP across {samples} samples"
+                else:
+                    detail = f"not UP — saw {bad_state} at {bad_ts} (last={last_state})"
             results.append(
                 PlaneStatusResult(
                     plane=plane,

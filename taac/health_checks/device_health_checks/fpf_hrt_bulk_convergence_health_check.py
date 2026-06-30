@@ -146,6 +146,7 @@ class FpfHrtBulkConvergenceHealthCheck(
         signal3_duration = check_params.get(
             "signal3_stability_duration_sec", DEFAULT_SIGNAL3_STABILITY_DURATION_SEC
         )
+        stability_mode = check_params.get("stability_mode", "strict")
 
         impacted_set = set(impacted_lanes)
         normal_lanes = [lane for lane in lanes if lane not in impacted_set]
@@ -169,6 +170,7 @@ class FpfHrtBulkConvergenceHealthCheck(
                 signal2_local_max_sec=signal2_max,
                 signal3_stability_duration_sec=signal3_duration,
                 lane_id=r.lane,
+                stability_mode=stability_mode,
             )
         for r in per_lane_results:
             overall = "PASS" if r.passed else "FAIL"

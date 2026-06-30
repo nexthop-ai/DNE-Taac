@@ -112,6 +112,11 @@ def create_fpf_tc27_test_config() -> TestConfig:
         # Full agent coldboot re-establishes all BGP sessions in ~207s on hardware
         # (measured); 240s SLA gives headroom over the observed reconvergence.
         reconvergence_sla_sec=240.0,
+        # Agent coldboot is DISRUPTIVE: the unaffected-rib / HRT / prod-prefix
+        # metrics legitimately blip mid-window while the agent reboots. MODE A
+        # (last_sample) asserts only the LAST in-window sample reconverged to the
+        # golden value; mid-window drops are ignored.
+        convergence_blip_mode="last_sample",
         playbook_name="fpf_tc27_agent_coldboot",
     )
     return TestConfig(

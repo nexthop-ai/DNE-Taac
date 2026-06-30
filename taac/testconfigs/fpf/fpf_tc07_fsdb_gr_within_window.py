@@ -125,9 +125,12 @@ def create_fpf_tc07_test_config() -> TestConfig:
         # re-subscribes after the GR — expected, not a fault. Skip the postcheck
         # (precheck still asserts the 32/32 baseline).
         skip_fsdb_session_postcheck=True,
-        # HRT negative-route count blips during the GR and clears afterwards;
-        # assert only the last sample (reconverged by end), not zero-whole-window.
-        remote_failure_last_sample=True,
+        # GR-within (graceful, within-window): a within-window graceful restart
+        # must NOT break forwarding. MODE B (skip_null_strict) tolerates null
+        # collection blips but fails on any non-null degradation signature and
+        # requires the last non-null sample to hold the golden value — applied to
+        # the convergence Signal-3, HRT remote-failure, and prod-prefix checks.
+        convergence_blip_mode="skip_null_strict",
     )
 
     return TestConfig(

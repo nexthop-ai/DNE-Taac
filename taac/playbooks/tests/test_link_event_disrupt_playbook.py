@@ -137,8 +137,10 @@ class TestOdsDiscardInformationalKnob(unittest.TestCase):
 class TestBuildGenericChecksDiscardInformational(unittest.TestCase):
     """``_build_fpf_generic_checks`` (the helper shared by the
     hardening/service-restart playbooks) routes ``ods_discard_informational``
-    to ONLY the two DISCARD ODS checks; the two CONGESTION checks stay hard.
-    This is the same contract the link-event playbook reproduces inline."""
+    to all four discard/congestion ODS checks: a disruptive
+    restart/coldboot/reboot has expected mid-disruption packet loss AND
+    congestion, so both the discard and congestion breaches are recorded
+    without failing the test."""
 
     def _generic_postchecks_by_id(self, *, ods_discard_informational: bool) -> dict:
         _, postchecks, _ = _build_fpf_generic_checks(
@@ -159,7 +161,7 @@ class TestBuildGenericChecksDiscardInformational(unittest.TestCase):
         )
         return {c.check_id: c for c in postchecks if c.check_id}
 
-    def test_true_marks_only_the_two_discard_checks_informational(self):
+    def test_true_marks_all_four_discard_congestion_checks_informational(self):
         by_id = self._generic_postchecks_by_id(ods_discard_informational=True)
         for cid in (
             "ods_in_dst_null_discard",
@@ -168,16 +170,14 @@ class TestBuildGenericChecksDiscardInformational(unittest.TestCase):
             "ods_out_congestion",
         ):
             self.assertIn(cid, by_id, f"missing {cid}")
-        # ONLY the two discard checks are informational.
+        # All FOUR discard/congestion checks are informational: a disruptive
+        # restart/coldboot/reboot has expected mid-disruption packet loss AND
+        # congestion, so both the discard and congestion breaches are recorded
+        # without failing the test.
         self.assertIs(_params(by_id["ods_in_dst_null_discard"])["informational"], True)
         self.assertIs(_params(by_id["ods_in_discard"])["informational"], True)
-        # Congestion checks stay hard.
-        self.assertFalse(
-            _params(by_id["ods_in_congestion"]).get("informational", False)
-        )
-        self.assertFalse(
-            _params(by_id["ods_out_congestion"]).get("informational", False)
-        )
+        self.assertIs(_params(by_id["ods_in_congestion"])["informational"], True)
+        self.assertIs(_params(by_id["ods_out_congestion"])["informational"], True)
 
     def test_false_default_keeps_all_four_checks_hard(self):
         by_id = self._generic_postchecks_by_id(ods_discard_informational=False)
