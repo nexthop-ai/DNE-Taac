@@ -119,9 +119,7 @@ test_config = taac_types.TestConfig(
 
     def test_output_json_argument(self):
         """Test --json-output argument is accepted."""
-        import tempfile
-
-        json_file = tempfile.mktemp(suffix=".json")
+        json_file = str(Path(self.temp_dir) / "output.json")
 
         exit_code = main(
             [
@@ -140,9 +138,7 @@ test_config = taac_types.TestConfig(
 
     def test_junit_output_argument(self):
         """Test --junit-output argument is accepted."""
-        import tempfile
-
-        junit_file = tempfile.mktemp(suffix=".xml")
+        junit_file = str(Path(self.temp_dir) / "output.xml")
 
         exit_code = main(
             [
