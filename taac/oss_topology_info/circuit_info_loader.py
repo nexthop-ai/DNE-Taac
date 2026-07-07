@@ -195,3 +195,33 @@ def get_circuits_for_hostname_oss(
         if circuit.status is None or circuit.status == "3":
             filtered.append(circuit)
     return filtered
+
+
+def ixia_interfaces_from_csv(dut_name: str) -> t.List[str]:
+    """Return the DUT-side interface names of all ixia circuits for ``dut_name``.
+
+    Reads ``circuit_info.csv`` via ``get_circuits_for_hostname_oss`` and
+    picks out rows whose neighbor platform is ``ixia``. The returned list
+    is deterministically ordered (CSV row order).
+
+    **Ordering caveat**: CSV row order does NOT imply semantic direction.
+    Callers that don't push traffic (e.g. agent-restart smokes) can safely
+    pair ``[0]`` with an ``ixia_downlink_interface`` slot and ``[1]`` with
+    ``ixia_uplink_interface`` for factories that require both. Callers
+    that DO push traffic and care which interface is downlink vs uplink
+    must not rely on this order — pass explicit direction via
+    ``endpoints=[...]`` or a per-circuit role column instead.
+    """
+    interfaces: t.List[str] = []
+    for circuit in get_circuits_for_hostname_oss(dut_name):
+        for near, far in (
+            (circuit.a_endpoint, circuit.z_endpoint),
+            (circuit.z_endpoint, circuit.a_endpoint),
+        ):
+            if (
+                near.device.name.lower() == dut_name.lower()
+                and far.device.desired_platform.os_type_name
+                and far.device.desired_platform.os_type_name.lower() == "ixia"
+            ):
+                interfaces.append(near.name)
+    return interfaces
