@@ -127,6 +127,7 @@ W800_CPU_QUEUE_TEST_CONFIG = create_npi_cpu_queue_test_config(
 # does NOT hit netwhoami at build time, so no stub bypass is needed.
 W800_BGP_HARDENING_TEST_CONFIG = build_bgp_dc_test_config(
     test_config_name="W800_BGP_HARDENING_TEST_CONFIG",
+    direct_ixia_connections=W800_IXIA_CONNECTIONS,
     device_name=w800.W800_DEVICE_NAME,
     local_mac_address=w800.W800_LOCAL_MAC_ADDRESS,
     ixia_downlink_interface=w800.W800_IXIA_DOWNLINK_INTERFACE,
@@ -240,6 +241,7 @@ W800_LONGEVITY_TEST_CONFIG = gen_snake_test_config(
 # netwhoami FBOSS-platform check for the not-yet-in-inventory w800 stub.
 W800_THRIFT_HARDENING_TEST_CONFIG = create_npi_thrift_hardening_test_config(
     test_config_name="W800_THRIFT_HARDENING_TEST_CONFIG",
+    direct_ixia_connections=W800_IXIA_CONNECTIONS,
     device_name=w800.W800_DEVICE_NAME,
     local_mac_address=w800.W800_LOCAL_MAC_ADDRESS,
     ixia_downlink_interface=w800.W800_IXIA_DOWNLINK_INTERFACE,
