@@ -12872,6 +12872,42 @@ SNAKE_BENCHMARK_PACKET_SIZES = [
     9124,
 ]
 SNAKE_BENCHMARK_DURATION_S = 12 * 60
+<<<<<<< HEAD
+=======
+# Loss ceiling for benchmark items exempted from the zero-loss default. Worst
+# expected loss in the sweep is 64B at 100% offered on TH5: the ASIC forwards
+# ~28% of offered at best (line-rate minimum is ~295B), i.e. ~72% loss;
+# measured loss runs lower. 80% passes that physics loss while a blackholed
+# item or dead link (100% loss) still fails.
+SNAKE_BENCHMARK_MAX_LOSS_PCT = 80
+
+# Selects every traffic item except the benchmark sweep, whose items are named
+# f"SNAKE_BENCHMARK_{size}B" (plus IXIA's " #N" per extra endpoint pair).
+NON_BENCHMARK_TRAFFIC_REGEX = r"^(?!SNAKE_BENCHMARK_).*"
+
+# Settle window between agent convergence and the postchecks, for the warmboot
+# playbook -- the sibling restart/reboot playbooks use a 300s one for the same
+# reason ("the convergence step can sometimes complete too quickly").
+#
+# SwitchRunState.CONFIGURED means the agent applied its config, which is not
+# the same as LLDP neighbors being relearned: that's soft state learned from
+# the wire, wiped by the restart, and refilled only as neighbors re-advertise.
+# 120s here rather than the sibling 300s -- re-measure if LLDP_CHECK still
+# flakes on the warmboot playbook.
+SNAKE_AGENT_LLDP_SETTLE_S = 120
+
+
+def ixia_traffic_item_identifiers(name: str, instances: int = 1) -> t.List[str]:
+    """Every identifier IXIA reports for ``instances`` items sharing one name.
+
+    A snake config builds one traffic item per snake, all with the same name,
+    and IXIA disambiguates the duplicates with a " #N" suffix (the first keeps
+    the bare name). The packet-loss check matches identifiers by exact string,
+    so a threshold naming only the bare form silently misses every sibling --
+    which lands them in the catch-all zero-loss default instead.
+    """
+    return [name] + [f"{name} #{idx}" for idx in range(1, max(instances, 1))]
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
 
 
 def gen_snake_benchmark_playbooks(
@@ -13323,10 +13359,22 @@ def gen_snake_playbooks(
                                 service=taac_types.Service.QSFP_SERVICE,
                                 trigger=taac_types.ServiceInterruptionTrigger.SYSTEMCTL_RESTART,
                             ),
+                            # QSFP_SERVICE, not just AGENT: waiting only on the
+                            # agent returns immediately here (it was never
+                            # touched), so postchecks ran while qsfp_service was
+                            # still coming up and missed its transceiver re-poll
+                            # burst entirely. Matches test_snake_qsfp_service_crash.
                             create_service_convergence_step(
-                                services=[taac_types.Service.AGENT],
-                                description="Wait for wedge_agent to converge",
+                                services=[
+                                    taac_types.Service.AGENT,
+                                    taac_types.Service.QSFP_SERVICE,
+                                ],
+                                description="Wait for agent + qsfp_service to converge",
                             ),
+                            # Convergence can report active before the re-poll
+                            # settles; without this the postcheck window closes
+                            # before the peak. Same rationale as the crash variant.
+                            create_longevity_step(duration=300),
                         ]
                     )
                 ],
@@ -13349,6 +13397,11 @@ def gen_snake_playbooks(
                                     taac_types.Service.FSDB,
                                 ],
                             ),
+                            # Settle before postchecks, matching
+                            # test_snake_fsdb_crash: convergence reports active
+                            # as soon as the unit is up, which can precede the
+                            # post-restart activity a postcheck is meant to see.
+                            create_longevity_step(duration=300),
                         ]
                     )
                 ],

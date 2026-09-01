@@ -890,6 +890,7 @@ class TaacRunner:
                                 else:
                                     test_devices = [test_device]
 
+<<<<<<< HEAD
                             await asyncio.gather(
                                 *[
                                     self.async_run_stage(
@@ -902,6 +903,32 @@ class TaacRunner:
                                     for test_device in test_devices
                                 ]
                             )
+=======
+                            try:
+                                await asyncio.gather(
+                                    *[
+                                        self.async_run_stage(
+                                            stage,
+                                            test_device,
+                                            playbook.name,
+                                            test_case_start_time,
+                                            test_case_results,
+                                        )
+                                        for test_device in test_devices
+                                    ]
+                                )
+                            finally:
+                                # Tabulate prechecks as soon as they finish
+                                # (pass OR fail — ValidationStep appends its
+                                # results before raising) so someone tailing
+                                # a live run sees them before the stages start.
+                                if stage.description == _PRECHECK_STAGE_DESCRIPTION:
+                                    await self._log_stage_health_results(
+                                        test_case_results,
+                                        taac_types.ValidationStage.PRE_TEST,
+                                        "PRE-HEALTH CHECK RESULTS",
+                                    )
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
                         except TestbedError:
                             if self.continue_on_precheck_failure:
                                 self.logger.warning(
@@ -1215,7 +1242,37 @@ class TaacRunner:
     async def _log_post_test_results(
         self, test_case_results: t.List[TestResult]
     ) -> None:
+<<<<<<< HEAD
         """Log a summary table of POST_TEST health check results.
+=======
+        """Tabulate one validation stage's results, never raising.
+
+        Every call site is inside a ``finally`` (the precheck stage's, and the
+        end-of-case MID/POST/SNAPSHOT loop's), so an exception escaping here
+        would REPLACE the in-flight failure: a precheck ``TestbedError`` would
+        surface as an everpaste error, the ``except TestbedError`` handler
+        would never run, and ``--continue-on-precheck-failure`` would silently
+        stop working. The Everpaste upload for failed rows makes that
+        reachable, so failures are logged and swallowed -- this output is
+        diagnostic and must never preempt the real error.
+        """
+        try:
+            await self._log_stage_health_results_inner(
+                test_case_results, stage, title
+            )
+        except Exception as table_exc:
+            self.logger.warning(
+                f"Could not tabulate '{title}' results: {table_exc}"
+            )
+
+    async def _log_stage_health_results_inner(
+        self,
+        test_case_results: t.List[TestResult],
+        stage: taac_types.ValidationStage,
+        title: str,
+    ) -> None:
+        """Log a summary table of health check results for one validation stage.
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
 
         Filters test_case_results to only include POST_TEST checks and logs
         them in a formatted table showing check name, status, and any failure message.

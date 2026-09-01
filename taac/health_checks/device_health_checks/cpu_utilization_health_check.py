@@ -39,6 +39,30 @@ CPU_UTILIZATION_KEY_DESC_FBOSS = "regex(cgroup.slice.workload.*({service}).*.cpu
 CPU_UTILIZATION_KEY_DESC_EOS = "bgpd.process.cpu.percent"
 
 
+def format_cpu_max_summary(
+    service_data_list: t.Sequence[t.Mapping[str, t.Any]],
+    window_sec: float,
+) -> str:
+    """One-line MAX-over-window summary for the health check result message.
+
+    The tabulated version goes to ``logger.info``, which the runner suppresses
+    on console; only the result message reaches the run summary table.
+
+    A threshold of 0 means "report only, no gate" (see ``_run_oss_via_
+    collector``), shown as "no limit" so a high peak under no threshold isn't
+    misread as having passed a check that never ran.
+    """
+    if not service_data_list:
+        return ""
+    ordered = sorted(service_data_list, key=lambda d: d["cpu_pct"], reverse=True)
+    parts = []
+    for d in ordered:
+        threshold = d["threshold"]
+        limit = f"{threshold}%" if threshold > 0 else "no limit"
+        parts.append(f"{d['service']} {d['cpu_pct']:.2f}%/{limit}")
+    return f"MAX over {window_sec:.0f}s: {', '.join(parts)}"
+
+
 class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthCheckIn]):
     CHECK_NAME = hc_types.CheckName.CPU_UTILIZATION_CHECK
     OPERATING_SYSTEMS = [
@@ -529,7 +553,12 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
             )
             self.add_data_to_log({f"current_{service}_cpu_pct": max_pct})
 
-            if max_pct > svc_threshold:
+            # threshold=0 means "report the peak, don't gate on it" — matching
+            # the memory check. Use it where a service legitimately spikes for
+            # reasons incidental to what the test measures (transceiver polling
+            # on a snake, a service restart mid-playbook) and no baseline
+            # exists to gate against yet.
+            if svc_threshold > 0 and max_pct > svc_threshold:
                 violations.append(
                     f"{service}: {max_pct:.1f}% > {svc_threshold}% threshold "
                     f"(MAX-over-window from continuous collector)"
@@ -549,6 +578,7 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
             )
 
         window_sec = max(0.0, window_end - window_start)
+        max_summary = format_cpu_max_summary(service_data_list, window_sec)
         table_rows = [
             [d["service"], f"{d['cpu_pct']:.2f}", f"{d['threshold']}"]
             for d in service_data_list
@@ -581,9 +611,13 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
                 message=(
                     f"CPU utilization exceeded threshold on {obj.name}:\n"
                     + "\n".join(violations)
+                    + f"\n{max_summary}"
                 ),
             )
         return hc_types.HealthCheckResult(
             status=hc_types.HealthCheckStatus.PASS,
-            message="CPU utilization is within the defined threshold.",
+            message=(
+                "CPU utilization is within the defined threshold.\n"
+                f"{max_summary}"
+            ),
         )

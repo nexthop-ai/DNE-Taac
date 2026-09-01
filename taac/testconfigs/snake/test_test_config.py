@@ -24,8 +24,15 @@ definition file, not a unit test (per the TAAC repo convention).
 import typing as t
 
 from ixia.ixia import types as ixia_types
+from taac.constants import Gigabyte
 from taac.health_checks.healthcheck_definitions import (
+    create_cpu_utilization_check,
     create_ixia_packet_loss_check,
+<<<<<<< HEAD
+=======
+    create_port_state_check,
+    create_memory_utilization_check,
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
 )
 from taac.playbooks.playbook_definitions import (
     gen_common_hcs,
@@ -127,6 +134,19 @@ def gen_benchmark_traffic_item_configs(
     return traffic_item_configs, name_by_packet_size
 
 
+# Standard FBOSS per-service memory ceilings, matching the set the other test
+# configs use (see bgp_ebb_health_checks, bgp_dc_tc_checks, the hyperport and
+# fboss_solution_tests configs). Duplicated here rather than shared because no
+# common constant exists yet — worth extracting if a fourth copy appears.
+_MEMORY_THRESHOLD_BY_SERVICE: t.Dict[str, t.Union[int, float]] = {
+    "bgpd": Gigabyte.GIG_4_POINT_5.value,
+    "fsdb": Gigabyte.GIG_5.value,
+    "qsfp_service": Gigabyte.GIG_2.value,
+    "fboss_sw_agent": Gigabyte.GIG_9.value,
+    "fboss_hw_agent@0": Gigabyte.GIG_8.value,
+}
+
+
 def gen_snake_test_config(
     name: str,
     hostname: str,
@@ -148,6 +168,20 @@ def gen_snake_test_config(
     benchmark_packet_sizes: t.Optional[t.List[int]] = None,
     benchmark_line_rate: int = 100,
     use_ipv6_ping: bool = True,
+<<<<<<< HEAD
+=======
+    additional_dut_hostnames: t.Optional[t.List[str]] = None,
+    playbooks_to_include: t.Optional[t.List[str]] = None,
+    primary_endpoint_is_dut: bool = True,
+    use_cross_device_half_interface_toggle: bool = False,
+    postcheck_port_state_retry_count: t.Optional[int] = None,
+    postcheck_port_state_retry_delay_seconds: float = 10.0,
+    qsfp_service_restart_use_recovery_window: bool = False,
+    rapid_a_end_flap_neighbor_hostnames: t.Optional[t.List[str]] = None,
+    flap_recovery_check_retry_count: t.Optional[int] = None,
+    flap_recovery_check_retry_delay_seconds: float = 10.0,
+    include_utilization_checks: bool = False,
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
 ) -> taac_types.TestConfig:
     """Build a single-DUT snake/loopback ``TestConfig``.
 
@@ -194,6 +228,15 @@ def gen_snake_test_config(
             manual_test_interfaces: Optional explicit interface list
                 forwarded to ``gen_snake_playbooks`` for tests that
                 need an operator-pinned target set.
+
+        Service utilization reporting:
+            include_utilization_checks: Append CPU + memory utilization
+                checks to every playbook's POSTchecks, so each playbook
+                logs the per-service peak it reached
+                (``MAX over Ns: <service> NN.NN%/no limit, ...``).
+                CPU reports only; memory gates on the standard FBOSS
+                per-service ceilings. Backed by the OSS collectors; off
+                by default so the internal snake configs are unaffected.
 
     Returns:
         A ``TestConfig`` ready to slot into ``SNAKE_TEST_CONFIGS``.
@@ -262,6 +305,47 @@ def gen_snake_test_config(
         # post-check: keep clear_traffic_stats=False, only adjust the drain window
         common_postchecks = _override_packet_loss(common_hcs, clear_traffic_stats=False)
 
+<<<<<<< HEAD
+=======
+    qsfp_service_restart_postchecks = None
+    if qsfp_service_restart_use_recovery_window:
+        qsfp_service_restart_postchecks = _override_packet_loss(
+            common_postchecks, clear_traffic_stats=True
+        )
+
+    if include_utilization_checks:
+        # Postchecks only. Both checks are MAX-over-window against the OSS
+        # collectors, and the window defaults to [test_case_start_time, now] --
+        # as a precheck that window is empty, so the check would SKIP and only
+        # add noise. As a postcheck it spans the playbook.
+        #
+        # CPU reports only: threshold=0 means "no gate" on the OSS path, so it
+        # reports its peak without being able to fail a traffic test on a
+        # number nobody has baselined.
+        #
+        # qsfp_service and the hw agent both spike far above their median for
+        # one or two polls when transceivers are re-polled after a service or
+        # agent restart. The burst is short enough that repeated runs of the
+        # same playbook report very different peaks, so a ceiling in that band
+        # gates on which poll caught the burst rather than on device health.
+        # Gate per-playbook if a baseline ever justifies it.
+        #
+        # Memory DOES gate, on the standard FBOSS per-service ceilings the
+        # other test configs use. Unlike the CPU peaks these are steady values
+        # -- they hold flat to within about a megabyte across a run -- so a
+        # ceiling here gates on real growth rather than on poll timing.
+        # qsfp_service has the least headroom of the set and is the one that
+        # visibly accumulates over process uptime, so it is the first to look
+        # at if these ever trip.
+        common_postchecks = common_postchecks + [
+            create_cpu_utilization_check(threshold=0),
+            create_memory_utilization_check(
+                threshold=Gigabyte.GIG_5.value,
+                threshold_by_service=_MEMORY_THRESHOLD_BY_SERVICE,
+            ),
+        ]
+
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
     ptp_configs = [
         ixia_types.PTPConfig(
             server_endpoint=ixia_types.PTPEndpoint(
@@ -668,7 +752,16 @@ MINIPACK3_STANDALONE_TEST_CONFIG_FBOSS159_800G_DR4_GEARBOX = gen_snake_test_conf
     #  * fsdb restart/crash: fsdb is not deployed on this manually brought-up box (no
     #    fsdb.service), so they time out on fsdb-thrift -- an environment gap, not a bug.
     #  * transceiver/fiber removal: require physical optic/fiber manipulation at the rack.
+<<<<<<< HEAD
     #  * system reboots (bmc/userver): run separately/last (heavy; box is hand-deployed).
+=======
+    # The three system-reboot playbooks (bmc_full / bmc_microserver / microserver) are
+    # ENABLED. They were once skipped out of concern that a hand-brought-up box (no
+    # COOP to re-provision it) would not come back cleanly, but all three pass:
+    # wedge_agent and qsfp_service are systemd-enabled and the agent config +
+    # packages live on disk, so the snake restores itself on boot with the agent
+    # config sha unchanged and every link back up.
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
     playbooks_to_skip=[
         "test_one_min_longevity",
         "test_one_hour_longevity",
@@ -681,9 +774,29 @@ MINIPACK3_STANDALONE_TEST_CONFIG_FBOSS159_800G_DR4_GEARBOX = gen_snake_test_conf
         "test_snake_fsdb_restart",
         "test_snake_fsdb_crash",
     ],
-    # iteration=1 for the first full Phase 3/4 sweep (validate each disruption once);
-    # bump later once a clean single-iteration sweep is confirmed.
+    # iteration=1 validates each disruption once; bump once a clean
+    # single-iteration sweep is confirmed.
     iteration=1,
+<<<<<<< HEAD
+=======
+    # test_snake_link_flap_with_longevity: full production timeline. A reduced
+    # first pass (1 cycle / first 3 interfaces / 2m recovery / 2m soak) passed with
+    # zero packet loss, so this runs the real test at the playbook defaults: 33 flap
+    # cycles over ALL interfaces (30s disable / 10s enable per-interface spacing),
+    # then a 1-hour longevity soak.
+    include_link_flap_longevity=True,
+    # test_snake_rapid_a_end_flap_stress: rapid OPTICAL flap (wedge_qsfp_util
+    # tx_disable/tx_enable) of every snake circuit's A-end, continuously for 1 hour
+    # of wall time with a 6s hold between flaps, then a 2-minute rest, a device+IXIA
+    # stats clear, a mid-test validation (all links UP + LLDP), and a 5-minute
+    # longevity soak measured clean. Complements the admin-disable (thrift) link-flap
+    # test with an optical-laser stress on one end per circuit (gearbox sibling-lane
+    # safe). Values are the playbook defaults (3600s / 6s / 120s / 300s).
+    # The flap COUNT is not 3600/6: each flap also pays two wedge_qsfp_util
+    # invocations across all A-ends, measured at ~18.7s/flap on this box's 94
+    # A-ends, so expect roughly 190 flaps in the hour rather than 600.
+    include_rapid_a_end_flap_stress=True,
+>>>>>>> 11f6733 (NO-DEVX: print out CPU/Memory watermarks in checks (#273))
 )
 
 
