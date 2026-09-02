@@ -606,6 +606,12 @@ class IxiaSetupError(Exception):
     pass
 
 
+# `verify_protocols` budget. Each poll is a full CSV export of the Protocols
+# Summary view, so polls are deliberately infrequent.
+_PROTOCOLS_SUMMARY_TIMEOUT_SECONDS = 300
+_PROTOCOLS_SUMMARY_POLL_SECONDS = 15
+
+
 class IxiaOperationTimeoutError(TimeoutError):
     def __init__(self, message: str, *, deadline_expired: bool = False) -> None:
         super().__init__(message)
@@ -2213,6 +2219,167 @@ class Ixia:
 
         time.sleep(sleep_timer)
 
+<<<<<<< HEAD
+=======
+    def stop_protocols_and_wait(
+        self,
+        timeout_seconds: int = _PROTOCOL_STATE_SETTLE_TIMEOUT_SECONDS,
+        poll_seconds: int = _PROTOCOL_STATE_POLL_SECONDS,
+    ) -> None:
+        """Stop all protocols and block until the device groups have really stopped.
+
+        Use this, not bare :meth:`stop_protocols`, before writing any property
+        that IxNetwork refuses to change on a started element (AS-path segments,
+        community lists, prefix-pool multipliers, ...).
+
+        ``StopAllProtocols(Arg1="sync")`` returns once the stop is QUEUED, not
+        once it has been applied: IxNetwork reports the outstanding work as
+        "changes are pending to be applied after the following action(s) ...
+        Stopping <element>". A property write issued inside that window is
+        rejected outright with "Changing the property in a started element is
+        not permitted", and the caller sees an error that looks nothing like a
+        race.
+        """
+        self.stop_protocols()
+        self.wait_for_protocols_stopped(
+            timeout_seconds=timeout_seconds, poll_seconds=poll_seconds
+        )
+
+    def wait_for_protocols_stopped(
+        self,
+        timeout_seconds: int = _PROTOCOL_STATE_SETTLE_TIMEOUT_SECONDS,
+        poll_seconds: int = _PROTOCOL_STATE_POLL_SECONDS,
+    ) -> None:
+        """Block until every device group has left the started/transitioning state.
+
+        Polls the authoritative ``DeviceGroup.Status`` rather than sleeping for a
+        guessed duration: it returns as soon as the state actually flips (usually
+        far sooner than a fixed sleep) and still waits when a large topology
+        genuinely takes longer. ``timeout_seconds`` is therefore a bound on the
+        ERROR path -- a healthy stop never reaches it -- not an estimate of how
+        long stopping takes.
+
+        Raises:
+            IxiaOperationTimeoutError: if any device group is still not stopped
+                when the timeout expires. Named elements and their states are
+                included, because "which element is still started" is exactly
+                what the raw IxNetwork rejection does not tell you.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            # `Status` is a REST round-trip and is free to change between reads,
+            # so sample it ONCE per device group: reading it again for the error
+            # message could report a different state than the one that failed
+            # the check.
+            statuses = [
+                (device_group.Name, device_group.Status)
+                for topology in self.ixnetwork.Topology.find()
+                for device_group in topology.DeviceGroup.find()
+            ]
+            pending = [
+                (name, status)
+                for name, status in statuses
+                if status not in _PROTOCOLS_STOPPED_STATES
+            ]
+            if not pending:
+                self.logger.debug(
+                    "[GLOBAL] All device groups have reached a stopped state"
+                )
+                return
+            if time.monotonic() >= deadline:
+                raise IxiaOperationTimeoutError(
+                    f"device groups still not stopped after {timeout_seconds}s, "
+                    f"so a property write would be rejected: {pending}",
+                    deadline_expired=True,
+                )
+            self.logger.info(
+                f"Waiting for {len(pending)} device group(s) to stop: {pending}"
+            )
+            time.sleep(poll_seconds)
+
+    # Which Protocols Summary rows a device group's stacks show up on. A group
+    # that is disabled may only excuse the rows it actually creates -- ECMP_2 is
+    # v6-only, so a single global allowance would also have accepted 50 dead v4
+    # sessions.
+    _NOT_STARTED_ROW_BY_STACK: t.ClassVar[t.Tuple[t.Tuple[str, str], ...]] = (
+        ("v4_addresses_config", "IPv4"),
+        ("v6_addresses_config", "IPv6"),
+        ("v4_bgp_config", "BGP Peer"),
+        ("v6_bgp_config", "BGP+ Peer"),
+    )
+
+    def _expected_not_started_by_protocol(self) -> t.Dict[str, int]:
+        """Sessions the CONFIG says never start, per Protocols Summary row.
+
+        A `DeviceGroupConfig(enable=False)` is created but not started, so its
+        `multiplier` sessions report as notStarted for the whole run.
+
+        Read from `self.ixia_config`, which is the same source the device groups
+        were built from -- no chassis query, so it costs nothing.
+
+        NOTE this is a SETUP-TIME expectation. `ixia_config` does not change
+        when a playbook enables a disabled group mid-test, so a call made after
+        that point would be too lenient by that group's multiplier. The only
+        caller is `start_and_verify_protocols`, which runs before any playbook.
+        """
+        expected: t.Dict[str, int] = {}
+        cfg = getattr(self, "ixia_config", None)
+        for port in getattr(cfg, "port_configs", None) or []:
+            for dg in getattr(port, "device_group_configs", None) or []:
+                if getattr(dg, "enable", True):
+                    continue
+                # ASSUMES ONE SESSION PER DEVICE PER ROW. `multiplier` is the
+                # device count, and each device contributes one entry to each
+                # row its stacks create -- true for the singular
+                # `v{4,6}_bgp_config` / `v{4,6}_addresses_config` this type
+                # model allows. A group carrying more than one peer per device
+                # would UNDERCOUNT the allowance, and the check would then
+                # report a real-looking "N sessions not started" failure. If
+                # that becomes possible, count peers rather than devices.
+                sessions = int(getattr(dg, "multiplier", None) or 1)
+                for stack, protocol_type in self._NOT_STARTED_ROW_BY_STACK:
+                    if getattr(dg, stack, None) is not None:
+                        expected[protocol_type] = (
+                            expected.get(protocol_type, 0) + sessions
+                        )
+        return expected
+
+    @staticmethod
+    def _stat_int(value: t.Any) -> int:
+        """Stat-view cells arrive as CSV strings, and may be blank."""
+        try:
+            return int(str(value).strip() or 0)
+        except ValueError:
+            return 0
+
+    @classmethod
+    def _protocols_summary_failures(
+        cls,
+        rows: t.Iterable[t.Any],
+        expected_not_started: t.Mapping[str, int],
+    ) -> t.List[str]:
+        """Every way a Protocols Summary snapshot disagrees with the config.
+
+        Any protocol type the config does not name is expected fully up. Rows
+        are reported individually so a failure says WHICH protocol is wrong
+        rather than "condition not met".
+        """
+        failures: t.List[str] = []
+        for row in rows:
+            protocol_type = row["Protocol Type"]
+            allowed = expected_not_started.get(protocol_type, 0)
+            not_started = cls._stat_int(row["Sessions Not Started"])
+            down = cls._stat_int(row["Sessions Down"])
+            if not_started > allowed:
+                failures.append(
+                    f"{protocol_type}: {not_started} sessions not started, "
+                    f"config expects at most {allowed}"
+                )
+            if down:
+                failures.append(f"{protocol_type}: {down} sessions down, expected 0")
+        return failures
+
+>>>>>>> 6f18a55 (NO-NOS: native coop-patcher path for the 2-IXIA conveyor config (#278))
     def verify_protocols(self) -> None:
         """API to verify the status of the protocols in the topology"""
         if self.skip_ixia_protocol_verification:
@@ -2224,6 +2391,7 @@ class Ixia:
             UhdStatViewAssistant if self.is_uhd_chassis else IxnStatViewAssistant
         )
 
+<<<<<<< HEAD
         protocols_summary = StatViewAssistant(self.ixnetwork, "Protocols Summary")
 
         protocols_summary.CheckCondition(
@@ -2233,6 +2401,54 @@ class Ixia:
         protocols_summary.CheckCondition(
             "Sessions Down", StatViewAssistant.EQUAL, 0, Timeout=300
         )
+=======
+        # `Rows` takes a full CSV export on EVERY access (measured 6+ min at
+        # full scale), so the snapshot count is the whole cost of this check.
+        # On a healthy setup the expectation holds on the first one. Deliberately
+        # not a `CheckCondition` loop: that snapshots per poll, and its Timeout
+        # bounds when polling stops STARTING, not the total duration.
+        #
+        # Holds the session snapshot lock for the same reason the CheckCondition
+        # version did: every `.Rows` read is a chassis CSV snapshot, so this is
+        # one of the heaviest snapshot users in the class. Nesting is safe --
+        # `_snapshot_lock` is an RLock.
+        with self.stat_view_snapshot():
+            protocols_summary = StatViewAssistant(self.ixnetwork, "Protocols Summary")
+            expected_not_started = self._expected_not_started_by_protocol()
+            self.logger.info(
+                f"[GLOBAL] Verifying protocols; sessions the config expects "
+                f"never to start: {expected_not_started or 'none'}"
+            )
+
+            # Honour the caller's `ixia_protocol_verification_timeout`: the
+            # parameter is named for verification, so a reader reasonably
+            # expects it to bound verification. It previously sized only the
+            # blind sleep on the skip path above, leaving this loop pinned to
+            # the module default. A configured 0 means "no sleep" on the skip
+            # path rather than "no time to verify", so fall back to the default.
+            #
+            # This also bounds how long the snapshot lock is held.
+            budget = int(
+                getattr(self, "ixia_protocol_verification_timeout", 0) or 0
+            ) or _PROTOCOLS_SUMMARY_TIMEOUT_SECONDS
+            deadline = time.monotonic() + budget
+            while True:
+                failures = self._protocols_summary_failures(
+                    protocols_summary.Rows, expected_not_started
+                )
+                if not failures:
+                    break
+                if time.monotonic() >= deadline:
+                    raise IxiaOperationTimeoutError(
+                        "IXIA protocols did not reach the state the config "
+                        f"expects within {budget}s: " + "; ".join(failures),
+                        deadline_expired=True,
+                    )
+                self.logger.info(
+                    f"[GLOBAL] Waiting on protocols: {'; '.join(failures)}"
+                )
+                time.sleep(_PROTOCOLS_SUMMARY_POLL_SECONDS)
+>>>>>>> 6f18a55 (NO-NOS: native coop-patcher path for the 2-IXIA conveyor config (#278))
 
         self.logger.info(
             "[GLOBAL] Successfully verified the operational status of all "
@@ -5735,10 +5951,23 @@ class Ixia:
                 )
 
     def start_and_verify_protocols(self) -> None:
-        """Starts and verifies the protocols"""
+        """Starts and verifies the protocols.
+        """
+        _t = time.time()
         self.start_protocols()
+        self.logger.warning(
+            f"{_GREEN}[IXIA]{_RESET}   start_protocols in {time.time() - _t:.0f}s"
+        )
+        _t = time.time()
         self._send_arp_and_ns()
+        self.logger.warning(
+            f"{_GREEN}[IXIA]{_RESET}   send ARP/NS in {time.time() - _t:.0f}s"
+        )
+        _t = time.time()
         self.verify_protocols()
+        self.logger.warning(
+            f"{_GREEN}[IXIA]{_RESET}   verify_protocols in {time.time() - _t:.0f}s"
+        )
 
     def _send_arp_and_ns(self) -> None:
         """Send ARP (IPv4) and NS (IPv6) on all device group interfaces.

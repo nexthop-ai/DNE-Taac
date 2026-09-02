@@ -361,7 +361,7 @@ def get_bgp_peer_config_tasks_uplink_only(
                     "bgpcpp",
                     "bgpcpp_softdrain",
                 ],
-                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}",
+                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}_uplink_ecmp",
                 py_func_name="add_bgp_policy_match_prefix_to_propagate_routes",
                 patcher_args={
                     "matching_prefix": f"{ecmp_group_overflow_prefix}::/16",
@@ -395,12 +395,53 @@ def get_bgp_peer_config_tasks(
     route_map_downlink_egress,
     ecmp_group_overflow_prefix,
     v6_uplink_prefix,
+    permissive_ingress=None,
 ):
     """
     Returns the list of BGP peer configuration tasks that were originally part of list b in
     test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor.py
     """
     tasks = []
+
+    # The uplink V6 mimic group's peer-group patcher was left commented out
+    # below, so it alone kept the DUT's *production* baseline for this group.
+    # The attribute set is the downlink sibling's verbatim (and the commented
+    # original's), rather than just the ingress policy: repointing ingress
+    # alone fixes the prefixes and leaves the AFI divergence in place.
+    tasks.append(
+        create_coop_register_patcher_task(
+            hostname=device_name,
+            config_names=[
+                "bgpcpp",
+                "bgpcpp_softdrain",
+            ],
+            patcher_name=(
+                f"update_peer_group_patcher_{peergroup_uplink_mimic_v6}_Uplink"
+            ),
+            py_func_name="configure_bgp_peer_group",
+            patcher_args={
+                "name": peergroup_uplink_mimic_v6,
+                "attributes_to_update_json": json.dumps(
+                    {
+                        "disable_ipv4_afi": "True",
+                        "v4_over_v6_nexthop": "False",
+                        "is_passive": "False",
+                        "is_confed_peer": is_uplink_peer_confed,
+                        "max_routes": per_peer_max_route_limit,
+                        # The V6 groups take their ingress from the baseline
+                        # unless asked otherwise; without this only the V4
+                        # groups get repointed and half the mimic prefixes are
+                        # still rejected.
+                        **(
+                            {"ingress_policy_name": permissive_ingress}
+                            if permissive_ingress
+                            else {}
+                        ),
+                    }
+                ),
+            },
+        )
+    )
 
     # Add FAUU EB peer groups if device name contains "uu"
     if "uu" in device_name:
@@ -426,6 +467,16 @@ def get_bgp_peer_config_tasks(
                             "is_passive": "False",
                             "is_confed_peer": is_downlink_peer_confed,
                             "max_routes": per_peer_max_route_limit,
+                            # The V6 groups take their ingress from
+                            # the baseline unless asked otherwise;
+                            # without this only the V4 groups get
+                            # repointed and half the mimic prefixes
+                            # are still rejected.
+                            **(
+                                {"ingress_policy_name": permissive_ingress}
+                                if permissive_ingress
+                                else {}
+                            ),
                         }
                     ),
                 },
@@ -502,10 +553,13 @@ def get_bgp_peer_config_tasks(
                 py_func_name="add_peer_group_patcher",
                 patcher_args={
                     "name": peergroup_downlink_mimic_v6,
-                    "description": "BGP peering from RSW to FSW, IPv4 sessions",
+                    "description": (
+                        "BGP peering from RSW to server/SLB downlinks, "
+                        "IPv6 sessions"
+                    ),
                     "next_hop_self": "True",
-                    "disable_ipv4_afi": "False",
-                    "disable_ipv6_afi": "True",
+                    "disable_ipv4_afi": "True",
+                    "disable_ipv6_afi": "False",
                     "is_confed_peer": is_downlink_peer_confed,
                     "ingress_policy_name": route_map_downlink_ingress,
                     "egress_policy_name": route_map_downlink_egress,
@@ -531,10 +585,13 @@ def get_bgp_peer_config_tasks(
                 py_func_name="add_peer_group_patcher",
                 patcher_args={
                     "name": peergroup_downlink_mimic_v6,
-                    "description": "BGP peering from RSW to FSW, IPv4 sessions",
+                    "description": (
+                        "BGP peering from RSW to server/SLB downlinks, "
+                        "IPv6 sessions"
+                    ),
                     "next_hop_self": "True",
-                    "disable_ipv4_afi": "False",
-                    "disable_ipv6_afi": "True",
+                    "disable_ipv4_afi": "True",
+                    "disable_ipv6_afi": "False",
                     "is_confed_peer": is_downlink_peer_confed,
                     "ingress_policy_name": route_map_downlink_ingress,
                     "egress_policy_name": route_map_downlink_egress + "_DRAIN",
@@ -673,7 +730,7 @@ def get_bgp_peer_config_tasks(
                     "bgpcpp",
                     "bgpcpp_softdrain",
                 ],
-                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_downlink_ingress}",
+                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_downlink_ingress}_downlink_ecmp",
                 py_func_name="add_bgp_policy_match_prefix_to_propagate_routes",
                 patcher_args={
                     "matching_prefix": f"{ecmp_group_overflow_prefix}::/16",
@@ -687,7 +744,7 @@ def get_bgp_peer_config_tasks(
                 config_names=[
                     "bgpcpp",
                 ],
-                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}",
+                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}_uplink_ecmp",
                 py_func_name="add_bgp_policy_match_prefix_to_propagate_routes",
                 patcher_args={
                     "matching_prefix": f"{ecmp_group_overflow_prefix}::/16",
@@ -700,7 +757,7 @@ def get_bgp_peer_config_tasks(
                 config_names=[
                     "bgpcpp_softdrain",
                 ],
-                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}",
+                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}_uplink_ecmp_drain",
                 py_func_name="add_bgp_policy_match_prefix_to_propagate_routes",
                 patcher_args={
                     "matching_prefix": f"{ecmp_group_overflow_prefix}::/16",
@@ -714,7 +771,7 @@ def get_bgp_peer_config_tasks(
                     "bgpcpp",
                     "bgpcpp_softdrain",
                 ],
-                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}_uplink",
+                patcher_name=f"add_bgp_policy_match_prefix_to_propagate_routes_{route_map_uplink_ingress}_uplink_prefix",
                 py_func_name="add_bgp_policy_match_prefix_to_propagate_routes",
                 patcher_args={
                     "matching_prefix": f"{v6_uplink_prefix}::/16",
@@ -823,6 +880,28 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
     bgp_longevity_ndp_uptime_s=900,
     bgp_longevity_ndp_downtime_s=120,
     bgp_longevity_ndp_total_duration_s=3600,
+    # Serialized BGP policy statement (JSON) to splice in and point the
+    # IXIA-mimic peer groups' ingress at, replacing route_map_*_ingress. The
+    # production SLB import policy filters on VIP prefix length and accepts
+    # none of the mimic prefixes, so without this the DUT receives every
+    # prefix and installs none, directional traffic has no route, and
+    # IXIA_PACKET_LOSS_CHECK fails in prechecks before any playbook body runs.
+    permissive_ingress_policy_json=None,
+    # Opt-in portQueueConfigName for the two IXIA-facing ports, e.g.
+    # "uplink_sp_olympic". The binding carries an egress SHAPER, not just queue
+    # names.
+    ixia_port_queue_config=None,
+    # Build the PTP master/slave stacks (uplink dg0 as master, downlink dg0 as
+    # slave). Set False on a chassis without PTP support.
+    # Default True, so existing callers are untouched.
+    enable_ptp=True,
+    # Seconds `Ixia.verify_protocols` sleeps on its SKIP path (this factory
+    # sets skip_ixia_protocol_verification=True). Pass 0
+    # to return immediately (`verify_protocols` guards the sleep on a truthy
+    # timeout). Default keeps the historical window, which elapses BEFORE
+    # traffic items are created, so opting out also starts traffic ~20 min
+    # earlier in the DUT's convergence.
+    ixia_protocol_verification_timeout=1200,
 ):
     """Build the BGP/FBOSS platform-hardening conveyor TestConfig for two IXIA chassis.
 
@@ -887,22 +966,26 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
     Returns:
         TestConfig: The two-IXIA-chassis hardening conveyor TestConfig.
     """
-    ptp_configs = [
-        ixia_types.PTPConfig(
-            server_endpoint=ixia_types.PTPEndpoint(
-                name=f"{device_name}:{ixia_uplink_interface}",
-                device_group_index=0,
-            ),
-            client_endpoints=[
-                ixia_types.PTPEndpoint(
-                    name=f"{device_name}:{ixia_downlink_interface}",
+    ptp_configs = (
+        [
+            ixia_types.PTPConfig(
+                server_endpoint=ixia_types.PTPEndpoint(
+                    name=f"{device_name}:{ixia_uplink_interface}",
                     device_group_index=0,
                 ),
-            ],
-            communication_mode=ixia_types.PTPCommunicationMode.UNICAST,
-            step_mode=ixia_types.PTPStepMode.TWO_STEP,
-        ),
-    ]
+                client_endpoints=[
+                    ixia_types.PTPEndpoint(
+                        name=f"{device_name}:{ixia_downlink_interface}",
+                        device_group_index=0,
+                    ),
+                ],
+                communication_mode=ixia_types.PTPCommunicationMode.UNICAST,
+                step_mode=ixia_types.PTPStepMode.TWO_STEP,
+            ),
+        ]
+        if enable_ptp
+        else []
+    )
 
     # TestConfig-level checks moved to playbook level
     _tc_prechecks = [
@@ -1098,9 +1181,40 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
         else []
     )
 
+    permissive_ingress_patchers = []
+    _permissive = None
+    if permissive_ingress_policy_json is not None:
+        _policy = json.loads(permissive_ingress_policy_json)
+        _permissive = _policy["name"]
+        permissive_ingress_patchers = [
+            create_coop_register_patcher_task(
+                hostname=device_name,
+                config_name="bgpcpp",
+                patcher_name=f"a_add_bgp_policy_statement_{_permissive}",
+                task_name="coop_register_patcher",
+                patcher_args={
+                    "name": _permissive,
+                    "description": _policy.get("description", ""),
+                    "policy_version": str(_policy.get("policy_version", "1")),
+                    "result": str(_policy.get("result", 1)),
+                    "policy_entries": json.dumps(_policy.get("policy_entries", [])),
+                },
+                py_func_name="add_bgp_policy_statement",
+            ),
+        ]
+        route_map_uplink_ingress = _permissive
+        route_map_downlink_ingress = _permissive
+        # NOTE: route_map_rogue_ingress is deliberately NOT repointed. This
+        # factory takes the rogue_* route-map parameters but never reads them,
+        # so assigning here would be dead. Wiring the rogue group up is a
+        # separate change: some platforms point the rogue peer-group name at
+        # the SAME peer group as the uplink one, so a rogue patcher would
+        # collide with the uplink patcher and last-write-wins would silently
+        # repoint the uplink group.
+
     return TestConfig(
         name=test_config_name,
-        ixia_protocol_verification_timeout=1200,  # todo remove this (should be 300)
+        ixia_protocol_verification_timeout=ixia_protocol_verification_timeout,
         skip_ixia_protocol_verification=True,
         basset_pool=basset_pool,
         ptp_configs=ptp_configs,
@@ -1121,6 +1235,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
         + _nbr_endpoints,
         setup_tasks=[
             create_coop_unregister_patchers_task(device_name),
+            *permissive_ingress_patchers,
             # Task(
             #     task_name="coop_register_patcher",
             #     params=Params(
@@ -1158,8 +1273,25 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 },
             ),
         ]
+        + (
+            [
+                create_coop_register_patcher_task(
+                    hostname=device_name,
+                    config_name="agent",
+                    patcher_name="queue_config_all_ixia_ports",
+                    py_func_name="change_port_queue_config",
+                    patcher_args={
+                        f"{ixia_uplink_interface}": ixia_port_queue_config,
+                        f"{ixia_downlink_interface}": ixia_port_queue_config,
+                    },
+                )
+            ]
+            if ixia_port_queue_config
+            else []
+        )
         + get_bgp_peer_config_tasks(
             device_name=device_name,
+            permissive_ingress=_permissive,
             peergroup_downlink_mimic_v6=peergroup_downlink_mimic_v6,
             peergroup_uplink_mimic_v6=peergroup_uplink_mimic_v6,
             peergroup_uplink_mimic_v4=peergroup_uplink_mimic_v4,

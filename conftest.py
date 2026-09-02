@@ -34,6 +34,33 @@ _NON_OSS_TEST_FILES = [
     "taac/utils/test_config_utils.py",
 ]
 
+<<<<<<< HEAD
+=======
+# ---------------------------------------------------------------------------
+# Files inside a _NON_OSS_TEST_DIRS directory that DO run in the OSS image.
+# The directory bans above are blanket ones -- most of taac/health_checks
+# cannot even be imported here -- but a handful of files are OSS-clean, and
+# ignoring them means a health-check change lands with no unit coverage at
+# all. Each entry below is verified green in the OSS image; add one only
+# after `run_tests.sh -- <path>` passes on its own.
+# ---------------------------------------------------------------------------
+_OSS_READY_TEST_FILES = [
+    "taac/health_checks/device_health_checks/test_cpu_utilization_report_only.py",
+    # Pure unit test: builds an Ixia via __new__ with a mocked ixia_config, so
+    # it needs none of the non-OSS deps the rest of taac/ixia/tests does.
+    "taac/ixia/tests/test_expected_session_states.py",
+    "taac/health_checks/device_health_checks/test_new_characterization_health_checks.py",
+    "taac/health_checks/device_health_checks/tests/test_pfc_counter_health_checks.py",
+    "taac/health_checks/tests/test_collector_max_summary.py",
+    "taac/health_checks/ixia_health_checks/test_ixia_port_stats_health_check.py",
+    "taac/health_checks/snapshot_health_checks/test_qos_queue_byte_counters.py",
+    "taac/health_checks/tests/test_common_utils.py",
+    "taac/health_checks/tests/test_convergence_observer.py",
+    "taac/health_checks/tests/test_healthcheck_definitions_systemctl.py",
+    "taac/steps/tests/test_run_ssh_command_step_factory.py",
+]
+
+>>>>>>> 6f18a55 (NO-NOS: native coop-patcher path for the 2-IXIA conveyor config (#278))
 # Build absolute paths relative to this conftest's directory (repo root).
 _HERE = os.path.dirname(__file__)
 
