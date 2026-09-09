@@ -1436,6 +1436,22 @@ def add_common_checks_to_cpu_queue_playbooks(
             if pb_has_service_restart_check
             else [common_service_restart_check] + common_postchecks_without_srh
         )
+        # Same reasoning as the SERVICE_RESTART_CHECK case above, applied to the
+        # packet-loss PREcheck. `get_checks_to_run` dedups on check name and
+        # lets later entries win, and prechecks here are merged as
+        # `playbook + common` while postchecks are merged `common + playbook`.
+        # So a playbook can override a common POSTcheck but never a common
+        # PREcheck. npi_cpu_036/037/038 need to: they disable the IXIA downlink,
+        # which black-holes the background BGP_PREFIX_TRAFFIC and their own
+        # IPV6_TRAFFIC, and the blanket zero-loss precheck then fails on that
+        # residue before the next playbook's body runs. Observed on hardware as
+        # multi-second loss durations on BGP_PREFIX_TRAFFIC and IPV6_TRAFFIC
+        # against a "0.1" threshold that PacketLossThreshold evaluates as
+        # DURATION, not the 10% this function's docstring describes.
+        pb_precheck_names = {c.name for c in (pb.prechecks or [])}
+        pb_common_prechecks = [
+            c for c in common_prechecks if c.name not in pb_precheck_names
+        ]
         result.append(
             Playbook(
                 name=pb.name,
@@ -1445,7 +1461,7 @@ def add_common_checks_to_cpu_queue_playbooks(
                 traffic_items_to_start=pb.traffic_items_to_start,
                 enabled=pb.enabled,
                 backup_and_restore_ixia_config=pb.backup_and_restore_ixia_config,
-                prechecks=list(pb.prechecks or []) + common_prechecks,
+                prechecks=list(pb.prechecks or []) + pb_common_prechecks,
                 postchecks=common_postchecks + list(pb.postchecks or []),
                 snapshot_checks=list(pb.snapshot_checks or []) + common_snapshot_checks,
                 skip_test_config_prechecks=pb.skip_test_config_prechecks,
@@ -20575,6 +20591,42 @@ TEST_BGP_CP_V4_DSCP0_TRAFFIC_PUNTED_TO_CPU_HIGH_QUEUE = (
 )
 
 
+# npi_cpu_036/037/038 disable the IXIA downlink to make a next hop
+# unreachable. Every traffic item running at that point --
+# BGP_PREFIX_TRAFFIC, BGP_PREFIX_TRAFFIC_V4 and the playbook's own
+# IPV6_TRAFFIC -- rides that port, so all three are black-holed on purpose.
+# The blanket zero-loss PREcheck then measures the previous playbook's
+# deliberate black-hole as a fault and fails before the next body runs.
+# Observed on hardware: the precheck reports multi-second loss durations on
+# all three of BGP_PREFIX_TRAFFIC, BGP_PREFIX_TRAFFIC_V4 and IPV6_TRAFFIC --
+# every failure PRE_TEST, none POSTcheck, which is what identifies it as
+# inherited residue rather than anything the playbook body did.
+#
+# There is no traffic item these playbooks can validly assert zero loss on at
+# entry, so they declare an explicit no-op precheck instead of inheriting the
+# blanket one. The real coverage is the POSTcheck, which measures the
+# playbook's own window and already passes.
+_UNH_FLAP_LOSS_PRECHECK = [
+    create_ixia_packet_loss_check(
+        clear_traffic_stats=True,
+        thresholds=[
+            hc_types.PacketLossThreshold(
+                names=[
+                    "BGP_PREFIX_TRAFFIC",
+                    "BGP_PREFIX_TRAFFIC_V4",
+                    "IPV6_TRAFFIC",
+                ],
+                expect_packet_loss=False,
+                # Duration metric (the struct default), in ms. The window is
+                # wait(sleep_time) + stop + sleep(sleep_time) ~= 20s, so this
+                # tolerates the whole window rather than asserting on residue.
+                str_value="30000",
+            ),
+        ],
+    ),
+]
+
+
 def create_cpu_queue_playbooks(
     low_queue: int,
     mid_queue: int,
@@ -21990,6 +22042,7 @@ def create_cpu_queue_playbooks(
         ],
         traffic_items_to_start=["BGP_PREFIX_TRAFFIC"],
         name=NPI_CPU_037_UNH_REMOTE_SUBNET_TO_LOW_QUEUE.name,
+        prechecks=_UNH_FLAP_LOSS_PRECHECK,
         snapshot_checks=[
             create_cpu_queue_snapshot_check(
                 active_queues=[low_queue],
@@ -22056,6 +22109,7 @@ def create_cpu_queue_playbooks(
         ],
         traffic_items_to_start=["BGP_PREFIX_TRAFFIC"],
         name=NPI_CPU_038_UNH_REMOTE_HOST_ROUTE_TO_LOW_QUEUE.name,
+        prechecks=_UNH_FLAP_LOSS_PRECHECK,
         snapshot_checks=[
             create_cpu_queue_snapshot_check(
                 active_queues=[low_queue],
@@ -22122,6 +22176,7 @@ def create_cpu_queue_playbooks(
         ],
         traffic_items_to_start=["IPV6_TRAFFIC"],
         name=NPI_CPU_036_UNH_DIR_CONN_HOST_TO_LOW_QUEUE.name,
+        prechecks=_UNH_FLAP_LOSS_PRECHECK,
         snapshot_checks=[
             create_cpu_queue_snapshot_check(
                 active_queues=[low_queue],
