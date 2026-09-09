@@ -917,8 +917,8 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 ),
                 hc_types.PacketLossThreshold(
                     names=[
-                        "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-                        "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                        f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                        f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
                     ],
                     str_value="0.1",
                     expect_packet_loss=False,
@@ -943,8 +943,8 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 ),
                 hc_types.PacketLossThreshold(
                     names=[
-                        "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-                        "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                        f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                        f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
                     ],
                     # todo (change this)
                     expect_packet_loss=False,
@@ -980,9 +980,12 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
     # it); stats are then cleared so the up-stage check can assert zero loss on
     # the recovered path alone.
     _uplink_flap_traffic_items = [
-        "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-        "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+        f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+        f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
     ]
+    # The check applies a zero-loss default to every item it is not told
+    # about, and these two NDP items are lossy by design (see _tc_prechecks).
+    _flap_skip_items = ["GOOD_BUT_LOSSY_NDP_TRAFFIC", "LOSSY_ROGUE_NDP_TRAFFIC"]
     _flap_down_stage_checks = [
         create_ixia_packet_loss_check(
             thresholds=[
@@ -993,6 +996,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 ),
             ],
             clear_traffic_stats=False,
+            skip_traffic_items=_flap_skip_items,
         ),
     ]
     _flap_up_stage_checks = [
@@ -1005,6 +1009,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 ),
             ],
             clear_traffic_stats=False,
+            skip_traffic_items=_flap_skip_items,
         ),
     ]
     _flap_playbook_kwargs = {
@@ -2287,8 +2292,8 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                             ),
                             hc_types.PacketLossThreshold(
                                 names=[
-                                    "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-                                    "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
                                 ],
                                 expect_packet_loss=False,
                             ),
@@ -2339,8 +2344,8 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                             ),
                             hc_types.PacketLossThreshold(
                                 names=[
-                                    "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-                                    "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
                                 ],
                                 expect_packet_loss=False,
                             ),
@@ -2392,8 +2397,8 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                             ),
                             hc_types.PacketLossThreshold(
                                 names=[
-                                    "V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
-                                    "V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V6_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
+                                    f"{device_name.upper()}_V4_DIRECTIONAL_TRAFFIC_BETWEEN_DOWNLINK_AND_UPLINK",
                                 ],
                                 expect_packet_loss=False,
                             ),
