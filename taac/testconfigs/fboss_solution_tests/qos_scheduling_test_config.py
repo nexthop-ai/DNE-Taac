@@ -2054,6 +2054,16 @@ def test_config_qos_scheduling(
     allow_all_v4_policies=False,
     uplink_bgp_peer_type=None,
     skip_playbooks=None,
+<<<<<<< HEAD
+=======
+    # OSS mode has no inventory service to resolve DUT-interface -> IXIA-port
+    # wiring, so an OSS caller has to carry the mapping on the TestConfig or
+    # IXIA setup fails with "No direct IXIA connections provided for endpoint
+    # <dut>". The conveyor already accepts this; only the forward was missing.
+    direct_ixia_connections=None,
+    precheck_packet_loss_clear_stats=False,
+    stress_static_routes=True,
+>>>>>>> ee10d83 (NOS-16379: add a stress_static_routes switch to the BGP hardening conveyor and QoS factory (#308))
 ):
     """Build a QoS scheduling + congestion TestConfig for FBOSS BGP++ devices.
 
@@ -2281,6 +2291,12 @@ def test_config_qos_scheduling(
         allow_all_v4_policies=allow_all_v4_policies,
         uplink_bgp_peer_type=uplink_bgp_peer_type,
         skip_playbooks=skip_playbooks,
+<<<<<<< HEAD
+=======
+        direct_ixia_connections=direct_ixia_connections,
+        precheck_packet_loss_clear_stats=precheck_packet_loss_clear_stats,
+        stress_static_routes=stress_static_routes,
+>>>>>>> ee10d83 (NOS-16379: add a stress_static_routes switch to the BGP hardening conveyor and QoS factory (#308))
     )
 
     # Append congestion port config and traffic item to the TestConfig

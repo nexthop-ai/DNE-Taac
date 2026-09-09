@@ -183,6 +183,14 @@ def build_bgp_dc_test_config(
     v4_downlink_prefix="101",
     v6_downlink_prefix="3000",
     ecmp_member_limit=11500,
+<<<<<<< HEAD
+=======
+    stress_static_routes=True,
+    # Next-hops for the ECMP stress groups; defaults to good_ndp_entries_uplink.
+    # Must satisfy max_group * min(36, count // 4) >= max_members --
+    # generate_prefix_nh_list_map asserts on the total.
+    ecmp_nh_device_group_count=None,
+>>>>>>> ee10d83 (NOS-16379: add a stress_static_routes switch to the BGP hardening conveyor and QoS factory (#308))
     additional_setup_tasks=None,
     allow_all_v4_policies=False,
     uplink_bgp_peer_type=None,
@@ -524,6 +532,7 @@ def build_bgp_dc_test_config(
                     ),
                 ]
             ),
+<<<<<<< HEAD
             create_add_stress_static_routes_task(
                 hostname=device_name,
                 max_ecmp_group=ecmp_group_limit,
@@ -531,6 +540,28 @@ def build_bgp_dc_test_config(
                 nh_prefix_1=f"{ixia_uplink_good_ndp_network}::/80",
                 lb_prefix_agg="6000:ab::/32",
                 device_group_count=good_ndp_entries_uplink,
+=======
+            # generate_prefix_nh_list_map caps each group at
+            # device_group_count // 4 members, so a platform with few uplink
+            # NDP nexthops cannot reach ecmp_member_limit; let it opt out.
+            # ecmp_nh_device_group_count is the other lever for the same
+            # assert: raise the NH pool instead of skipping the task.
+            *(
+                [
+                    create_add_stress_static_routes_task(
+                        hostname=device_name,
+                        max_ecmp_group=ecmp_group_limit,
+                        max_ecmp_members=ecmp_member_limit,
+                        nh_prefix_1=f"{ixia_uplink_good_ndp_network}::/80",
+                        lb_prefix_agg="6000:ab::/32",
+                        device_group_count=(
+                            ecmp_nh_device_group_count or good_ndp_entries_uplink
+                        ),
+                    )
+                ]
+                if stress_static_routes
+                else []
+>>>>>>> ee10d83 (NOS-16379: add a stress_static_routes switch to the BGP hardening conveyor and QoS factory (#308))
             ),
             create_configure_parallel_bgp_peers_task(
                 hostname=device_name,
