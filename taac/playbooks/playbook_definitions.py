@@ -13975,6 +13975,11 @@ def gen_snake_playbooks(
     link_flap_longevity_iterations: int = 33,
     link_flap_longevity_disable_delay_s: int = 30,
     link_flap_longevity_enable_delay_s: int = 10,
+    # Post-flap wait for the playbooks that reinitialise the transceiver
+    # (qsfp_util --clear_low_power, --qsfp-reset). INTERFACE_FLAP_STEP's
+    # ``delay`` is a single sleep after the whole batch, so this is the only
+    # time links get to relock before postchecks; modules need minutes.
+    optics_recovery_wait_s: int = 300,
     link_flap_longevity_soak_s: int = 3600,
     link_flap_longevity_interface_slice: t.Optional[str] = None,
     include_rapid_a_end_flap_stress: bool = False,
@@ -14315,7 +14320,7 @@ def gen_snake_playbooks(
                             create_interface_flap_step(
                                 enable=True,
                                 interface_flap_method=3,
-                                delay=link_flap_longevity_enable_delay_s,
+                                delay=optics_recovery_wait_s,
                                 jq_params={"interfaces": f'."{hostname}".interfaces'},
                                 description="Sequentially enable all interfaces",
                             ),
@@ -14339,7 +14344,7 @@ def gen_snake_playbooks(
                             create_interface_flap_step(
                                 enable=False,
                                 interface_flap_method=5,
-                                delay=link_flap_longevity_enable_delay_s,
+                                delay=optics_recovery_wait_s,
                                 jq_params={"interfaces": f'."{hostname}".interfaces'},
                                 description="Sequentially reset all interfaces",
                             ),

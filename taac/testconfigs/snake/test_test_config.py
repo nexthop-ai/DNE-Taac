@@ -144,6 +144,7 @@ def gen_snake_test_config(
     link_flap_longevity_iterations: int = 33,
     link_flap_longevity_disable_delay_s: int = 30,
     link_flap_longevity_enable_delay_s: int = 10,
+    optics_recovery_wait_s: int = 300,
     link_flap_longevity_soak_s: int = 3600,
     link_flap_longevity_interface_slice: t.Optional[str] = None,
     include_rapid_a_end_flap_stress: bool = False,
@@ -239,12 +240,18 @@ def gen_snake_test_config(
                 1-hour soak). ``_interface_slice`` is a positional slice
                 expression (e.g. ``":3"`` = first 3 interfaces) to flap a
                 subset; ``None`` flaps all. ``_disable_delay_s`` /
-                ``_enable_delay_s`` also set the per-interface spacing of
-                every interface-disruptive playbook in the suite (thrift
-                toggle, qsfp_util disable / low-power, qsfp reset), not
-                just the link-flap longevity one. ``_enable_delay_s``
-                defaults to 10s; ZR optics need ~5 minutes to relock, so
-                the ZR4 800G configs pass 300.
+                ``_enable_delay_s`` also set the post-batch settle of the
+                thrift-toggle and qsfp_util tx-disable playbooks (the
+                ``delay`` is one sleep after all interfaces are flapped,
+                not per-interface spacing). ``_enable_delay_s`` defaults
+                to 10s; ZR optics need ~5 minutes to relock, so the ZR4
+                800G configs pass 300.
+            optics_recovery_wait_s: Post-flap wait for the playbooks that
+                reinitialise the transceiver (qsfp_util low-power exit and
+                qsfp reset). Kept separate from ``_enable_delay_s`` so a
+                short link-flap-longevity loop never starves module
+                relock: 800G DR4/FR4 modules took 1-4 minutes to relink on
+                crow231. Defaults to 300s.
             include_rapid_a_end_flap_stress: When True, include the
                 ``test_snake_rapid_a_end_flap_stress`` playbook -- a rapid
                 optical (wedge_qsfp_util tx_disable/tx_enable) flap of every
@@ -370,6 +377,7 @@ def gen_snake_test_config(
         link_flap_longevity_iterations=link_flap_longevity_iterations,
         link_flap_longevity_disable_delay_s=link_flap_longevity_disable_delay_s,
         link_flap_longevity_enable_delay_s=link_flap_longevity_enable_delay_s,
+        optics_recovery_wait_s=optics_recovery_wait_s,
         link_flap_longevity_soak_s=link_flap_longevity_soak_s,
         link_flap_longevity_interface_slice=link_flap_longevity_interface_slice,
         include_rapid_a_end_flap_stress=include_rapid_a_end_flap_stress,
