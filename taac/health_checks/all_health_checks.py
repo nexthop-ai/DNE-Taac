@@ -134,6 +134,15 @@ from taac.health_checks.device_health_checks.port_queue_rate_health_check import
 from taac.health_checks.device_health_checks.port_speed_health_check import (
     PortSpeedHealthCheck,
 )
+<<<<<<< HEAD
+=======
+from taac.health_checks.device_health_checks.prefix_limit_health_check import (
+    PrefixLimitHealthCheck,
+)
+from taac.health_checks.device_health_checks.bgp_rib_fib_consistency_health_check import (
+    BgpRibFibConsistencyHealthCheck,
+)
+>>>>>>> b2737e0 (NOS-16138: OSS BGP_RIB_FIB_CONSISTENCY_CHECK implementation (#309))
 from taac.health_checks.device_health_checks.port_state_health_check import (
     PortStateHealthCheck,
 )
@@ -236,6 +245,11 @@ OSS_HEALTH_CHECKS: t.List[HealthCheck] = [
     # DsfPfcHealthCheck,  # neteng.test_infra.dne.taac dep, excluded in OSS
     CoreDumpsHealthCheck,
     PortStateHealthCheck,
+<<<<<<< HEAD
+=======
+    PrefixLimitHealthCheck,
+    BgpRibFibConsistencyHealthCheck,
+>>>>>>> b2737e0 (NOS-16138: OSS BGP_RIB_FIB_CONSISTENCY_CHECK implementation (#309))
     LldpHealthCheck,
     IxiaTrafficRateHealthCheck,
     PfcWdHealthCheck,
