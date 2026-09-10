@@ -13997,19 +13997,24 @@ def gen_snake_playbooks(
     flap_recovery_check_retry_delay_seconds: float = 10.0,
     skip_lldp_check: bool = False,
 ) -> t.List[taac_types.Playbook]:
+    # Retry knobs for every PORT_STATE_CHECK that runs right after an interface
+    # re-enable (link-flap recovery, rapid A-end flap, half-toggle MID_TEST).
+    # Those checks fire 0-2 s after the enable step, before slow-training optics
+    # have linked up; without retries a single read fails the playbook.
+    _flap_recovery_retry_kwargs: t.Dict[str, t.Any] = (
+        {}
+        if flap_recovery_check_retry_count is None
+        else {
+            "retry_count": flap_recovery_check_retry_count,
+            "retry_delay_seconds": flap_recovery_check_retry_delay_seconds,
+            "retry_delay_multiplier": 1.0,
+        }
+    )
+
     def _create_flap_recovery_checks() -> t.List[
         taac_types.PointInTimeHealthCheck
     ]:
-        port_state_check = (
-            create_port_state_check()
-            if flap_recovery_check_retry_count is None
-            else create_port_state_check(
-                retry_count=flap_recovery_check_retry_count,
-                retry_delay_seconds=flap_recovery_check_retry_delay_seconds,
-                retry_delay_multiplier=1.0,
-            )
-        )
-        checks = [port_state_check]
+        checks = [create_port_state_check(**_flap_recovery_retry_kwargs)]
         if not skip_lldp_check:
             checks.append(create_lldp_check())
         return checks
@@ -14177,6 +14182,7 @@ def gen_snake_playbooks(
                                                 ),
                                             )
                                         ],
+                                        **_flap_recovery_retry_kwargs,
                                     ),
                                 ],
                                 stage=taac_types.ValidationStage.MID_TEST,
@@ -14240,6 +14246,7 @@ def gen_snake_playbooks(
                                                 ),
                                             )
                                         ],
+                                        **_flap_recovery_retry_kwargs,
                                     ),
                                 ],
                                 stage=taac_types.ValidationStage.MID_TEST,
