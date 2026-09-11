@@ -21034,6 +21034,63 @@ TEST_BGP_CP_V4_DSCP0_TRAFFIC_PUNTED_TO_CPU_HIGH_QUEUE = (
 )
 
 
+<<<<<<< HEAD
+=======
+# npi_cpu_036/037/038 disable the IXIA downlink to make a next hop
+# unreachable. Every traffic item running at that point --
+# BGP_PREFIX_TRAFFIC, BGP_PREFIX_TRAFFIC_V4 and the playbook's own
+# IPV6_TRAFFIC -- rides that port, so all three are black-holed on purpose.
+# The blanket zero-loss PREcheck then measures the previous playbook's
+# deliberate black-hole as a fault and fails before the next body runs.
+# Observed on hardware: the precheck reports multi-second loss durations on
+# the BGP prefix items -- every failure PRE_TEST, none POSTcheck, which is
+# what identifies it as inherited residue rather than anything the body did.
+# IPV6_TRAFFIC is not started by these playbooks, so naming it makes the check
+# fail as "missing from IXIA statistics" in a fresh invocation (2026-09-10).
+#
+# There is no traffic item these playbooks can validly assert zero loss on at
+# entry, so they declare an explicit no-op precheck instead of inheriting the
+# blanket one. The real coverage is the POSTcheck, which measures the
+# playbook's own window and already passes.
+_UNH_FLAP_LOSS_PRECHECK = [
+    create_ixia_packet_loss_check(
+        clear_traffic_stats=True,
+        thresholds=[
+            hc_types.PacketLossThreshold(
+                names=[
+                    "BGP_PREFIX_TRAFFIC",
+                    "BGP_PREFIX_TRAFFIC_V4",
+                ],
+                expect_packet_loss=False,
+                # Duration metric (the struct default), in ms. The window is
+                # wait(sleep_time) + stop + sleep(sleep_time) ~= 20s, so this
+                # tolerates the whole window rather than asserting on residue.
+                str_value="30000",
+            ),
+        ],
+    ),
+]
+
+# The POSTcheck window contains the 60s the egress port is deliberately down
+# (create_longevity_step(duration=60) between the disable and enable flaps),
+# so the same three items lose traffic by design; 90s covers that window.
+_UNH_FLAP_LOSS_POSTCHECK = [
+    create_ixia_packet_loss_check(
+        clear_traffic_stats=True,
+        thresholds=[
+            hc_types.PacketLossThreshold(
+                # IPV6_TRAFFIC is not in traffic_items_to_start for these
+                # playbooks, so it has no stats row and would fail as missing.
+                names=["BGP_PREFIX_TRAFFIC", "BGP_PREFIX_TRAFFIC_V4"],
+                expect_packet_loss=False,
+                str_value="90000",
+            ),
+        ],
+    ),
+]
+
+
+>>>>>>> 9c405b1 (NOS-16816: UNH punt playbooks: checkpoint ids follow the stage id, postcheck tolerates the black-hole window (#340))
 def create_cpu_queue_playbooks(
     low_queue: int,
     mid_queue: int,
@@ -22441,7 +22498,7 @@ def create_cpu_queue_playbooks(
     # T274731352 closed 2026-06-11).
     npi_cpu_037_unh_remote_subnet_to_low_queue_playbook = Playbook(
         postchecks=[
-            create_ixia_packet_loss_check(clear_traffic_stats=True),
+            *_UNH_FLAP_LOSS_POSTCHECK,
             create_service_restart_check(
                 services=SERVICES_TO_MONITOR_DURING_AGENT_RESTART,
                 expected_restarted_services=WEDGE_AGENT_BINDS_TO_CASCADE,
@@ -22458,18 +22515,18 @@ def create_cpu_queue_playbooks(
                     high_queue: high_q_noise,
                 },
                 no_discard_queues=[mid_queue, high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_unh.step.disable_next_hop_egress_port.end",
-                post_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_unh.step.enable_next_hop_egress_port.start",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_037_UNH_REMOTE_SUBNET_TO_LOW_QUEUE.name}.step.disable_next_hop_egress_port.end",
+                post_snapshot_checkpoint_id=f"stage.{NPI_CPU_037_UNH_REMOTE_SUBNET_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.start",
             ),
             create_cpu_queue_snapshot_check(
                 active_queues=[],
                 no_discard_queues=[high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_unh.step.enable_next_hop_egress_port.end",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_037_UNH_REMOTE_SUBNET_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.end",
             ),
         ],
         stages=[
             create_steps_stage(
-                stage_id="npi_cpu_037_unh_remote_subnet_to_low_queue",
+                stage_id=NPI_CPU_037_UNH_REMOTE_SUBNET_TO_LOW_QUEUE.name,
                 steps=[
                     create_custom_step(
                         params_dict={
@@ -22507,7 +22564,7 @@ def create_cpu_queue_playbooks(
 
     npi_cpu_038_unh_remote_host_route_to_low_queue_playbook = Playbook(
         postchecks=[
-            create_ixia_packet_loss_check(clear_traffic_stats=True),
+            *_UNH_FLAP_LOSS_POSTCHECK,
             create_service_restart_check(
                 services=SERVICES_TO_MONITOR_DURING_AGENT_RESTART,
                 expected_restarted_services=WEDGE_AGENT_BINDS_TO_CASCADE,
@@ -22524,18 +22581,18 @@ def create_cpu_queue_playbooks(
                     high_queue: high_q_noise,
                 },
                 no_discard_queues=[mid_queue, high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_128_unh.step.disable_next_hop_egress_port.end",
-                post_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_128_unh.step.enable_next_hop_egress_port.start",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_038_UNH_REMOTE_HOST_ROUTE_TO_LOW_QUEUE.name}.step.disable_next_hop_egress_port.end",
+                post_snapshot_checkpoint_id=f"stage.{NPI_CPU_038_UNH_REMOTE_HOST_ROUTE_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.start",
             ),
             create_cpu_queue_snapshot_check(
                 active_queues=[],
                 no_discard_queues=[high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_remote_subnet_128_unh.step.enable_next_hop_egress_port.end",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_038_UNH_REMOTE_HOST_ROUTE_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.end",
             ),
         ],
         stages=[
             create_steps_stage(
-                stage_id="npi_cpu_038_unh_remote_host_route_to_low_queue",
+                stage_id=NPI_CPU_038_UNH_REMOTE_HOST_ROUTE_TO_LOW_QUEUE.name,
                 steps=[
                     create_custom_step(
                         params_dict={
@@ -22573,7 +22630,7 @@ def create_cpu_queue_playbooks(
 
     npi_cpu_036_unh_dir_conn_host_to_low_queue_playbook = Playbook(
         postchecks=[
-            create_ixia_packet_loss_check(clear_traffic_stats=True),
+            *_UNH_FLAP_LOSS_POSTCHECK,
             create_service_restart_check(
                 services=SERVICES_TO_MONITOR_DURING_AGENT_RESTART,
                 expected_restarted_services=WEDGE_AGENT_BINDS_TO_CASCADE,
@@ -22590,18 +22647,18 @@ def create_cpu_queue_playbooks(
                     high_queue: high_q_noise,
                 },
                 no_discard_queues=[mid_queue, high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_dir_conn_host_unh.step.disable_next_hop_egress_port.end",
-                post_snapshot_checkpoint_id="stage.test_fboss_cpu_dir_conn_host_unh.step.enable_next_hop_egress_port.start",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_036_UNH_DIR_CONN_HOST_TO_LOW_QUEUE.name}.step.disable_next_hop_egress_port.end",
+                post_snapshot_checkpoint_id=f"stage.{NPI_CPU_036_UNH_DIR_CONN_HOST_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.start",
             ),
             create_cpu_queue_snapshot_check(
                 active_queues=[],
                 no_discard_queues=[high_queue],
-                pre_snapshot_checkpoint_id="stage.test_fboss_cpu_dir_conn_host_unh.step.enable_next_hop_egress_port.end",
+                pre_snapshot_checkpoint_id=f"stage.{NPI_CPU_036_UNH_DIR_CONN_HOST_TO_LOW_QUEUE.name}.step.enable_next_hop_egress_port.end",
             ),
         ],
         stages=[
             create_steps_stage(
-                stage_id="npi_cpu_036_unh_dir_conn_host_to_low_queue",
+                stage_id=NPI_CPU_036_UNH_DIR_CONN_HOST_TO_LOW_QUEUE.name,
                 steps=[
                     create_custom_step(
                         params_dict={
