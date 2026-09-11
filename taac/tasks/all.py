@@ -1177,6 +1177,14 @@ class AllocateCgroupSliceMemory(BaseTask):
     NAME = "allocate_cgroup_slice_memory"
 
     async def run(self, params: t.Dict[str, t.Any]) -> None:
+        if TAAC_OSS:
+            # /opt/memory_pressure and the ODS memory query are Meta-only.
+            self.logger.warning(
+                "Skipping allocate_cgroup_slice_memory under TAAC_OSS=1: "
+                "/opt/memory_pressure and the ODS memory query are not "
+                "available, so no cgroup memory stress is applied."
+            )
+            return
         hostname = params["hostname"]
         executable_path = params.get("executable_path", "/opt/memory_pressure")
         slice_name = params["slice_name"]
