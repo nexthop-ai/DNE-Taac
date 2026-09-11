@@ -1100,6 +1100,220 @@ class FbossSwitch(AbstractSwitch):
         )
         return True
 
+<<<<<<< HEAD
+=======
+    # ----------------------------------------------------------------------
+    # COOP python-patcher contract.
+    #
+    # Meta mode registers patchers with the COOP agent (FbossSwitchInternal
+    # overrides these). OSS has no COOP, so the same register/apply/unregister
+    # contract is served by editing the config files directly -- see
+    # taac/driver/oss_coop_patcher.py for the mechanism and its rationale.
+    # Without these, every patcher-based NPI config fails setup with
+    # "'FbossSwitch' object has no attribute 'async_register_python_patcher'".
+    # ----------------------------------------------------------------------
+
+    async def async_register_python_patcher(
+        self,
+        config_name: str,
+        patcher_name: str,
+        py_func_name: str,
+        patcher_args: Optional[Dict[str, Any]] = None,
+        patcher_desc: str = "",
+        **kwargs,
+    ) -> None:
+        from taac.driver import oss_coop_patcher as _ocp
+
+        _ocp.register(
+            self.hostname,
+            config_name,
+            _ocp.OssPatcher(
+                name=patcher_name,
+                config_name=config_name,
+                py_func_name=py_func_name,
+                args=dict(patcher_args or {}),
+                desc=patcher_desc,
+            ),
+        )
+        self.logger.info(
+            f"[oss-patcher] registered {patcher_name} ({py_func_name}) "
+            f"on {self.hostname}:{config_name}"
+        )
+
+    async def async_unregister_python_patcher(
+        self, patcher_name: str, config_name: str, **kwargs
+    ) -> None:
+        """Unregister a patcher registered with ``async_register_python_patcher``.
+
+        ``RegisterPatcherStep`` (register_patcher=False) and
+        ``create_unregister_patcher_step`` both call this, so a playbook that
+        registers a patcher and tears it down again -- npi_cpu_036/037/038 do
+        exactly that -- died on OSS with "'FbossSwitch' object has no attribute
+        'async_unregister_python_patcher'" AFTER its body had run. Callers pass the two names positionally in one place and by
+        keyword in the other, hence this order.
+
+        Delegates to the coop path, which already withdraws thrift static routes
+        for the name and restores the baselines once the last patcher is gone.
+        """
+        await self.async_coop_unregister_patchers(
+            patcher_name=patcher_name, config_name=config_name
+        )
+
+    async def async_coop_list_patchers(self, config_name: str, **kwargs) -> List[Any]:
+        from taac.driver import oss_coop_patcher as _ocp
+
+        return _ocp.list_patchers(self.hostname, config_name)
+
+    async def async_coop_unregister_patchers(
+        self, patcher_name: str, config_name: Optional[str] = None, **kwargs
+    ) -> None:
+        """Unregister a config patcher, or withdraw a static-route patcher."""
+        prefixes = _STATIC_ROUTE_PREFIXES.pop((self.hostname, patcher_name), [])
+        if prefixes:
+            self.logger.info(
+                f"{self.hostname}: withdrawing {len(prefixes)} static route(s) "
+                f"for patcher {patcher_name}"
+            )
+            async with self.async_agent_client as client:
+                await client.deleteUnicastRoutes(
+                    int(ClientID.STATIC_ROUTE), prefixes
+                )
+            return
+
+        from taac.driver import oss_coop_patcher as _ocp
+
+        if config_name is None:
+            # Callers unregister defensively before adding, so an unknown name is
+            # usually just that. Scan the host's configs so a real config patcher
+            # called without a config_name is still cleaned up rather than
+            # silently skipped.
+            for candidate in _ocp.pending_configs(self.hostname):
+                if any(
+                    p.name == patcher_name
+                    for p in _ocp.list_patchers(self.hostname, candidate)
+                ):
+                    config_name = candidate
+                    break
+            else:
+                return
+
+        had_pending = bool(_ocp.pending_configs(self.hostname))
+        _ocp.unregister(self.hostname, config_name, patcher_name)
+        self.logger.info(
+            f"[oss-patcher] unregistered {patcher_name} on "
+            f"{self.hostname}:{config_name}"
+        )
+        # COOP reverts the DUT on unregister+restart; OSS must reinstall the
+        # baselines itself once the last patcher is gone, or the patched
+        # configs would outlive the test.
+        if had_pending and not _ocp.pending_configs(self.hostname):
+            await self.async_restore_patched_configs()
+
+    async def async_apply_patchers(
+        self, *args, restart_services: bool = True, **kwargs
+    ) -> None:
+        """Materialise every queued patcher, then activate and restart.
+
+        Mirrors COOP's apply step. Each config is rebased on its pristine
+        ``.baseline.conf`` snapshot, so applying twice in a session is
+        idempotent rather than cumulative.
+
+        ``restart_services=False`` writes and activates the config but
+        leaves the services alone, for a playbook that applies the change
+        itself and would fail a postcheck on an unexpected restart.
+        npi_cpu_039 is exactly that: it shrinks an interface MTU and then
+        bounces the port, and its SERVICE_RESTART_CHECK declares no
+        expected restarts, so restarting the stack here failed the
+        playbook and churned BGP for the playbooks
+        that ran after it.
+        """
+        from taac.driver import oss_coop_patcher as _ocp
+
+        for config_name in _ocp.pending_configs(self.hostname):
+            patchers = _ocp.list_patchers(self.hostname, config_name)
+            _, service = _ocp.CONFIG_FILES[config_name]
+            self.logger.info(
+                f"[oss-patcher] applying {len(patchers)} patcher(s) to "
+                f"{self.hostname}:{config_name} -> restarting {service}"
+            )
+            out = await self.async_run_cmd_on_shell(
+                _ocp.build_apply_command(config_name, patchers)
+            )
+            self.logger.info(f"[oss-patcher] {config_name}: {(out or '').strip()}")
+            # Shell exit status is not surfaced; gate on the script's "OK"
+            # line so a failed mutation can't activate a stale patched file.
+            if not any(l.startswith("OK ") for l in (out or "").splitlines()):
+                raise RuntimeError(
+                    f"[oss-patcher] apply failed on {self.hostname}:{config_name}: "
+                    f"{(out or '').strip()!r}"
+                )
+            # Activation is a separate step so a failed mutation can never
+            # leave a half-written config installed where the service reads it.
+            out = await self.async_run_cmd_on_shell(
+                _ocp.build_activate_command(config_name)
+            )
+            if "ACTIVATED" not in (out or ""):
+                raise RuntimeError(
+                    f"[oss-patcher] activate failed on {self.hostname}:"
+                    f"{config_name}: {(out or '').strip()!r}"
+                )
+            if not restart_services:
+                self.logger.info(
+                    f"[oss-patcher] {config_name}: activated without restarting "
+                    f"{service}; the caller applies it itself"
+                )
+                continue
+            if config_name == "agent":
+                await self.async_restart_service(
+                    FbossSystemctlServiceName.AGENT, clear_warm_boot=True
+                )
+            else:
+                out = await self.async_run_cmd_on_shell(
+                    f"systemctl restart {service} && echo RESTARTED"
+                )
+                if "RESTARTED" not in (out or ""):
+                    raise RuntimeError(
+                        f"[oss-patcher] restart of {service} failed on "
+                        f"{self.hostname}: {(out or '').strip()!r}"
+                    )
+        await self.async_wait_for_agent_state_configured()
+
+    async def async_restore_patched_configs(self) -> None:
+        """Reinstall the pristine configs captured at first apply (teardown)."""
+        from taac.driver import oss_coop_patcher as _ocp
+
+        for config_name in list(_ocp.CONFIG_FILES):
+            _, service = _ocp.CONFIG_FILES[config_name]
+            # Only touch a config this run actually patched. The registry is
+            # already cleared by teardown, so ask the DUT: <stem>.patched.conf
+            # is written ONLY by an apply, whereas <stem>.baseline.conf may also
+            # be preloaded out of band and so is not evidence of a patch.
+            # Without this a bgpcpp-only test pays a full agent
+            # stop-all -> cold boot -> start-all cycle on every teardown, which
+            # bounces every port for nothing.
+            _, _, patched = _ocp.variant_paths(config_name)
+            probe = await self.async_run_cmd_on_shell(
+                f"[ -f {patched} ] && echo PATCHED || echo CLEAN"
+            )
+            if "PATCHED" not in (probe or ""):
+                self.logger.debug(
+                    f"[oss-patcher] {config_name} was never applied on "
+                    f"{self.hostname}; nothing to restore"
+                )
+                continue
+            await self.async_run_cmd_on_shell(
+                _ocp.build_restore_command(config_name)
+            )
+            if config_name == "agent":
+                await self.async_restart_service(
+                    FbossSystemctlServiceName.AGENT, clear_warm_boot=True
+                )
+            else:
+                await self.async_run_cmd_on_shell(f"systemctl restart {service}")
+        _ocp.clear(self.hostname)
+        self.logger.info(f"[oss-patcher] restored baseline configs on {self.hostname}")
+
+>>>>>>> fe433c8 (NOS-16136: port the MTU-exceed custom steps (npi_cpu_039) (#330))
     async def async_register_patcher_to_shut_ports_persistently(
         self, patcher_name: str, interfaces: List[str], additional_desc=None
     ) -> None:
