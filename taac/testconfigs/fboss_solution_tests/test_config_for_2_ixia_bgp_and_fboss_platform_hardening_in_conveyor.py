@@ -2252,11 +2252,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": ["103.0.0.0/8", "6000:1::/32"]
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> 4e9c4b6 (NOS-16817: OSS RIB/FIB check: identify BGP-owned FIB routes by client id from getRouteTableDetails (#341))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2279,11 +2287,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": ["103.0.0.0/8", "6000:1::/32"]
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> 4e9c4b6 (NOS-16817: OSS RIB/FIB check: identify BGP-owned FIB routes by client id from getRouteTableDetails (#341))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2617,11 +2633,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": ["103.0.0.0/8", "6000:1::/32"]
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> 4e9c4b6 (NOS-16817: OSS RIB/FIB check: identify BGP-owned FIB routes by client id from getRouteTableDetails (#341))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2644,11 +2668,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": ["103.0.0.0/8", "6000:1::/32"]
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> 4e9c4b6 (NOS-16817: OSS RIB/FIB check: identify BGP-owned FIB routes by client id from getRouteTableDetails (#341))
                     ),
                 ]
                 + _tc_postchecks,
