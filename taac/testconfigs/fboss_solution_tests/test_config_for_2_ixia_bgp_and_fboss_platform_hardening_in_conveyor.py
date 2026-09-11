@@ -2276,7 +2276,13 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    # The TC-level check would flag the restart this playbook performs.
+                    create_service_restart_check(expected_restarted_services=["bgpd"]),
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> 36d204a (NOS-15119: hardening conveyor: the bgpd, fsdb and qsfp restart playbooks expect their own service restart (#345))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2614,7 +2620,13 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    # The TC-level check would flag the restart this playbook performs.
+                    create_service_restart_check(expected_restarted_services=["qsfp_service"]),
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> 36d204a (NOS-15119: hardening conveyor: the bgpd, fsdb and qsfp restart playbooks expect their own service restart (#345))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2641,7 +2653,13 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    # The TC-level check would flag the restart this playbook performs.
+                    create_service_restart_check(expected_restarted_services=["fsdb"]),
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> 36d204a (NOS-15119: hardening conveyor: the bgpd, fsdb and qsfp restart playbooks expect their own service restart (#345))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
