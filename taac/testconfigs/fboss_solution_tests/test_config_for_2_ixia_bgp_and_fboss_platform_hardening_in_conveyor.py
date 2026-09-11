@@ -846,7 +846,34 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
     bgp_longevity_ndp_uptime_s=900,
     bgp_longevity_ndp_downtime_s=120,
     bgp_longevity_ndp_total_duration_s=3600,
+<<<<<<< HEAD
     bgp_longevity_ndp_cycles=None,
+=======
+    # Serialized BGP policy statement (JSON) to splice in and point the
+    # IXIA-mimic peer groups' ingress at, replacing route_map_*_ingress. The
+    # production SLB import policy filters on VIP prefix length and accepts
+    # none of the mimic prefixes, so without this the DUT receives every
+    # prefix and installs none, directional traffic has no route, and
+    # IXIA_PACKET_LOSS_CHECK fails in prechecks before any playbook body runs.
+    permissive_ingress_policy_json=None,
+    # Opt-in portQueueConfigName for the two IXIA-facing ports, e.g.
+    # "uplink_sp_olympic". The binding carries an egress SHAPER, not just queue
+    # names.
+    ixia_port_queue_config=None,
+    # Build the PTP master/slave stacks (uplink dg0 as master, downlink dg0 as
+    # slave). Set False on a chassis without PTP support.
+    # Default True, so existing callers are untouched.
+    enable_ptp=True,
+    # Seconds `Ixia.verify_protocols` sleeps on its SKIP path (this factory
+    # sets skip_ixia_protocol_verification=True). Pass 0
+    # to return immediately (`verify_protocols` guards the sleep on a truthy
+    # timeout). Default keeps the historical window, which elapses BEFORE
+    # traffic items are created, so opting out also starts traffic ~20 min
+    # earlier in the DUT's convergence.
+    ixia_protocol_verification_timeout=1200,
+    # Replaces the bare BGP_CONVERGENCE_CHECK on the service-restart playbooks.
+    bgp_convergence_check=None,
+>>>>>>> ec588ac (NOS-16819: 2-IXIA hardening conveyor: let a config supply the BGP_CONVERGENCE_CHECK for the service-restart playbooks (#342))
 ):
     """Build the BGP/FBOSS platform-hardening conveyor TestConfig for two IXIA chassis.
 
@@ -2249,7 +2276,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
-                    create_bgp_convergence_check(),
+                    bgp_convergence_check or create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2276,7 +2303,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
-                    create_bgp_convergence_check(),
+                    bgp_convergence_check or create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2614,7 +2641,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
-                    create_bgp_convergence_check(),
+                    bgp_convergence_check or create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2641,7 +2668,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
-                    create_bgp_convergence_check(),
+                    bgp_convergence_check or create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
