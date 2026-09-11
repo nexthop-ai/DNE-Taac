@@ -86,6 +86,7 @@ from neteng.fboss.ctrl.types import (
     ArpEntryThrift,
     DsfSessionThrift,
     FabricEndpoint,
+    FbossFibUpdateError,
     HwObjectType,
     InterfaceDetail,
     L2EntryThrift,
@@ -1135,6 +1136,28 @@ class FbossSwitch(AbstractSwitch):
             "COOP patcher operations not available in OSS mode. "
             "Use FbossSwitchInternal for COOP-based patcher operations."
         )
+<<<<<<< HEAD
+=======
+        # Track before the RPC: a failure part-way still leaves routes the agent
+        # accepted, and untracked routes can never be withdrawn.
+        _STATIC_ROUTE_PREFIXES.setdefault(
+            (self.hostname, patcher_name), []
+        ).extend(prefixes)
+        try:
+            async with self.async_agent_client as client:
+                await client.addUnicastRoutes(int(ClientID.STATIC_ROUTE), routes)
+        except FbossFibUpdateError as e:
+            # Overload playbooks exceed the HW limit on purpose; COOP only logs it.
+            failed = sum(
+                len(v) for v in (e.vrf2failedAddUpdatePrefixes or {}).values()
+            )
+            self.logger.warning(
+                f"{self.hostname}: agent rejected {failed}/{len(routes)} static "
+                f"route(s) for patcher {patcher_name} (FbossFibUpdateError); "
+                "continuing, as an overload playbook expects"
+            )
+        return patcher_name
+>>>>>>> 16d0406 (NOS-16814: OSS static-route patcher: log FbossFibUpdateError instead of failing the overload step (#337))
 
     async def async_get_ip_route(
         self, ip: str, print_interfaces: bool = True
