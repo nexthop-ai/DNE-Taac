@@ -660,10 +660,67 @@ class CoopApplyPatchersTask(BaseTask):
 
     async def run(self, params: t.Dict[str, t.Any]) -> None:
         if TAAC_OSS:
+<<<<<<< HEAD
             self.logger.info(
                 "Skipping coop_apply_patchers: coop patchers are not "
                 "available under TAAC_OSS=1."
             )
+=======
+            from taac.driver import oss_coop_patcher as _ocp
+
+            do_warmboot = params.get("do_warmboot", False)
+            do_coldboot = params.get("do_coldboot", False)
+
+            needs_boot = bool(do_warmboot or do_coldboot)
+
+            # No COOP agent: the OSS driver's async_apply_patchers does the
+            # whole apply (patch, activate, restart, wait) itself; config_names
+            # is ignored because every pending config is applied.
+            for hostname in hostnames:
+                driver = await async_get_device_driver(hostname)
+                has_pending_agent = "agent" in _ocp.pending_configs(hostname)
+
+                if do_coldboot:
+                    # pyre-fixme[16]: `AbstractSwitch` has no attribute
+                    #  `async_create_cold_boot_file`.
+                    await driver.async_create_cold_boot_file()
+
+                try:
+                    # The apply's own agent restart clears can_warm_boot by
+                    # default, which would turn a requested warm boot into a
+                    # cold one; with a boot flag set the boot type is the
+                    # caller's, and a cold boot is already forced by the flag
+                    # file above.
+                    # pyre-fixme[16]: `AbstractSwitch` has no attribute
+                    #  `async_apply_patchers`.
+                    await driver.async_apply_patchers(
+                        clear_agent_warm_boot=not needs_boot
+                    )
+
+                    if needs_boot:
+                        # A boot was requested but no agent patch was pending,
+                        # so the apply did not touch the agent (it may have
+                        # restarted only bgpd, or nothing at all). Bounce it
+                        # explicitly.
+                        if not has_pending_agent:
+                            await driver.async_restart_service(
+                                FbossSystemctlServiceName.AGENT
+                            )
+                        # The apply's own wait polls the sw switch run state
+                        # only; this one also requires every hw agent to be
+                        # CONFIGURED, and after the restart above nothing has
+                        # waited at all.
+                        await driver.async_wait_for_agent_configured()
+                finally:
+                    if do_coldboot:
+                        # The agent does not reliably delete the flag after
+                        # honouring it and /dev/shm outlives every restart, so
+                        # one left behind by a failed apply silently cold boots
+                        # the next warm boot of the playbook.
+                        # pyre-fixme[16]: `AbstractSwitch` has no attribute
+                        #  `async_remove_cold_boot_file`.
+                        await driver.async_remove_cold_boot_file()
+>>>>>>> 9a804e9 (DEVX-7571: support boot flags in coop_apply_patchers under TAAC_OSS=1 (#357))
             return
         hostnames = params["hostnames"]
         config_names = params.get(
