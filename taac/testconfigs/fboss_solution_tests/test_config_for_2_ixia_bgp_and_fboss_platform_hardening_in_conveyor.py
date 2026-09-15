@@ -984,10 +984,15 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
     # Variant for playbooks that restart wedge_agent by design: the bare
     # TC-level SERVICE_RESTART_CHECK would flag the intentional restart and its
     # systemd cascade as a failure.
+    # The allowlisted check judges "recovered" from the SystemdStateCollector's
+    # last sample (5 s poll) before the post-checks open, ~0.1 s after the
+    # restart step: that sample can still read `deactivating`. Re-evaluate.
+    _RESTART_CHECK_RETRY = dict(retry_count=3, retry_delay_seconds=5, retry_delay_multiplier=1.0)
     _tc_postchecks_agent_restart = [
         (
             create_service_restart_check(
                 expected_restarted_services=WEDGE_AGENT_BINDS_TO_CASCADE + ["openr"],
+                **_RESTART_CHECK_RETRY,
             )
             if check.name == hc_types.CheckName.SERVICE_RESTART_CHECK
             else check
@@ -2259,7 +2264,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                         }
                     ),
                 ]
-                + _tc_postchecks,
+                + _tc_postchecks_agent_restart,
             ),
             build_2_ixia_hardening_playbook(
                 name="test_bgpd_restart",
@@ -2276,7 +2281,11 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> b360362 (NO-NOS: bgpd, qsfp and fsdb restart playbooks keep their allowlisted service-restart check (#367))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2286,7 +2295,15 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                         }
                     ),
                 ]
-                + _tc_postchecks,
+                + _tc_postchecks
+                # Last on purpose: get_checks_to_run keeps the last same-named check,
+                # so this replaces the bare TC-level SERVICE_RESTART_CHECK.
+                + [
+                    create_service_restart_check(
+                        expected_restarted_services=["bgpd"],
+                        **_RESTART_CHECK_RETRY,
+                    )
+                ],
             ),
             build_2_ixia_hardening_playbook(
                 name="test_5_min_longevity",
@@ -2463,7 +2480,7 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                 iteration=1,
                 name="test_ecmp_member_overload_limit",
                 prechecks=_tc_prechecks,
-                postchecks=_tc_postchecks,
+                postchecks=_tc_postchecks_agent_restart,
                 snapshot_checks=_tc_snapshot_checks,
                 cleanup_steps=[
                     create_ixia_api_step(
@@ -2614,7 +2631,11 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> b360362 (NO-NOS: bgpd, qsfp and fsdb restart playbooks keep their allowlisted service-restart check (#367))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2624,7 +2645,15 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                         }
                     ),
                 ]
-                + _tc_postchecks,
+                + _tc_postchecks
+                # Last on purpose: get_checks_to_run keeps the last same-named check,
+                # so this replaces the bare TC-level SERVICE_RESTART_CHECK.
+                + [
+                    create_service_restart_check(
+                        expected_restarted_services=["qsfp_service"],
+                        **_RESTART_CHECK_RETRY,
+                    )
+                ],
             ),
             build_2_ixia_hardening_playbook(
                 name="test_fsdb_restart",
@@ -2641,7 +2670,11 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     ),
                 ],
                 postchecks=[
+<<<<<<< HEAD
                     create_bgp_convergence_check(),
+=======
+                    bgp_convergence_check or create_bgp_convergence_check(),
+>>>>>>> b360362 (NO-NOS: bgpd, qsfp and fsdb restart playbooks keep their allowlisted service-restart check (#367))
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
                             "parent_prefixes_to_ignore": [
@@ -2651,7 +2684,15 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                         }
                     ),
                 ]
-                + _tc_postchecks,
+                + _tc_postchecks
+                # Last on purpose: get_checks_to_run keeps the last same-named check,
+                # so this replaces the bare TC-level SERVICE_RESTART_CHECK.
+                + [
+                    create_service_restart_check(
+                        expected_restarted_services=["fsdb"],
+                        **_RESTART_CHECK_RETRY,
+                    )
+                ],
             ),
         ]
         + _uplink_flap_playbooks

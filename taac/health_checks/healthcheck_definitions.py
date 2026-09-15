@@ -2284,6 +2284,9 @@ def create_service_restart_check(
     restart_start_time_jq_var: t.Optional[str] = None,
     extra_json_params: t.Optional[t.Dict[str, t.Any]] = None,
     check_scope: t.Optional["hc_types.Scope"] = None,
+    retry_count: t.Optional[int] = None,
+    retry_delay_seconds: t.Optional[float] = None,
+    retry_delay_multiplier: t.Optional[float] = None,
 ) -> PointInTimeHealthCheck:
     """SERVICE_RESTART_CHECK — verifies expected services restarted in the lookback window.
 
@@ -2303,6 +2306,12 @@ def create_service_restart_check(
         json_payload["daemons"] = daemons
     if expected_restarted_services is not None:
         json_payload["expected_restarted_services"] = expected_restarted_services
+    if retry_count is not None:
+        json_payload["retry_count"] = retry_count
+    if retry_delay_seconds is not None:
+        json_payload["retry_delay_seconds"] = retry_delay_seconds
+    if retry_delay_multiplier is not None:
+        json_payload["retry_delay_multiplier"] = retry_delay_multiplier
     if extra_json_params:
         json_payload.update(extra_json_params)
     jq_params: t.Dict[str, str] = {}
