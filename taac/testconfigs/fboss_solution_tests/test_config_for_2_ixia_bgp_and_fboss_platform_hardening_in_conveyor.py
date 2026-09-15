@@ -1121,6 +1121,59 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
         else []
     )
 
+<<<<<<< HEAD
+=======
+    # ROGUE_PREFIX_FLAP (:f) and ROGUE_SESSION_FLAP (:e) churn by design, so
+    # their ranges are never RIB==FIB stable.
+    rib_fib_ignore_prefixes = [
+        "103.0.0.0/8",
+        f"{v6_uplink_prefix}:1::/32",
+        f"{v6_prefix_flapping_prefix}:e::/32",
+        f"{v6_prefix_flapping_prefix}:f::/32",
+    ]
+    permissive_ingress_patchers = []
+    _permissive = None
+    if permissive_ingress_policy_json is not None:
+        _policy = json.loads(permissive_ingress_policy_json)
+        _permissive = _policy["name"]
+        permissive_ingress_patchers = [
+            create_coop_register_patcher_task(
+                hostname=device_name,
+                config_name="bgpcpp",
+                patcher_name=f"a_add_bgp_policy_statement_{_permissive}",
+                task_name="coop_register_patcher",
+                patcher_args={
+                    "name": _permissive,
+                    "description": _policy.get("description", ""),
+                    "policy_version": str(_policy.get("policy_version", "1")),
+                    "result": str(_policy.get("result", 1)),
+                    "policy_entries": json.dumps(_policy.get("policy_entries", [])),
+                },
+                py_func_name="add_bgp_policy_statement",
+            ),
+        ]
+        route_map_uplink_ingress = _permissive
+        route_map_downlink_ingress = _permissive
+        # NOTE: route_map_rogue_ingress is deliberately NOT repointed. This
+        # factory takes the rogue_* route-map parameters but never reads them,
+        # so assigning here would be dead. Wiring the rogue group up is a
+        # separate change: some platforms point the rogue peer-group name at
+        # the SAME peer group as the uplink one, so a rogue patcher would
+        # collide with the uplink patcher and last-write-wins would silently
+        # repoint the uplink group.
+
+    churn_kwargs = {
+        k: v
+        for k, v in {
+            "restart_period_s": churn_restart_period_s,
+            "restart_duration_s": churn_restart_duration_s,
+            "flap_iterations": churn_flap_iterations,
+            "coldboot_iterations": churn_coldboot_iterations,
+        }.items()
+        if v is not None
+    }
+
+>>>>>>> c0cced0 (NO-NOS: BGP RIB/FIB check ignores the rogue session-flap and prefix-flap ranges (#365))
     test_config = TestConfig(
         name=test_config_name,
         ixia_protocol_verification_timeout=1200,  # todo remove this (should be 300)
@@ -2252,11 +2305,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": rib_fib_ignore_prefixes
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> c0cced0 (NO-NOS: BGP RIB/FIB check ignores the rogue session-flap and prefix-flap ranges (#365))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2279,11 +2340,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": rib_fib_ignore_prefixes
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> c0cced0 (NO-NOS: BGP RIB/FIB check ignores the rogue session-flap and prefix-flap ranges (#365))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2617,11 +2686,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": rib_fib_ignore_prefixes
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> c0cced0 (NO-NOS: BGP RIB/FIB check ignores the rogue session-flap and prefix-flap ranges (#365))
                     ),
                 ]
                 + _tc_postchecks,
@@ -2644,11 +2721,19 @@ def test_config_for_2_ixia_bgp_and_fboss_platform_hardening_in_conveyor(
                     create_bgp_convergence_check(),
                     create_bgp_rib_fib_consistency_check(
                         extra_json_params={
+<<<<<<< HEAD
                             "parent_prefixes_to_ignore": [
                                 "103.0.0.0/8",
                                 "6000:1::/32",
                             ]
                         }
+=======
+                            "parent_prefixes_to_ignore": rib_fib_ignore_prefixes
+                        },
+                        # bgpd re-syncs the FIB for ~2-3 min after a restart.
+                        retry_count=6,
+                        retry_delay_seconds=30,
+>>>>>>> c0cced0 (NO-NOS: BGP RIB/FIB check ignores the rogue session-flap and prefix-flap ranges (#365))
                     ),
                 ]
                 + _tc_postchecks,
