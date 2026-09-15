@@ -157,6 +157,7 @@ from taac.utils.oss_taac_lib_utils import (
 from taac.utils.result_rendering import (
     check_stage_name,
     format_epoch_timestamp,
+    hostnames_cell,
     message_with_url,
     section_failed,
 )
@@ -1822,6 +1823,11 @@ class TaacRunner:
                 except Exception:
                     pass
 
+<<<<<<< HEAD
+=======
+            devices = hostnames_cell(result.hostnames)
+            check_name = result.check_name or "Unknown"
+>>>>>>> b3ee467 (NO-NOS: health-check tables render again, thrift-python List is not a list (#366))
             formatted_results.append(
                 {
                     "check_name": result.check_name or "Unknown",
