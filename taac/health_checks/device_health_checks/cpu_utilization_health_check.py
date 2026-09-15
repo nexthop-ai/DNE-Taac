@@ -20,6 +20,7 @@ from taac.libs.collectors.cpu_utilization_collector import (
 from taac.libs.collectors.registry import get_collector
 from taac.utils.health_check_utils import (
     collector_window_start,
+    floor_collector_window,
     format_timestamp,
 )
 from taac.health_check.health_check import types as hc_types
@@ -496,6 +497,9 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
         window_start = check_params.get(
             "window_start",
             collector_window_start(check_params, window_end, lookback_sec),
+        )
+        window_start = floor_collector_window(
+            window_start, window_end, collector.interval_sec
         )
 
         max_per_service = collector.max_per_service_in_window(window_start, window_end)

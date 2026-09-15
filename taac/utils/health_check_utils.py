@@ -327,6 +327,38 @@ def collector_window_start(
     return anchor if anchor else window_end - lookback_sec
 
 
+# A window narrower than this many poll intervals is widened by
+# ``floor_collector_window``. Two, not one: a CPU sample is a delta against the
+# previous poll, so the first poll in any window yields no value.
+MIN_WINDOW_POLL_INTERVALS: float = 2.0
+
+
+def floor_collector_window(
+    window_start: float, window_end: float, poll_interval_sec: float
+) -> float:
+    """Widen a collector query window backwards to at least
+    ``MIN_WINDOW_POLL_INTERVALS`` poll intervals.
+
+    Measurement checks (CPU, memory) report MAX over the window, so a window
+    shorter than the collector's poll interval contains no sample and the check
+    has to SKIP. That is the common case for a precheck: the runner stamps the
+    test-case start immediately before prechecks run, so the default window is
+    near-zero-width and the check never evaluates.
+
+    Mirrors the ODS path's own floor (``_prepare_time_window`` widens a window
+    under 60s), scaled to the collector's poll interval instead.
+
+    Only for checks that need a sample to produce a value. Checks that assert
+    the *absence* of an event (unclean exits, inactive units) must keep the
+    caller's window: widening theirs would attribute the previous playbook's
+    event to this one.
+    """
+    min_window_sec = MIN_WINDOW_POLL_INTERVALS * poll_interval_sec
+    if window_end - window_start < min_window_sec:
+        return window_end - min_window_sec
+    return window_start
+
+
 def generate_prefix_nh_list_map(
     nh_list: t.List[str], max_member: int, max_group: int
 ) -> t.List[t.Set[str]]:

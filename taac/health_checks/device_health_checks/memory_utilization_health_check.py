@@ -21,6 +21,7 @@ from taac.libs.collectors.registry import get_collector
 from taac.utils.arista_utils import find_process_pid
 from taac.utils.health_check_utils import (
     collector_window_start,
+    floor_collector_window,
     format_timestamp,
 )
 from taac.health_check.health_check import types as hc_types
@@ -641,6 +642,9 @@ class MemoryUtilizationHealthCheck(
         window_start = check_params.get(
             "window_start",
             collector_window_start(check_params, window_end, lookback_sec),
+        )
+        window_start = floor_collector_window(
+            window_start, window_end, collector.interval_sec
         )
 
         max_per_service = collector.max_per_service_in_window(window_start, window_end)
