@@ -5914,8 +5914,11 @@ class Ixia:
         # Configure prefix length
         ip_prefix_pool.PrefixLength.Single(config.prefix_length)
 
-        # Create BGP V6 IP Route Property
-        bgp_route_prop = ip_prefix_pool.BgpV6IPRouteProperty.add()
+        # IxNetwork auto-creates the route property under the prefix pool.
+        # add() here is restpy's batch-add API and raises "This feature is
+        # only available with Batch Assistance" outside a batch context
+        # (DEVX-7593).
+        bgp_route_prop = ip_prefix_pool.BgpV6IPRouteProperty.find()
 
         # Configure next hop settings
         bgp_route_prop.NextHopType.Single(config.next_hop_type)
@@ -10817,7 +10820,9 @@ class Ixia:
             bgp_ip_route_property_cls = getattr(
                 ip_prefix_pool_obj, bgp_route_property_attr
             )
-            bgp_ip_route_property = bgp_ip_route_property_cls.add()
+            # find(), not add(): see the DEVX-7593 note in
+            # _create_custom_network_group.
+            bgp_ip_route_property = bgp_ip_route_property_cls.find()
             set_next_hop_type = (
                 import_bgp_routes_params.set_next_hop_type
                 or ixia_types.SetNextHopType.MANUALLY
