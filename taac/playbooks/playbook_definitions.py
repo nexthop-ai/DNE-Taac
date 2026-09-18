@@ -20652,6 +20652,7 @@ def create_fboss_hw_agent_0_coldboot_playbook(
     )
 
 
+<<<<<<< HEAD
 def _repeat_single_stage_playbook(
     playbook: Playbook,
     iteration: int,
@@ -20720,17 +20721,75 @@ def get_critical_services_single_box_playbooks(
         TEST_AGENT_AND_QSFP_SERVICE_RESTART_PLAYBOOK,
     ]
     return [playbook(enabled=True) for playbook in playbooks]
+=======
+_NBR_FLAP_DOWN_S = 6
+_NBR_FLAP_UP_S = 6
+_NBR_FLAP_LOSS_SLACK_S = 60
+
+
+def _nbr_flap_loss_check(
+    items: t.Sequence[str],
+    per_iteration_flap_sec: int,
+) -> PointInTimeHealthCheck:
+    # Floor is one down cycle: a flap that never took a link down fails here.
+    return create_ixia_packet_loss_check(
+        thresholds=[
+            hc_types.PacketLossThreshold(
+                names=list(items),
+                metric=hc_types.PacketLossMetric.DURATION,
+                comparison=hc_types.ComparisonType.BETWEEN,
+                lower_bound=str(_NBR_FLAP_DOWN_S * 1000),
+                upper_bound=str((per_iteration_flap_sec + _NBR_FLAP_LOSS_SLACK_S) * 1000),
+            )
+        ],
+    )
+
+
+def _nbr_flap_loss_steps(
+    items: t.Optional[t.Sequence[str]],
+    per_iteration_flap_sec: int,
+) -> t.Tuple[t.List[Step], t.List[Step]]:
+    """Steps to wrap the flap step in: clear stats before it, bound the loss after."""
+    if not items:
+        return [], []
+    return (
+        [create_clear_traffic_stats_step()],
+        [
+            create_validation_step(
+                point_in_time_checks=[
+                    _nbr_flap_loss_check(items, per_iteration_flap_sec)
+                ],
+                stage=taac_types.ValidationStage.MID_TEST,
+                description="Bound the loss the flap caused",
+            )
+        ],
+    )
+
+
+def _nbr_flap_systemctl_check(
+    expected_restarted_services: t.Sequence[str],
+) -> PointInTimeHealthCheck:
+    # The window closes at evaluation time, so a sub-second restart can be
+    # caught mid-transition; retries re-evaluate with a later window end.
+    return create_systemctl_active_state_check(
+        expected_restarted_services=list(expected_restarted_services),
+        retry_count=3,
+        retry_delay_seconds=10,
+        retry_delay_multiplier=1.0,
+    )
+>>>>>>> cfff028 (NO-NOS: nbr-uplink-flap postchecks tolerate the playbook's own restart and flap (#396))
 
 
 def _nbr_flap_non_circuit_checks(
     restart_service_check: PointInTimeHealthCheck,
+    expected_restarted_services: t.Sequence[str],
 ) -> t.List[PointInTimeHealthCheck]:
     """Mid-test health checks for a disruption + neighbour-flap window.
 
     Circuit-dependent checks are filtered out because the neighbour's uplinks are
-    intentionally down for most of the window. IXIA packet loss is excluded for
-    the same reason: traffic runs DUT -> STSW -> NBR, so flapping the NBR's
-    uplinks breaks the path by design.
+    intentionally down for most of the window. IXIA packet loss is not asserted
+    here for the same reason: traffic runs DUT -> STSW -> NBR, so the flap breaks
+    the path by design. `_nbr_flap_loss_steps` bounds that loss instead.
 
     `restart_service_check` must match the service actually being disrupted.
     A check built for one service false-fails another: the agent-warmboot
@@ -20740,7 +20799,7 @@ def _nbr_flap_non_circuit_checks(
     """
     return filter_out_circuit_health_checks(
         [
-            create_systemctl_active_state_check(),
+            _nbr_flap_systemctl_check(expected_restarted_services),
             create_unclean_exit_check(),
             create_device_core_dumps_check(),
             create_memory_utilization_check(threshold=5 * (1024**3)),
@@ -20752,12 +20811,11 @@ def _nbr_flap_non_circuit_checks(
 
 
 def _warmboot_nbr_flap_non_circuit_checks() -> t.List[PointInTimeHealthCheck]:
-    """Mid-test checks for the agent-warmboot + neighbour-flap window.
-
-    Thin wrapper kept so the landed warmboot playbook's serialized output is
-    unchanged by the generalization above.
-    """
-    return _nbr_flap_non_circuit_checks(AGENT_WARMBOOT_SERVICE_CHECK)
+    """Mid-test checks for the agent-warmboot + neighbour-flap window."""
+    return _nbr_flap_non_circuit_checks(
+        AGENT_WARMBOOT_SERVICE_CHECK,
+        SERVICES_EXPECTED_TO_RESTART_DURING_AGENT_WARMBOOT,
+    )
 
 
 def create_gtsw_warmboot_nbr_uplink_flap_playbook(
@@ -20768,6 +20826,7 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
     longevity_sec: int = 300,
     playbook_name: str = "test_warmboot_nbr_uplink_flap",
     traffic_items_to_configure: t.Optional[t.Mapping[str, TrafficItemSettings]] = None,
+    flap_loss_items: t.Optional[t.Sequence[str]] = None,
 ) -> Playbook:
     """Build a `test_warmboot_nbr_uplink_flap` Playbook.
 
@@ -20809,6 +20868,9 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
         playbook_name: Playbook name, which is also the TAAC test-case name.
             Must be unique when a TestConfig instantiates this factory more
             than once.
+        flap_loss_items: Traffic items that must see loss while the neighbour
+            flaps; None skips that bound. Name every item carrying traffic
+            during the flap: the check holds any unnamed item to zero loss.
         traffic_items_to_configure: Per-playbook traffic overrides, applied by
             the runner in `async_test_case_setUp` before traffic starts
             (`libs/taac_runner.py:1718-1729`). Used to pin a frame size for the
@@ -20822,13 +20884,16 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
         A `Playbook` named `playbook_name`.
     """
     non_circuit_checks = _warmboot_nbr_flap_non_circuit_checks()
+    pre_flap_steps, post_flap_steps = _nbr_flap_loss_steps(
+        flap_loss_items, per_iteration_flap_sec
+    )
 
     def _nbr_flap_step(duration_sec: int) -> Step:
         return create_fpf_rapid_flap_step_lldp(
             neighbor_pattern=nbr_uplink_neighbor_pattern,
             duration_sec=duration_sec,
-            flap_down_time_sec=6,
-            flap_up_time_sec=6,
+            flap_down_time_sec=_NBR_FLAP_DOWN_S,
+            flap_up_time_sec=_NBR_FLAP_UP_S,
             device_regexes=[nbr_device_name],
             description=(
                 f"Rapid-flap LLDP-resolved uplinks "
@@ -20843,7 +20908,7 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
         traffic_items_to_configure=traffic_items_to_configure,
         postchecks=[
             AGENT_WARMBOOT_SERVICE_CHECK,
-            create_systemctl_active_state_check(),
+            _nbr_flap_systemctl_check(SERVICES_EXPECTED_TO_RESTART_DURING_AGENT_WARMBOOT),
             create_device_core_dumps_check(),
             create_unclean_exit_check(),
             create_lldp_check(),
@@ -20863,7 +20928,9 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
                         services=[Service.AGENT, Service.BGP],
                         description="Converge after warmboot, before flapping",
                     ),
+                    *pre_flap_steps,
                     _nbr_flap_step(per_iteration_flap_sec),
+                    *post_flap_steps,
                     create_service_convergence_step(
                         services=[Service.AGENT, Service.BGP],
                         description="Converge after the neighbour uplink flap",
@@ -20881,6 +20948,7 @@ def create_gtsw_warmboot_nbr_uplink_flap_playbook(
             create_steps_stage(
                 stage_id="longevity",
                 steps=[
+                    create_clear_traffic_stats_step(),
                     create_longevity_step(
                         duration=longevity_sec,
                         description=(
@@ -20908,6 +20976,7 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
     post_restart_settle_sec: int = 0,
     extra_post_flap_checks: t.Optional[t.Sequence[PointInTimeHealthCheck]] = None,
     traffic_items_to_configure: t.Optional[t.Mapping[str, TrafficItemSettings]] = None,
+    flap_loss_items: t.Optional[t.Sequence[str]] = None,
 ) -> Playbook:
     """Restart one service on the DUT, then flap the neighbour's uplinks.
 
@@ -20953,6 +21022,9 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
             convergence. Used for services with no convergence signal.
         extra_post_flap_checks: Extra checks appended to the per-pass
             validation, after the flap has recovered.
+        flap_loss_items: Traffic items that must see loss while the neighbour
+            flaps; None skips that bound. Name every item carrying traffic
+            during the flap: the check holds any unnamed item to zero loss.
         traffic_items_to_configure: Per-playbook traffic overrides. See
             `create_gtsw_warmboot_nbr_uplink_flap_playbook` for why every
             playbook in a shared TestConfig should set this.
@@ -20960,7 +21032,16 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
     Returns:
         A `Playbook` named `playbook_name`.
     """
-    non_circuit_checks = list(_nbr_flap_non_circuit_checks(restart_service_check))
+    # The restarted unit is the whole allowlist: every service wired in today
+    # restarts alone. A wedge_agent variant takes WEDGE_AGENT_BINDS_TO_CASCADE
+    # down with it and must allowlist that instead.
+    restarted_units = [service_label]
+    non_circuit_checks = list(
+        _nbr_flap_non_circuit_checks(restart_service_check, restarted_units)
+    )
+    pre_flap_steps, post_flap_steps = _nbr_flap_loss_steps(
+        flap_loss_items, per_iteration_flap_sec
+    )
     non_circuit_checks.extend(extra_post_flap_checks or [])
 
     restart_steps = [
@@ -20987,7 +21068,7 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
         traffic_items_to_configure=traffic_items_to_configure,
         postchecks=[
             restart_service_check,
-            create_systemctl_active_state_check(),
+            _nbr_flap_systemctl_check(restarted_units),
             create_device_core_dumps_check(),
             create_unclean_exit_check(),
             create_lldp_check(),
@@ -21006,11 +21087,12 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
                             "before flapping"
                         ),
                     ),
+                    *pre_flap_steps,
                     create_fpf_rapid_flap_step_lldp(
                         neighbor_pattern=nbr_uplink_neighbor_pattern,
                         duration_sec=per_iteration_flap_sec,
-                        flap_down_time_sec=6,
-                        flap_up_time_sec=6,
+                        flap_down_time_sec=_NBR_FLAP_DOWN_S,
+                        flap_up_time_sec=_NBR_FLAP_UP_S,
                         device_regexes=[nbr_device_name],
                         description=(
                             f"Rapid-flap LLDP-resolved uplinks "
@@ -21019,6 +21101,7 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
                             "(wall-clock bound)"
                         ),
                     ),
+                    *post_flap_steps,
                     create_service_convergence_step(
                         services=list(convergence_services),
                         description="Converge after the neighbour uplink flap",
@@ -21036,6 +21119,7 @@ def create_gtsw_service_restart_nbr_uplink_flap_playbook(
             create_steps_stage(
                 stage_id="longevity",
                 steps=[
+                    create_clear_traffic_stats_step(),
                     create_longevity_step(
                         duration=longevity_sec,
                         description=(
