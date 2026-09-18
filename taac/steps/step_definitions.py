@@ -48,7 +48,10 @@ else:
 
 
 from neteng.fboss.ctrl.thrift_types import DsfSessionState
-from neteng.fboss.switch_config.thrift_mutable_types import PortSpeed
+from neteng.fboss.switch_config.thrift_mutable_types import (
+    PortProfileID,
+    PortSpeed,
+)
 from neteng.fboss.switch_config.thrift_types import SwitchDrainState
 
 if not TAAC_OSS:
@@ -143,6 +146,7 @@ else:
             )
 
 
+from taac.steps.speed_flip_profiles import default_profile_id
 from taac.steps.step import (  # oss-rewrite (force ShipIt re-export to taac.* root)
     Step as StepBase,
 )
@@ -5561,6 +5565,7 @@ def create_register_speed_flip_patcher_step(
     speed_in_gbps: int,
     description: t.Optional[str] = None,
     target_port_cage_count: int = 4,
+    profile_id: t.Optional[str] = None,
 ) -> Step:
     """
     Create a step to register/unregister speed flip patcher (v3 shape used by speed_flip_test_configs).
@@ -5577,21 +5582,24 @@ def create_register_speed_flip_patcher_step(
             runtime (see ``RegisterSpeedFlipPatcherStep.run``). The onus is on
             the POC configuring/running the test to supply at least this many
             cages per device; defaults to 4.
+        profile_id: cfg.PortProfileID NAME to request for every named port
+            on every device in ``endpoints``. Omit to take each device's
+            platform default from ``taac.steps.speed_flip_profiles``.
     """
+    params: t.Dict[str, t.Any] = {
+        "register_patcher": register_patcher,
+        "port_state_change": port_state_change,
+        "patcher_name": patcher_name,
+        "endpoints": endpoints,
+        "speed_in_gbps": speed_in_gbps,
+        "target_port_cage_count": target_port_cage_count,
+    }
+    # Only when supplied, so existing callers' params stay byte-identical.
+    if profile_id is not None:
+        params["profile_id"] = profile_id
     return Step(
         name=StepName.REGISTER_SPEED_FLIP_PATCHER,
-        step_params=Params(
-            json_params=json.dumps(
-                {
-                    "register_patcher": register_patcher,
-                    "port_state_change": port_state_change,
-                    "patcher_name": patcher_name,
-                    "endpoints": endpoints,
-                    "speed_in_gbps": speed_in_gbps,
-                    "target_port_cage_count": target_port_cage_count,
-                }
-            )
-        ),
+        step_params=Params(json_params=json.dumps(params)),
         description=description,
     )
 
@@ -11577,6 +11585,7 @@ _SUPPORTED_51T_SPEED_COMBINATIONS = {
     (200, 200),
     (400, 400),
 }
+<<<<<<< HEAD
 _PLATFORM_SPEED_PROFILE_MAPPING = {
     "MONTBLANC": {
         PortSpeed.EIGHTHUNDREDG: "PROFILE_800G_8_PAM4_RS544X2N_OPTICAL",
@@ -11624,6 +11633,9 @@ _PLATFORM_SPEED_PROFILE_MAPPING = {
         PortSpeed.TWOHUNDREDG: "PROFILE_200G_4_PAM4_RS544X2N_OPTICAL",
     },
 }
+=======
+_SPEED_FLIP_PY_FUNC_NAME = "change_port_speed"
+>>>>>>> 2660011 (NO-NOS: speed-flip patcher registers through the generic config-patcher contract (#387))
 
 
 class UnsupportedSpeedCombinationError(Exception):
@@ -11642,10 +11654,6 @@ class RegisterSpeedFlipPatcherStep(StepBase[taac_types.BaseInput]):
     STEP_NAME = taac_types.StepName.REGISTER_SPEED_FLIP_PATCHER
     OPERATING_SYSTEMS = ["FBOSS"]
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.registered_patcher_name: t.Optional[str] = None
-
     async def run(
         self,
         input: taac_types.BaseInput,
@@ -11659,6 +11667,7 @@ class RegisterSpeedFlipPatcherStep(StepBase[taac_types.BaseInput]):
         self._assert_target_port_cage_count(endpoints, target_port_cage_count)
         device_infos = await self._gather_device_infos(endpoints)
         speed_in_gbps = params.get("speed_in_gbps", 0)
+        profile_id = params.get("profile_id")
 
         if port_state_change:
             await self._disable_device_ports(device_infos)
@@ -11668,6 +11677,7 @@ class RegisterSpeedFlipPatcherStep(StepBase[taac_types.BaseInput]):
                 device_infos=device_infos,
                 speed_in_gbps=speed_in_gbps,
                 patcher_name=patcher_name,
+                profile_id=profile_id,
             )
         else:
             await self._unregister_speed_flip_patchers(
@@ -11757,21 +11767,51 @@ class RegisterSpeedFlipPatcherStep(StepBase[taac_types.BaseInput]):
         device_infos: t.List[_SpeedFlipDeviceInfo],
         speed_in_gbps: int,
         patcher_name: str,
+        profile_id: t.Optional[str] = None,
     ) -> None:
+        """Queue the agent-config mutation a speed flip needs, one per device.
+
+        Goes through the same register/apply/unregister contract as every other
+        config patcher (BGP drain included): a py_func name plus args, no
+        speed-flip-specific driver API. ``profile_id`` is a cfg.PortProfileID
+        NAME the test config may supply; otherwise the platform default is
+        used. Both it and the speed resolve to numeric config values here so
+        the on-DUT py_func stays enum-free.
+
+        Always the agent config: ``change_port_speed`` rewrites ``sw.ports``,
+        which only agent.conf has, so the config is a property of the py_func
+        and not something a test config gets to choose.
+
+        Why not ``fboss2-dev config interface ... profile``: the CLI removes a
+        subsumed port, and removing a port from a live agent is unsafe
+        (T281221621), so an 800G flip would commit as a coldboot and wipe BGP
+        and counters mid-test. The patcher disables the mate and warmboots
+        instead.
+        """
         speed_in_mbps = speed_in_gbps * 1000
+        # Resolve every profile before building any coroutine: a raise halfway
+        # through would otherwise leave the earlier ones created and unawaited.
+        profiles = [
+            profile_id
+            or default_profile_id(device_info.hardware_type, speed_in_mbps)
+            for device_info in device_infos
+        ]
         coros = []
-        for device_info in device_infos:
-            profile_id = _PLATFORM_SPEED_PROFILE_MAPPING.get(
-                device_info.hardware_type,
-                {},
-                # pyrefly: ignore [bad-index]
-            )[speed_in_mbps]
+        for device_info, profile in zip(device_infos, profiles):
             coros.append(
-                device_info.driver.async_change_speed_patcher(
-                    device_info.ports,
-                    desired_speed=PortSpeed(speed_in_mbps).name,
-                    profile_id=profile_id,
+                device_info.driver.async_register_python_patcher(
+                    config_name=AGENT_CONFIG,
                     patcher_name=patcher_name,
+                    py_func_name=_SPEED_FLIP_PY_FUNC_NAME,
+                    patcher_args={
+                        "ports": json.dumps(list(device_info.ports)),
+                        "speed": str(PortSpeed(speed_in_mbps).value),
+                        "profile_id": str(PortProfileID[profile].value),
+                    },
+                    patcher_desc=(
+                        f"speed flip: {len(device_info.ports)} port(s) to "
+                        f"{PortSpeed(speed_in_mbps).name}"
+                    ),
                 )
             )
         await asyncio.gather(*coros)
@@ -11783,7 +11823,9 @@ class RegisterSpeedFlipPatcherStep(StepBase[taac_types.BaseInput]):
     ) -> None:
         await asyncio.gather(
             *[
-                device_info.driver.async_coop_unregister_patchers(patcher_name)
+                device_info.driver.async_coop_unregister_patchers(
+                    patcher_name, config_name=AGENT_CONFIG
+                )
                 for device_info in device_infos
             ]
         )
