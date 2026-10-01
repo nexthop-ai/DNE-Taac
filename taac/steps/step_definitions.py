@@ -12436,6 +12436,19 @@ class ValidationStep(StepBase[taac_types.ValidationInput]):
         all_check_results = []
         all_check_device_names = []
         all_check_ids = []
+<<<<<<< HEAD
+=======
+        # --skip-health-checks (TAAC_SKIP_HEALTH_CHECKS): drop checks by name at
+        # every stage. For checks a config requests but that cannot run in this
+        # environment -- e.g. ones backed by a Meta-only service -- so the
+        # config's check list stays untouched. Skips are logged
+        # individually: a silently-dropped check reads as a pass in the summary.
+        _skip_names = {
+            n.strip().upper()
+            for n in os.environ.get("TAAC_SKIP_HEALTH_CHECKS", "").split(",")
+            if n.strip()
+        }
+>>>>>>> f938762 (NO-NOS: OSS DRAIN_STATE_CHECK reads drain_state from bgpd's config (#474))
         priority_to_hcs = defaultdict(list)
         for check in input.point_in_time_checks:
             check_impl = NAME_TO_POINT_IN_TIME_HEALTH_CHECK[check.name]

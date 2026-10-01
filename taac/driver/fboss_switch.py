@@ -3778,6 +3778,12 @@ class FbossSwitch(AbstractSwitch):
         """
         Checks the onbox status drained status of the device
         """
+        if TAAC_OSS:
+            # No local drainer in OSS: read drain_state from the config bgpd
+            # launches with; DRAINED means soft-drained.
+            from taac.driver.config_modifiers import get_device_drain_state
+
+            return await get_device_drain_state(self)
         async with self.get_async_local_drainer_client() as client:
             is_drained: bool = await client.is_drained()
             on_box_drain_state: DeviceDrainState = (

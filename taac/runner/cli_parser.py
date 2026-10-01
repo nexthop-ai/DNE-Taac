@@ -122,6 +122,20 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Skip teardown tasks",
     )
     parser.add_argument(
+<<<<<<< HEAD
+=======
+        "--skip-health-checks",
+        help=(
+            "Comma-separated CheckName values to skip at every validation "
+            "stage, e.g. --skip-health-checks DRAIN_STATE_CHECK. Use for "
+            "checks a test config requests but that cannot run in this "
+            "environment (e.g. ones backed by a Meta-only service), "
+            "instead of editing the config's check list. Sets "
+            "TAAC_SKIP_HEALTH_CHECKS."
+        ),
+    )
+    parser.add_argument(
+>>>>>>> f938762 (NO-NOS: OSS DRAIN_STATE_CHECK reads drain_state from bgpd's config (#474))
         "--skip-post-setup-wait",
         action="store_true",
         help=(

@@ -74,7 +74,7 @@ from configerator.structs.neteng.robotron.bgp_policy.thrift_types import (
     LocalPreference,
 )
 from taac.driver.abstract_switch import AbstractSwitch
-from taac.driver.driver_constants import FbossSystemctlServiceName
+from taac.driver.driver_constants import DeviceDrainState, FbossSystemctlServiceName
 from thrift.python.serializer import deserialize, Protocol, serialize
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -108,6 +108,7 @@ SOFTDRAIN_CONFIG_PATH: str = f"{COOP_DIR}/bgpcpp_softdrain.conf"
 
 _UNDRAIN: str = "undrain"
 _SOFT_DRAIN: str = "soft-drain"
+_READ_DRAIN_STATE: str = "read the drain state of"
 _BASE_CONFIG_SETUP: str = "set up base configs for"
 
 # The two communities that carry drain state between devices. A drained device
@@ -271,6 +272,39 @@ async def undrain_device(switch: AbstractSwitch, restart_bgp: bool = True) -> No
         target_config=LIVE_CONFIG_PATH,
         state_name=_UNDRAIN,
         restart_bgp=restart_bgp,
+    )
+
+
+async def get_device_drain_state(switch: AbstractSwitch) -> DeviceDrainState:
+    """Read the drain state declared by the config bgpd is launched with.
+
+    ``generate_base_configs`` sets ``drain_state`` in both files it writes, so
+    the file bgpd opens says which one it is, however it got there. The markers
+    cannot: /dev/shm is tmpfs, so a reboot clears them, and a patcher apply or
+    restore rewrites bgpcpp.conf without touching them. Reading through the
+    startup symlink gives its target, so this covers both image layouts.
+
+    This is the file bgpd loads on its next start: after a drain with
+    ``restart_bgp=False`` it is ahead of the running daemon. DRAINED means any
+    declared drain, which in OSS is always a soft drain.
+
+    Raises:
+        ConfigModifierError: the config cannot be read as JSON.
+    """
+    _assert_fboss_device(switch, _READ_DRAIN_STATE)
+    path = await _async_resolve_bgpd_config_path(switch)
+    raw = await switch.async_read_file(path)
+    try:
+        state = DrainState(json.loads(raw).get("drain_state", DrainState.UNDRAINED.value))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ConfigModifierError(
+            f"Cannot {_READ_DRAIN_STATE} {switch.hostname}: {path} is not a "
+            f"bgpd config with a readable drain_state ({exc})"
+        ) from exc
+    return (
+        DeviceDrainState.UNDRAINED
+        if state == DrainState.UNDRAINED
+        else DeviceDrainState.DRAINED
     )
 
 
@@ -646,7 +680,7 @@ def generate_base_configs(config: BgpConfig) -> tuple[BgpConfig, BgpConfig]:
     )
 
 
-def _deserialize_config(raw_config: str, hostname: str) -> BgpConfig:
+def _deserialize_config(raw_config: str, hostname: str, path: str) -> BgpConfig:
     """Parse a bgpd config file.
 
     Protocol.JSON is SimpleJSON, which is what bgpd reads and writes
@@ -658,7 +692,7 @@ def _deserialize_config(raw_config: str, hostname: str) -> BgpConfig:
         return deserialize(BgpConfig, raw_config.encode(), protocol=Protocol.JSON)
     except Exception as exc:
         raise ConfigModifierError(
-            f"Cannot {_BASE_CONFIG_SETUP} {hostname}: {LIVE_CONFIG_PATH} is not a "
+            f"Cannot {_BASE_CONFIG_SETUP} {hostname}: {path} is not a "
             f"parseable BGP config ({exc})."
         ) from exc
 
@@ -722,9 +756,19 @@ async def setup_base_configs(switch: AbstractSwitch, restart_bgp: bool = True) -
             "drain variants of an existing config, it does not create one."
         )
 
-    switch.logger.info(f"{hostname}: reading BGP config from {LIVE_CONFIG_PATH}")
-    raw_config = await switch.async_read_file(LIVE_CONFIG_PATH)
-    config = _deserialize_config(raw_config, hostname)
+    # A parked copy means a run died drained without a patcher restore: the live
+    # path holds the drain variant, and a scoped rebuild from it would keep the
+    # drain egress policy on groups this scope no longer matches. The parked
+    # copy is the only undrained one, so rebuild from it; it is removed below,
+    # only once both configs have been written.
+    source = (
+        PREDRAIN_CONFIG_PATH
+        if await _async_file_exists(switch, PREDRAIN_CONFIG_PATH)
+        else LIVE_CONFIG_PATH
+    )
+    switch.logger.info(f"{hostname}: reading BGP config from {source}")
+    raw_config = await switch.async_read_file(source)
+    config = _deserialize_config(raw_config, hostname, source)
 
     live_config, drain_config = generate_base_configs(config)
 
@@ -734,6 +778,10 @@ async def setup_base_configs(switch: AbstractSwitch, restart_bgp: bool = True) -
     ):
         switch.logger.info(f"{hostname}: writing {path}")
         await _async_write_config(switch, target_config, path)
+
+    # Both configs are rebuilt from the parked copy, so it is obsolete -- and the
+    # undrain below would install it over what we just wrote.
+    await switch.async_run_cmd_on_shell(f"rm -f {PREDRAIN_CONFIG_PATH}")
 
     # Leave the device in a known state rather than wherever its markers happened
     # to point: the symlink may still reference a config that no longer exists.
