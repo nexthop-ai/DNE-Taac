@@ -9461,7 +9461,8 @@ def _l2_overload_safety_checks(
             start_time_jq_var=start_time_jq_var,
         ),
         create_memory_utilization_check(
-            threshold=5 * (1024**3),
+            threshold=7.5 * (1024**3),
+            threshold_by_service={"bgpd": 4.5 * (1024**3)},
             start_time_jq_var=start_time_jq_var,
         ),
     ]
