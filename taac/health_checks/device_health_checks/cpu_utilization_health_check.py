@@ -19,6 +19,7 @@ from taac.libs.collectors.cpu_utilization_collector import (
 )
 from taac.libs.collectors.registry import get_collector
 from taac.utils.health_check_utils import (
+    await_first_collector_sample,
     collector_window_start,
     format_timestamp,
 )
@@ -492,6 +493,9 @@ class CpuUtilizationHealthCheck(AbstractDeviceHealthCheck[hc_types.BaseHealthChe
             )
         now = time.time()
         window_end = check_params.get("window_end", now)
+        window_end = await await_first_collector_sample(
+            collector, services, window_end, self.logger
+        )
         lookback_sec = check_params.get("lookback_sec", 900)
         window_start = check_params.get(
             "window_start",
